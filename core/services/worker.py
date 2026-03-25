@@ -186,6 +186,8 @@ async def _run_llm_text(
                 new_entry[field] = parsed[field]
     if "clarification_requests" in parsed:
         new_entry["clarification_requests"] = parsed["clarification_requests"]
+    if "confidence" in parsed:
+        new_entry["confidence"] = parsed["confidence"]
 
     stage_data = dict(doc.stage_data)
     stage_data[stage.name] = new_entry
