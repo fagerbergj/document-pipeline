@@ -193,9 +193,10 @@ async def _run_llm_text(
     return stage_data
 
 
-async def _run_embed(doc: Document, stage: StageDefinition, ollama_base_url: str, qdrant_url: str, qdrant_collection: str, qdrant_api_key: str, db) -> None:
+async def _run_embed(doc: Document, stage: StageDefinition, ollama_base_url: str, db) -> None:
     from adapters.outbound.ollama import generate_embed
     from adapters.outbound import qdrant as _qdrant
+    from adapters.outbound import open_webui as _open_webui
 
     input_text = ""
     if stage.input:
@@ -207,28 +208,49 @@ async def _run_embed(doc: Document, stage: StageDefinition, ollama_base_url: str
     if not input_text:
         raise ValueError(f"Embed stage '{stage.name}': no text found for input '{stage.input}'")
 
-    vector = await generate_embed(ollama_base_url, stage.model, input_text)
-
-    # Collect metadata fields
+    # Collect metadata
     all_data: dict = {}
     for sd in doc.stage_data.values():
         if isinstance(sd, dict):
             all_data.update(sd)
-
-    payload: dict = {"doc_id": doc.id, "text": input_text}
+    metadata: dict = {}
     for field in (stage.metadata_fields or []):
         if field in all_data:
-            payload[field] = all_data[field]
+            metadata[field] = all_data[field]
     if doc.title:
-        payload["title"] = doc.title
+        metadata["title"] = doc.title
     if doc.date_month:
-        payload["date_month"] = doc.date_month
-
-    await _qdrant.upsert(qdrant_url, qdrant_collection, doc.id, vector, payload, qdrant_api_key or None)
+        metadata["date_month"] = doc.date_month
 
     now_str = datetime.now(timezone.utc).isoformat()
-    await db.append_event(doc.id, stage.name, "synced", now_str, {"destination": "qdrant"})
-    logger.info("Embedded %s into qdrant/%s", doc.id[:8], qdrant_collection)
+
+    for dest in (stage.destinations or []):
+        dtype = dest.get("type")
+
+        if dtype == "qdrant":
+            vector = await generate_embed(ollama_base_url, stage.model, input_text)
+            payload = {"doc_id": doc.id, "text": input_text, **metadata}
+            await _qdrant.upsert(
+                dest.get("url", ""), dest.get("collection", "remarkable"),
+                doc.id, vector, payload, dest.get("api_key") or None,
+            )
+            await db.append_event(doc.id, stage.name, "synced", now_str, {"destination": "qdrant"})
+            logger.info("Embedded %s into qdrant/%s", doc.id[:8], dest.get("collection"))
+
+        elif dtype == "open_webui":
+            await _open_webui.upsert(
+                base_url=dest.get("url", ""),
+                api_key=dest.get("api_key", ""),
+                knowledge_id=dest.get("knowledge_id", ""),
+                doc_id=doc.id,
+                title=doc.title or doc.id,
+                text=input_text,
+                metadata=metadata,
+            )
+            await db.append_event(doc.id, stage.name, "synced", now_str, {"destination": "open_webui"})
+
+        else:
+            logger.warning("Unknown embed destination type '%s' for doc %s", dtype, doc.id[:8])
 
 
 async def _was_stopped(doc_id: str, db) -> bool:
@@ -247,9 +269,6 @@ async def _process_document(
     filesystem,
     ollama_base_url: str,
     config: PipelineConfig,
-    qdrant_url: str = "",
-    qdrant_collection: str = "",
-    qdrant_api_key: str = "",
 ):
     now_str = datetime.now(timezone.utc).isoformat()
     await db.update(set_running(doc, now_str))
@@ -294,7 +313,7 @@ async def _process_document(
             logger.info("Doc %s → %s", doc.id[:8], updated.current_stage)
 
         elif stage.type == "embed":
-            await _run_embed(doc, stage, ollama_base_url, qdrant_url, qdrant_collection, qdrant_api_key, db)
+            await _run_embed(doc, stage, ollama_base_url, db)
             now_str = datetime.now(timezone.utc).isoformat()
             next_stage = config.next_stage(stage.name)
             updated = advance(doc, next_stage.name, now_str) if next_stage else set_done(doc, now_str)
@@ -324,15 +343,7 @@ async def _process_document(
             await db.update(set_error(doc, now_str))
 
 
-async def run_worker(
-    config: PipelineConfig,
-    db,
-    vault_path: str,
-    ollama_base_url: str,
-    qdrant_url: str = "",
-    qdrant_collection: str = "",
-    qdrant_api_key: str = "",
-):
+async def run_worker(config: PipelineConfig, db, vault_path: str, ollama_base_url: str):
     from adapters.outbound import filesystem
     from adapters.outbound.ollama import unload_model
 
@@ -354,8 +365,7 @@ async def run_worker(
                 logger.info("Stage '%s': processing %d doc(s)", stage.name, len(docs))
                 for doc in docs:
                     async with sem:
-                        await _process_document(doc, stage, db, filesystem, ollama_base_url, config,
-                                                qdrant_url, qdrant_collection, qdrant_api_key)
+                        await _process_document(doc, stage, db, filesystem, ollama_base_url, config)
 
                 if stage.model:
                     await unload_model(ollama_base_url, stage.model)

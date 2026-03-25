@@ -45,3 +45,7 @@ stages:
         url: ${QDRANT_URL}
         collection: ${QDRANT_COLLECTION}
         api_key: ${QDRANT_API_KEY}
+      - type: open_webui
+        url: ${OPEN_WEBUI_URL}
+        api_key: ${OPEN_WEBUI_API_KEY}
+        knowledge_id: ${OPEN_WEBUI_KNOWLEDGE_ID}
