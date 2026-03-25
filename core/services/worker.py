@@ -101,13 +101,22 @@ async def _run_llm_text(
                 input_text = sdata[stage.input]
                 break
 
-    # Render Jinja2 prompt (clarify.txt has {% if clarification_responses %} block)
+    # Render Jinja2 prompt
     prompt_text = ""
     if stage.prompt:
         raw_template = Path(stage.prompt).read_text(encoding="utf-8")
         existing = doc.stage_data.get(stage.name, {})
         clarification_responses = existing.get("clarification_responses", [])
-        prompt_text = Template(raw_template).render(clarification_responses=clarification_responses)
+        context_path = Path("prompts/user_context.txt")
+        context = ""
+        if context_path.exists():
+            raw = context_path.read_text(encoding="utf-8")
+            # Strip comment lines
+            context = "\n".join(l for l in raw.splitlines() if not l.startswith("#")).strip()
+        prompt_text = Template(raw_template).render(
+            clarification_responses=clarification_responses,
+            context=context,
+        )
 
     raw_response = await generate_text(ollama_base_url, stage.model, prompt_text, input_text)
 

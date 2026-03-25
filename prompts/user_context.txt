@@ -1,0 +1,5 @@
+# Add persistent context here — this is injected into every clarify prompt.
+# Describe recurring topics, names, projects, or anything the LLM should know.
+# Example:
+#   These are D&D campaign notes. Common NPCs: Aldric (blacksmith), Mira (innkeeper).
+#   The campaign is set in the town of Dawnhaven.
