@@ -1,8 +1,0 @@
-{% set state_labels = ["pending", "running", "waiting", "error", "done"] %}
-{% for state in state_labels %}
-  {% set n = counts.get(state, 0) %}
-  <div class="count-card">
-    <span class="num">{{ n }}</span>
-    <span class="badge badge-{{ state }}">{{ state }}</span>
-  </div>
-{% endfor %}
