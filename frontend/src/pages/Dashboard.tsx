@@ -96,25 +96,25 @@ export default function Dashboard() {
                 <tbody className="divide-y divide-gray-50">
                   {docs.map(doc => (
                     <tr key={doc.id}
-                      className="hover:bg-gray-50 transition-colors group">
-                      <td className="px-4 py-3">
+                      onClick={() => navigate(`/documents/${doc.id}`)}
+                      className="hover:bg-gray-50 transition-colors group cursor-pointer">
+                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                         <InlineTitle
                           docId={doc.id}
                           title={doc.title}
-                          onNavigate={() => navigate(`/documents/${doc.id}`)}
                           onSaved={() => qc.invalidateQueries({ queryKey: ['documents'] })}
                         />
                         {doc.needs_context && (
                           <span className="ml-2 text-xs text-red-500 font-medium">⚠ needs context</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 cursor-pointer" onClick={() => navigate(`/documents/${doc.id}`)}>
+                      <td className="px-4 py-3">
                         <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{doc.current_stage}</span>
                       </td>
-                      <td className="px-4 py-3 cursor-pointer" onClick={() => navigate(`/documents/${doc.id}`)}>
+                      <td className="px-4 py-3">
                         <StatusBadge state={doc.stage_state} />
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-400 hidden sm:table-cell cursor-pointer" onClick={() => navigate(`/documents/${doc.id}`)}>
+                      <td className="px-4 py-3 text-sm text-gray-400 hidden sm:table-cell">
                         {doc.created_at.slice(0, 16).replace('T', ' ')}
                       </td>
                     </tr>
@@ -129,10 +129,9 @@ export default function Dashboard() {
   )
 }
 
-function InlineTitle({ docId, title, onNavigate, onSaved }: {
+function InlineTitle({ docId, title, onSaved }: {
   docId: string
   title: string | null
-  onNavigate: () => void
   onSaved: () => void
 }) {
   const [editing, setEditing] = useState(false)
@@ -147,6 +146,8 @@ function InlineTitle({ docId, title, onNavigate, onSaved }: {
     if (editing) inputRef.current?.select()
   }, [editing])
 
+  const startEdit = () => { setValue(title ?? ''); setEditing(true) }
+
   if (editing) {
     return (
       <input
@@ -158,26 +159,21 @@ function InlineTitle({ docId, title, onNavigate, onSaved }: {
           if (e.key === 'Enter') { e.preventDefault(); mut.mutate(value) }
           if (e.key === 'Escape') { setValue(title ?? ''); setEditing(false) }
         }}
-        onClick={e => e.stopPropagation()}
         className="text-sm font-medium border-b border-blue-400 bg-transparent focus:outline-none w-full"
         disabled={mut.isPending}
+        autoFocus
       />
     )
   }
 
   return (
     <span className="flex items-center gap-1.5 group/title">
-      <span
-        className="text-sm font-medium text-gray-800 group-hover:text-blue-600 transition-colors cursor-pointer"
-        onClick={onNavigate}
-      >
+      <span onClick={startEdit} className="text-sm font-medium text-gray-800 group-hover:text-blue-600 transition-colors cursor-text">
         {title || <span className="text-gray-400 italic font-normal">untitled</span>}
       </span>
-      <button
-        onClick={e => { e.stopPropagation(); setValue(title ?? ''); setEditing(true) }}
-        className="opacity-0 group-hover/title:opacity-100 text-gray-400 hover:text-gray-600 transition-opacity"
-        title="Rename"
-      >
+      <button onClick={startEdit}
+        className="opacity-0 group-hover/title:opacity-100 text-gray-400 hover:text-gray-600 transition-opacity text-xs"
+        title="Rename">
         ✎
       </button>
     </span>
