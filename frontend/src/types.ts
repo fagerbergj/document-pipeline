@@ -63,4 +63,5 @@ export interface Counts {
   waiting?: number
   error?: number
   done?: number
+  by_stage?: Record<string, number>
 }

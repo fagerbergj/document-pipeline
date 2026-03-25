@@ -239,7 +239,13 @@ class Database:
             """SELECT stage_state, COUNT(*) as cnt FROM documents
                WHERE current_stage NOT IN ('deleted') GROUP BY stage_state"""
         ) as cur:
-            return {row["stage_state"]: row["cnt"] for row in await cur.fetchall()}
+            state_counts = {row["stage_state"]: row["cnt"] for row in await cur.fetchall()}
+        async with self._conn.execute(
+            """SELECT current_stage, COUNT(*) as cnt FROM documents
+               WHERE current_stage NOT IN ('deleted') GROUP BY current_stage"""
+        ) as cur:
+            stage_counts = {row["current_stage"]: row["cnt"] for row in await cur.fetchall()}
+        return {**state_counts, "by_stage": stage_counts}
 
     async def kv_get(self, key: str) -> Optional[str]:
         async with self._conn.execute("SELECT value FROM key_value WHERE key=?", (key,)) as cur:

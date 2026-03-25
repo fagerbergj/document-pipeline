@@ -114,13 +114,17 @@ export default function Sidebar() {
             <div className="space-y-1">
               {stagesData?.stages.map(s => {
                 const active = selectedStages.includes(s)
+                const n = counts?.by_stage?.[s] ?? 0
                 return (
                   <button key={s} onClick={() => toggleStage(s)}
-                    className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm transition-colors ${active ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800/50'}`}>
-                    <span className={`w-3 h-3 rounded border flex-shrink-0 flex items-center justify-center ${active ? 'bg-blue-500 border-blue-500' : 'border-gray-600'}`}>
-                      {active && <span className="text-white text-[8px] leading-none">✓</span>}
-                    </span>
-                    <span className="font-mono text-xs">{s}</span>
+                    className={`w-full flex items-center justify-between px-2 py-1.5 rounded text-sm transition-colors ${active ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800/50'}`}>
+                    <div className="flex items-center gap-2">
+                      <span className={`w-3 h-3 rounded border flex-shrink-0 flex items-center justify-center ${active ? 'bg-blue-500 border-blue-500' : 'border-gray-600'}`}>
+                        {active && <span className="text-white text-[8px] leading-none">✓</span>}
+                      </span>
+                      <span className="font-mono text-xs">{s}</span>
+                    </div>
+                    {n > 0 && <span className="text-xs text-gray-500">{n}</span>}
                   </button>
                 )
               })}
