@@ -17,11 +17,7 @@
 </style>
 
 <h1>Review Inbox</h1>
-<div id="review-list"
-     hx-get="/api/review"
-     hx-trigger="every 15s"
-     hx-target="#review-list"
-     hx-swap="innerHTML">
+<div id="review-list">
   {% include "partials/review_item.html" %}
 </div>
 {% endblock %}

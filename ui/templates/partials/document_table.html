@@ -1,15 +1,3 @@
-{% set state_labels = ["pending", "running", "waiting", "error", "done"] %}
-
-<div class="counts">
-  {% for state in state_labels %}
-    {% set n = counts.get(state, 0) %}
-    <div class="count-card">
-      <span class="num">{{ n }}</span>
-      <span class="badge badge-{{ state }}">{{ state }}</span>
-    </div>
-  {% endfor %}
-</div>
-
 <div id="doc-table-wrap">
 <table>
   <thead>
@@ -60,24 +48,4 @@ function toggleDetail(id) {
   const row = document.getElementById('row-detail-' + id);
   row.style.display = row.style.display === 'none' ? '' : 'none';
 }
-
-(function () {
-  let _openIds = [];
-  document.body.addEventListener('htmx:beforeSwap', function (e) {
-    if (e.detail.target.id === 'dashboard-content') {
-      _openIds = Array.from(document.querySelectorAll('.detail-row'))
-        .filter(r => r.style.display !== 'none')
-        .map(r => r.id.replace('row-detail-', ''));
-    }
-  });
-  document.body.addEventListener('htmx:afterSwap', function (e) {
-    if (e.detail.target.id === 'dashboard-content') {
-      _openIds.forEach(function (id) {
-        const row = document.getElementById('row-detail-' + id);
-        if (row) row.style.display = '';
-      });
-      _openIds = [];
-    }
-  });
-}());
 </script>
