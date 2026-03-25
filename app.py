@@ -4,9 +4,13 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
+from adapters.inbound.api import router as api_v1_router
 from adapters.inbound.ui import router as ui_router
 from adapters.inbound.webhook import router as webhook_router
 from adapters.outbound.sqlite import Database
@@ -56,4 +60,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="document-pipeline", lifespan=lifespan)
 app.include_router(webhook_router)
+app.include_router(api_v1_router)
 app.include_router(ui_router)
+
+# Serve React app (only if built dist exists)
+_FRONTEND_DIST = Path("frontend/dist")
+if _FRONTEND_DIST.exists():
+    app.mount("/assets", StaticFiles(directory=str(_FRONTEND_DIST / "assets")), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa(full_path: str):
+        # API and webhook routes are already registered, this catches everything else
+        index = _FRONTEND_DIST / "index.html"
+        return FileResponse(str(index))
