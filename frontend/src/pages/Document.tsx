@@ -37,9 +37,9 @@ export default function Document() {
   const errorEvents = doc.events.filter(e => e.event_type === 'failed')
 
   return (
-    <div className="h-full flex flex-col">
+    <div>
       {/* Header bar */}
-      <div className="flex items-center gap-4 px-6 py-4 border-b border-gray-200 bg-white flex-shrink-0">
+      <div className="sticky top-0 z-10 flex items-center gap-4 px-6 py-4 border-b border-gray-200 bg-white">
         <Link to="/" className="text-gray-400 hover:text-gray-600 text-sm">←</Link>
         <h1 className="text-base font-semibold text-gray-900 flex-1 truncate">{doc.title || '(untitled)'}</h1>
         <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{doc.current_stage}</span>
@@ -64,7 +64,7 @@ export default function Document() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-4">
+      <div className="p-6 space-y-4">
         <TitleSection doc={doc} onRefresh={refresh} />
         <ContextSection doc={doc} onRefresh={refresh} />
         {doc.stage_displays.map(sd => (

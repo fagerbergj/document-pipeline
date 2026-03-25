@@ -11,7 +11,7 @@ export default function App() {
   return (
     <div className="flex min-h-screen bg-gray-950 text-gray-100">
       {!fullWidth && <Sidebar />}
-      <div className={`flex-1 ${fullWidth ? '' : 'ml-64'} bg-gray-50 text-gray-900 h-screen overflow-hidden`}>
+      <div className={`flex-1 ${fullWidth ? '' : 'ml-64'} bg-gray-50 text-gray-900 min-h-screen`}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/documents/:id" element={<Document />} />
