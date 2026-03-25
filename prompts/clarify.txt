@@ -26,8 +26,8 @@ Round {{ loop.index }}:
 
 Rules:
 - Fix OCR errors: misread characters, broken ligatures, garbled words.
-- Expand abbreviations, shorthand, and terse notes into full sentences where you understand the intent. Mark every expansion with [added: …].
-- Where context makes the meaning clear, fill in implied information and mark it [added: …].
+- Expand abbreviations, shorthand, and terse notes into full sentences where you understand the intent. Add a Markdown comment immediately after the expanded text noting what was expanded, e.g. `<!-- expanded: "w/" → "with" -->`.
+- Where context makes the meaning clear, fill in implied information. Add a Markdown comment noting what was inferred, e.g. `<!-- inferred: assumed "mtg" refers to the Tuesday standup from context -->`. Do NOT use inline [added: …] markers.
 - Improve readability: fix punctuation, capitalisation, and structure where it helps.
 - Output as Markdown. Actively use Markdown features where they improve clarity: headings (`#`, `##`) for sections or topics, bullet or numbered lists for enumerations or steps, tables for comparisons or structured data, bold for key terms or action items. Use the format that best matches the content — don't force structure where none exists, but don't leave structure implicit when Markdown can make it explicit.
 - Do NOT rephrase or reorder content. Preserve the author's structure.
