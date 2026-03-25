@@ -184,7 +184,7 @@ async def _run_llm_text(
             field = o.get("field")
             if field and field in parsed:
                 new_entry[field] = parsed[field]
-    if stage.clarifications and "clarification_requests" in parsed:
+    if "clarification_requests" in parsed:
         new_entry["clarification_requests"] = parsed["clarification_requests"]
 
     stage_data = dict(doc.stage_data)

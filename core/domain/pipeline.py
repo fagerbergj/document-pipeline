@@ -27,7 +27,6 @@ class StageDefinition:
     input: Optional[str] = None
     output: Optional[str] = None
     outputs: Optional[list] = None
-    clarifications: bool = False
     require_context: bool = False
     destinations: Optional[list] = None
     metadata_fields: Optional[list] = None
@@ -54,7 +53,6 @@ class PipelineConfig:
                 input=s.get("input"),
                 output=s.get("output"),
                 outputs=s.get("outputs"),
-                clarifications=s.get("clarifications", False),
                 require_context=s.get("require_context", False),
                 destinations=s.get("destinations"),
                 metadata_fields=s.get("metadata_fields"),
