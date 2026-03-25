@@ -153,6 +153,15 @@ async def _run_llm_text(
     return stage_data
 
 
+async def _was_stopped(doc_id: str, db) -> bool:
+    """Return True if the document was externally stopped while the worker was running."""
+    current = await db.get(doc_id)
+    if current and current.stage_state != "running":
+        logger.info("Doc %s was stopped externally — discarding result", doc_id[:8])
+        return True
+    return False
+
+
 async def _process_document(
     doc: Document,
     stage: StageDefinition,
@@ -168,6 +177,8 @@ async def _process_document(
     try:
         if stage.type == "computer_vision":
             stage_data, title, png_path = await _run_ocr(doc, stage, filesystem, ollama_base_url)
+            if await _was_stopped(doc.id, db):
+                return
             now_str = datetime.now(timezone.utc).isoformat()
             updated = replace(doc, stage_data=stage_data, title=title, png_path=png_path)
             next_stage = config.next_stage(stage.name)
@@ -185,6 +196,8 @@ async def _process_document(
                 await db.update(set_waiting(doc, now_str))
                 return  # park until context is provided; review service will reset to pending
             stage_data = await _run_llm_text(doc, stage, ollama_base_url)
+            if await _was_stopped(doc.id, db):
+                return
             now_str = datetime.now(timezone.utc).isoformat()
             updated = replace(doc, stage_data=stage_data)
             next_stage = config.next_stage(stage.name)

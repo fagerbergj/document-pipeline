@@ -22,6 +22,13 @@
       <td><span class="badge badge-{{ doc.stage_state }}">{{ doc.stage_state }}</span></td>
       <td>
         {{ doc.created_at[:19].replace("T", " ") }}
+        {% if doc.stage_state == 'running' %}
+        <button hx-post="/api/documents/{{ doc.id }}/stop"
+                hx-target="#dashboard-content"
+                hx-swap="innerHTML"
+                onclick="event.stopPropagation()"
+                style="margin-left:.5rem;padding:.15rem .5rem;font-size:.78rem;border-radius:4px;border:1px solid #856404;background:#fff3cd;color:#856404;cursor:pointer">Stop</button>
+        {% endif %}
         {% if doc.stage_state == 'error' %}
         <button hx-post="/api/documents/{{ doc.id }}/retry"
                 hx-target="#dashboard-content"
