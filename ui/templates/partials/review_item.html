@@ -1,1 +1,48 @@
-<!-- Phase 3: single review item for HTMX swap -->
+{% if not review_items %}
+<p style="color:#6c757d; padding:1rem 0;">No documents awaiting review.</p>
+{% else %}
+{% for item in review_items %}
+{% set doc = item.doc %}
+<div class="review-card">
+  <div class="review-header">
+    <strong>{{ doc.title or "(untitled)" }}</strong>
+    <span class="badge badge-waiting">{{ doc.current_stage }}</span>
+    <span style="color:#6c757d; font-size:0.85rem;">{{ doc.created_at[:19].replace("T", " ") }}</span>
+  </div>
+  <div class="review-panels">
+    <div class="review-panel">
+      <div class="panel-label">Before ({{ item.llm_stage.input }})</div>
+      <pre class="panel-content">{{ item.input_text }}</pre>
+    </div>
+    <div class="review-panel">
+      <div class="panel-label">After ({{ item.llm_stage.output }})</div>
+      <pre class="panel-content">{{ item.output_text }}</pre>
+    </div>
+  </div>
+  <div class="review-actions">
+    <button hx-post="/api/review/{{ doc.id }}/approve"
+            hx-target="#review-list" hx-swap="innerHTML"
+            class="btn btn-approve">Approve</button>
+    <button hx-post="/api/review/{{ doc.id }}/reject"
+            hx-target="#review-list" hx-swap="innerHTML"
+            class="btn btn-reject">Reject</button>
+    {% if item.clarification_requests %}
+    <form hx-post="/api/review/{{ doc.id }}/clarify"
+          hx-target="#review-list" hx-swap="innerHTML">
+      <div class="clarification-panel">
+        <strong>Clarifications needed:</strong>
+        {% for req in item.clarification_requests %}
+        <div class="clarification-item">
+          <div><code>{{ req.segment }}</code> — {{ req.question }}</div>
+          <input type="text" name="answer_{{ loop.index0 }}"
+                 placeholder="Your answer…" class="clarification-input">
+        </div>
+        {% endfor %}
+      </div>
+      <button type="submit" class="btn btn-clarify">Re-run with clarifications</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% endfor %}
+{% endif %}

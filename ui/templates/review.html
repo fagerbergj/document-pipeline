@@ -1,4 +1,27 @@
 {% extends "base.html" %}
 {% block content %}
-<!-- Phase 3: review inbox with diff view and clarification panel -->
+<style>
+.review-card{background:#fff;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.1);margin-bottom:1rem;padding:1rem}
+.review-header{display:flex;gap:1rem;align-items:baseline;margin-bottom:.75rem}
+.review-panels{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:.75rem}
+.panel-label{font-size:.8rem;font-weight:600;color:#6c757d;margin-bottom:.3rem}
+.panel-content{background:#f8f9fa;border:1px solid #dee2e6;border-radius:4px;padding:.6rem;font-family:monospace;font-size:.82rem;white-space:pre-wrap;max-height:300px;overflow-y:auto;margin:0}
+.review-actions{display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-start}
+.btn{padding:.35rem .9rem;border-radius:4px;border:none;cursor:pointer;font-size:.9rem;font-weight:600}
+.btn-approve{background:#d4edda;color:#155724}
+.btn-reject{background:#f8d7da;color:#721c24}
+.btn-clarify{background:#fff3cd;color:#856404;margin-top:.5rem}
+.clarification-panel{border:1px solid #dee2e6;border-radius:4px;padding:.75rem;margin-bottom:.5rem;width:100%}
+.clarification-item{margin-bottom:.75rem}
+.clarification-input{width:100%;padding:.3rem .5rem;border:1px solid #ced4da;border-radius:4px;font-size:.88rem;margin-top:.25rem}
+</style>
+
+<h1>Review Inbox</h1>
+<div id="review-list"
+     hx-get="/api/review"
+     hx-trigger="every 15s"
+     hx-target="#review-list"
+     hx-swap="innerHTML">
+  {% include "partials/review_item.html" %}
+</div>
 {% endblock %}

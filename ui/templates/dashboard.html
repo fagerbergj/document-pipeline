@@ -2,12 +2,11 @@
 {% block content %}
 <h1>Dashboard</h1>
 
-<div class="counts"
+<div id="dashboard-content"
      hx-get="/api/documents"
      hx-trigger="every 10s"
-     hx-target="#doc-table-wrap"
+     hx-target="#dashboard-content"
      hx-swap="innerHTML">
+  {% include "partials/document_table.html" %}
 </div>
-
-{% include "partials/document_table.html" %}
 {% endblock %}

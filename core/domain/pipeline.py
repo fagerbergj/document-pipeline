@@ -65,5 +65,11 @@ class PipelineConfig:
                 return self.stages[i + 1]
         return None
 
+    def prev_stage(self, current_name: str) -> Optional[StageDefinition]:
+        for i, s in enumerate(self.stages):
+            if s.name == current_name and i > 0:
+                return self.stages[i - 1]
+        return None
+
     def get_stage(self, name: str) -> Optional[StageDefinition]:
         return next((s for s in self.stages if s.name == name), None)

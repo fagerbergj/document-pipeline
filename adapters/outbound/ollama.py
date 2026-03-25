@@ -21,6 +21,19 @@ async def generate_vision(base_url: str, model: str, prompt: str, image_bytes: b
         return resp.json().get("response", "").strip()
 
 
+async def generate_text(base_url: str, model: str, prompt: str, input_text: str) -> str:
+    full_prompt = f"{prompt}\n\nInput:\n{input_text}"
+    async with httpx.AsyncClient(timeout=180.0) as client:
+        resp = await client.post(
+            f"{base_url}/api/generate",
+            json={"model": model, "prompt": full_prompt, "stream": False},
+        )
+        if resp.is_error:
+            logger.error("Ollama error %s: %s", resp.status_code, resp.text[:200])
+        resp.raise_for_status()
+        return resp.json().get("response", "").strip()
+
+
 async def unload_model(base_url: str, model: str):
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:

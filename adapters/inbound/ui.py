@@ -1,13 +1,42 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+
+from core.services import review as review_service
 
 router = APIRouter()
 templates = Jinja2Templates(directory="ui/templates")
 
 _STATE_ORDER = ["pending", "running", "waiting", "error", "done"]
+
+
+def _build_review_items(docs: list, config) -> list[dict]:
+    items = []
+    for doc in docs:
+        prev = config.prev_stage(doc.current_stage)
+        if prev is None:
+            continue
+        llm_data = doc.stage_data.get(prev.name, {})
+        input_text = ""
+        if prev.input:
+            for _, sdata in doc.stage_data.items():
+                if isinstance(sdata, dict) and prev.input in sdata:
+                    input_text = sdata[prev.input]
+                    break
+        output_text = llm_data.get(prev.output, "") if prev.output else ""
+        clarification_requests = llm_data.get("clarification_requests", [])
+        items.append({
+            "doc": doc,
+            "llm_stage": prev,
+            "input_text": input_text,
+            "output_text": output_text,
+            "clarification_requests": clarification_requests,
+        })
+    return items
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -44,6 +73,78 @@ async def document_ocr(request: Request, doc_id: str):
     return templates.TemplateResponse(
         "partials/ocr_detail.html",
         {"request": request, "doc": doc, "ocr_text": ocr_text},
+    )
+
+
+@router.get("/review", response_class=HTMLResponse)
+async def review_inbox(request: Request):
+    db = request.app.state.db
+    config = request.app.state.pipeline
+    docs = await db.get_waiting()
+    items = _build_review_items(docs, config)
+    return templates.TemplateResponse("review.html", {"request": request, "review_items": items})
+
+
+@router.get("/api/review", response_class=HTMLResponse)
+async def review_partial(request: Request):
+    db = request.app.state.db
+    config = request.app.state.pipeline
+    docs = await db.get_waiting()
+    items = _build_review_items(docs, config)
+    return templates.TemplateResponse(
+        "partials/review_item.html", {"request": request, "review_items": items}
+    )
+
+
+@router.post("/api/review/{doc_id}/approve", response_class=HTMLResponse)
+async def review_approve(request: Request, doc_id: str):
+    db, config = request.app.state.db, request.app.state.pipeline
+    doc = await db.get(doc_id)
+    if doc is None:
+        return HTMLResponse("<em>Not found</em>", status_code=404)
+    await review_service.approve(doc, config, db, datetime.now(timezone.utc).isoformat())
+    items = _build_review_items(await db.get_waiting(), config)
+    return templates.TemplateResponse(
+        "partials/review_item.html", {"request": request, "review_items": items}
+    )
+
+
+@router.post("/api/review/{doc_id}/reject", response_class=HTMLResponse)
+async def review_reject(request: Request, doc_id: str):
+    db, config = request.app.state.db, request.app.state.pipeline
+    doc = await db.get(doc_id)
+    if doc is None:
+        return HTMLResponse("<em>Not found</em>", status_code=404)
+    await review_service.reject(doc, config, db, datetime.now(timezone.utc).isoformat())
+    items = _build_review_items(await db.get_waiting(), config)
+    return templates.TemplateResponse(
+        "partials/review_item.html", {"request": request, "review_items": items}
+    )
+
+
+@router.post("/api/review/{doc_id}/clarify", response_class=HTMLResponse)
+async def review_clarify_submit(request: Request, doc_id: str):
+    db, config = request.app.state.db, request.app.state.pipeline
+    doc = await db.get(doc_id)
+    if doc is None:
+        return HTMLResponse("<em>Not found</em>", status_code=404)
+    prev = config.prev_stage(doc.current_stage)
+    if prev is None:
+        return HTMLResponse("<em>No previous stage</em>", status_code=400)
+    stage_name = prev.name
+    form = await request.form()
+    existing_requests = (doc.stage_data.get(stage_name) or {}).get("clarification_requests", [])
+    clarification_responses = [
+        {"segment": req["segment"], "answer": form.get(f"answer_{i}", "").strip()}
+        for i, req in enumerate(existing_requests)
+    ]
+    await review_service.reject_with_clarifications(
+        doc, stage_name, clarification_responses, config, db,
+        datetime.now(timezone.utc).isoformat(),
+    )
+    items = _build_review_items(await db.get_waiting(), config)
+    return templates.TemplateResponse(
+        "partials/review_item.html", {"request": request, "review_items": items}
     )
 
 

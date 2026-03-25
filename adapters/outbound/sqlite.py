@@ -137,6 +137,14 @@ class Database:
         ) as cur:
             return [self._row_to_doc(r) for r in await cur.fetchall()]
 
+    async def get_waiting(self) -> list[Document]:
+        async with self._conn.execute(
+            "SELECT * FROM documents WHERE stage_state='waiting'"
+            " AND current_stage NOT IN ('deleted')"
+            " ORDER BY created_at ASC"
+        ) as cur:
+            return [self._row_to_doc(r) for r in await cur.fetchall()]
+
     async def list_documents(self) -> list[Document]:
         async with self._conn.execute(
             "SELECT * FROM documents WHERE current_stage != 'deleted' ORDER BY created_at DESC"

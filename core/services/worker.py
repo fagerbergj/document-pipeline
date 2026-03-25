@@ -13,7 +13,7 @@ from core.domain.pipeline import PipelineConfig, StageDefinition
 logger = logging.getLogger(__name__)
 
 # Stage types implemented in this phase. Worker silently skips others.
-_HANDLED_TYPES = {"computer_vision", "manual_review"}
+_HANDLED_TYPES = {"computer_vision", "manual_review", "llm_text"}
 
 _GENERIC_FILENAMES = {"remarkable", "untitled", "image", "attachment", "document"}
 
@@ -84,6 +84,60 @@ async def _run_ocr(
     return stage_data, title, new_png_path
 
 
+async def _run_llm_text(
+    doc: Document, stage: StageDefinition, ollama_base_url: str
+) -> dict:
+    """Returns updated stage_data dict."""
+    import json
+    import re
+    from jinja2 import Template
+    from adapters.outbound.ollama import generate_text
+
+    # Find input value — search all stage_data dicts for stage.input field
+    input_text = ""
+    if stage.input:
+        for _, sdata in doc.stage_data.items():
+            if isinstance(sdata, dict) and stage.input in sdata:
+                input_text = sdata[stage.input]
+                break
+
+    # Render Jinja2 prompt (clarify.txt has {% if clarification_responses %} block)
+    prompt_text = ""
+    if stage.prompt:
+        raw_template = Path(stage.prompt).read_text(encoding="utf-8")
+        existing = doc.stage_data.get(stage.name, {})
+        clarification_responses = existing.get("clarification_responses", [])
+        prompt_text = Template(raw_template).render(clarification_responses=clarification_responses)
+
+    raw_response = await generate_text(ollama_base_url, stage.model, prompt_text, input_text)
+
+    # Strip markdown fences and parse JSON
+    cleaned = re.sub(r"^```(?:json)?\s*", "", raw_response.strip())
+    cleaned = re.sub(r"\s*```$", "", cleaned)
+    parsed = json.loads(cleaned)
+
+    # Build new stage entry, preserving existing clarification_responses on re-run
+    existing = doc.stage_data.get(stage.name, {})
+    new_entry: dict = {}
+    if existing.get("clarification_responses"):
+        new_entry["clarification_responses"] = existing["clarification_responses"]
+
+    if stage.output and stage.output in parsed:
+        new_entry[stage.output] = parsed[stage.output]
+    if stage.outputs:
+        for o in stage.outputs:
+            field = o.get("field")
+            if field and field in parsed:
+                new_entry[field] = parsed[field]
+    if stage.clarifications and "clarification_requests" in parsed:
+        new_entry["clarification_requests"] = parsed["clarification_requests"]
+
+    stage_data = dict(doc.stage_data)
+    stage_data[stage.name] = new_entry
+    logger.info("LLM text '%s' for %s: keys=%s", stage.name, doc.id[:8], list(new_entry.keys()))
+    return stage_data
+
+
 async def _process_document(
     doc: Document,
     stage: StageDefinition,
@@ -110,6 +164,16 @@ async def _process_document(
         elif stage.type == "manual_review":
             await db.update(set_waiting(doc, now_str))
             # No event append here — worker just parks the doc; review service logs the event
+
+        elif stage.type == "llm_text":
+            stage_data = await _run_llm_text(doc, stage, ollama_base_url)
+            now_str = datetime.now(timezone.utc).isoformat()
+            updated = replace(doc, stage_data=stage_data)
+            next_stage = config.next_stage(stage.name)
+            updated = advance(updated, next_stage.name, now_str) if next_stage else set_done(updated, now_str)
+            await db.update(updated)
+            await db.append_event(doc.id, stage.name, "completed", now_str)
+            logger.info("Doc %s → %s", doc.id[:8], updated.current_stage)
 
     except Exception as exc:
         logger.error("Stage '%s' failed for %s: %s", stage.name, doc.id[:8], exc, exc_info=True)
