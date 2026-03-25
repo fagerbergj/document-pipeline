@@ -325,7 +325,18 @@ def _build_doc_view(doc, config) -> dict:
                 if isinstance(sd, dict) and stage_def.input in sd:
                     input_text = sd[stage_def.input]
                     break
-        output_text = sdata.get(stage_def.output, "") if stage_def.output else ""
+        if stage_def.output:
+            output_text = sdata.get(stage_def.output, "")
+        elif stage_def.outputs:
+            parts = []
+            for o in stage_def.outputs:
+                field = o.get("field", "")
+                val = sdata.get(field)
+                if val is not None:
+                    parts.append(f"{field}:\n{val if isinstance(val, str) else _json.dumps(val, indent=2)}")
+            output_text = "\n\n".join(parts)
+        else:
+            output_text = ""
         confidence = sdata.get("confidence", "")
         review = {
             "llm_stage": stage_def,
@@ -487,15 +498,14 @@ async def doc_approve(request: Request, doc_id: str):
         return HTMLResponse("<em>Not found</em>", status_code=404)
     form = await request.form()
     edited = form.get("edited_text", "").strip()
-    if edited:
-        stage_def = config.get_stage(doc.current_stage)
-        if stage_def and stage_def.output:
-            stage_data = dict(doc.stage_data)
-            entry = dict(stage_data.get(stage_def.name, {}))
-            entry[stage_def.output] = edited
-            stage_data[stage_def.name] = entry
-            doc = replace(doc, stage_data=stage_data)
-            await db.update(doc)
+    stage_def = config.get_stage(doc.current_stage)
+    if edited and stage_def and stage_def.output:
+        stage_data = dict(doc.stage_data)
+        entry = dict(stage_data.get(stage_def.name, {}))
+        entry[stage_def.output] = edited
+        stage_data[stage_def.name] = entry
+        doc = replace(doc, stage_data=stage_data)
+        await db.update(doc)
     await review_service.approve(doc, config, db, datetime.now(timezone.utc).isoformat())
     return _doc_redirect(doc_id)
 

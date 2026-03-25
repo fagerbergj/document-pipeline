@@ -137,9 +137,14 @@ textarea.panel-content{resize:vertical;}
         <pre class="panel-content">{{ review.input_text }}</pre>
       </div>
       <div>
+        {% if review.llm_stage.output %}
         <div class="panel-label">After ({{ review.llm_stage.output }}) — editable</div>
         <textarea name="edited_text" class="panel-content" id="after-text"
                   style="width:100%;font-family:monospace;font-size:.82rem;height:400px;">{{ review.output_text }}</textarea>
+        {% else %}
+        <div class="panel-label">After</div>
+        <pre class="panel-content" style="height:400px;">{{ review.output_text }}</pre>
+        {% endif %}
       </div>
     </div>
     <div id="rev-diff" class="review-panels" style="display:none">
