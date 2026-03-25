@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import logging
 
 import httpx
@@ -23,15 +24,25 @@ async def generate_vision(base_url: str, model: str, prompt: str, image_bytes: b
 
 async def generate_text(base_url: str, model: str, prompt: str, input_text: str) -> str:
     full_prompt = f"{prompt}\n\nInput:\n{input_text}"
-    async with httpx.AsyncClient(timeout=180.0) as client:
-        resp = await client.post(
+    chunks = []
+    # connect timeout 30s, read timeout 600s — tokens keep the read alive
+    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, read=600.0)) as client:
+        async with client.stream(
+            "POST",
             f"{base_url}/api/generate",
-            json={"model": model, "prompt": full_prompt, "stream": False},
-        )
-        if resp.is_error:
-            logger.error("Ollama error %s: %s", resp.status_code, resp.text[:200])
-        resp.raise_for_status()
-        return resp.json().get("response", "").strip()
+            json={"model": model, "prompt": full_prompt, "stream": True},
+        ) as resp:
+            if resp.is_error:
+                await resp.aread()
+                logger.error("Ollama error %s: %s", resp.status_code, resp.text[:200])
+            resp.raise_for_status()
+            async for line in resp.aiter_lines():
+                if line:
+                    data = json.loads(line)
+                    chunks.append(data.get("response", ""))
+                    if data.get("done"):
+                        break
+    return "".join(chunks).strip()
 
 
 async def unload_model(base_url: str, model: str):
