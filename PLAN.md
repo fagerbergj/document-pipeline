@@ -5,7 +5,7 @@ Each phase (except Phase 1) ships on its own branch and merges to `main` only af
 | Phase | Branch | Scope | Status |
 |---|---|---|---|
 | 1 | `main` | Docs, structure, config, prompts — no functional code | ✅ Done |
-| 2 | `phase/2-ocr` | Replace bridge: webhook + OCR + dashboard UI | 🔲 Pending |
+| 2 | `phase/2-ocr` | Replace bridge: webhook + OCR + dashboard UI | ✅ Done |
 | 3 | `phase/3-clarify` | Clarify stage + review UI + clarification Q&A loop | 🔲 Pending |
 | 4 | `phase/4-classify` | Classify stage + duplicate detection + delete | 🔲 Pending |
 | 5 | `phase/5-embed` | Qdrant + embed stage + Open WebUI via VECTOR_DB=qdrant | 🔲 Pending |
