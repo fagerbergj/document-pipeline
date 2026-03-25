@@ -98,7 +98,7 @@ export default function Dashboard() {
                     <tr key={doc.id}
                       onClick={() => navigate(`/documents/${doc.id}`)}
                       className="hover:bg-gray-50 transition-colors group cursor-pointer">
-                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                      <td className="px-4 py-3">
                         <InlineTitle
                           docId={doc.id}
                           title={doc.title}
@@ -146,7 +146,7 @@ function InlineTitle({ docId, title, onSaved }: {
     if (editing) inputRef.current?.select()
   }, [editing])
 
-  const startEdit = () => { setValue(title ?? ''); setEditing(true) }
+  const startEdit = (e: React.MouseEvent) => { e.stopPropagation(); setValue(title ?? ''); setEditing(true) }
 
   if (editing) {
     return (
