@@ -13,9 +13,37 @@ from core.domain.pipeline import PipelineConfig, StageDefinition
 logger = logging.getLogger(__name__)
 
 # Stage types implemented in this phase. Worker silently skips others.
-_HANDLED_TYPES = {"computer_vision", "manual_review", "llm_text"}
+_HANDLED_TYPES = {"computer_vision", "llm_text", "embed"}
 
 _GENERIC_FILENAMES = {"remarkable", "untitled", "image", "attachment", "document"}
+
+_CONFIDENCE_LEVELS = {"low": 0, "medium": 1, "high": 2}
+
+
+def _check_start_if(doc: Document, stage: StageDefinition) -> bool:
+    """Return False if start conditions are not yet met (should park as waiting)."""
+    rules = stage.start_if or {}
+    # backward compat: require_context maps to start_if.context_provided
+    if stage.require_context or rules.get("context_provided"):
+        if not doc.stage_data.get("_ingest", {}).get("document_context"):
+            return False
+    return True
+
+
+def _check_continue_if(stage_data: dict, stage: StageDefinition) -> bool:
+    """Return True if the LLM output satisfies a continue rule (auto-advance without review)."""
+    rules = stage.continue_if
+    if not rules:
+        return True  # no rules → always auto-advance
+    sdata = stage_data.get(stage.name, {})
+    for rule in rules:
+        if "confidence" in rule:
+            required = _CONFIDENCE_LEVELS.get(rule["confidence"], 2)
+            actual = _CONFIDENCE_LEVELS.get(sdata.get("confidence", "low"), 0)
+            if actual >= required:
+                return True
+        # user_approves: true means this rule can never be auto-satisfied
+    return False
 
 
 def _sanitize(name: str) -> str:
@@ -85,13 +113,13 @@ async def _run_ocr(
 
 
 async def _run_llm_text(
-    doc: Document, stage: StageDefinition, ollama_base_url: str
+    doc: Document, stage: StageDefinition, ollama_base_url: str, db=None
 ) -> dict:
     """Returns updated stage_data dict."""
     import json
     import re
     from jinja2 import Template
-    from adapters.outbound.ollama import generate_text
+    from adapters.outbound.ollama import generate_text, GenerationCancelled as _GC  # noqa: F401
 
     # Find input value — search all stage_data dicts for stage.input field
     input_text = ""
@@ -106,30 +134,48 @@ async def _run_llm_text(
     if stage.prompt:
         raw_template = Path(stage.prompt).read_text(encoding="utf-8")
         existing = doc.stage_data.get(stage.name, {})
-        clarification_responses = existing.get("clarification_responses", [])
         context_path = Path("prompts/user_context.txt")
         context = ""
         if context_path.exists():
             raw = context_path.read_text(encoding="utf-8")
-            # Strip comment lines
             context = "\n".join(l for l in raw.splitlines() if not l.startswith("#")).strip()
+        document_context = doc.stage_data.get("_ingest", {}).get("document_context", "")
+        qa_history = existing.get("qa_history", [])
+        free_prompt = existing.get("free_prompt", "")
         prompt_text = Template(raw_template).render(
-            clarification_responses=clarification_responses,
+            qa_history=qa_history,
             context=context,
+            document_context=document_context,
+            free_prompt=free_prompt,
         )
 
-    raw_response = await generate_text(ollama_base_url, stage.model, prompt_text, input_text)
+    async def _is_stopped():
+        if db is None:
+            return False
+        current = await db.get(doc.id)
+        return current is not None and current.stage_state != "running"
+
+    from adapters.outbound import streams as _streams
+    _q = _streams.get_queue(doc.id)
+
+    async def _on_chunk(chunk: str):
+        await _q.put({"type": "token", "text": chunk})
+
+    raw_response = await generate_text(ollama_base_url, stage.model, prompt_text, input_text,
+                                        is_stopped=_is_stopped, on_chunk=_on_chunk)
 
     # Strip markdown fences and parse JSON
     cleaned = re.sub(r"^```(?:json)?\s*", "", raw_response.strip())
     cleaned = re.sub(r"\s*```$", "", cleaned)
     parsed = json.loads(cleaned)
 
-    # Build new stage entry, preserving existing clarification_responses on re-run
+    # Build new stage entry, preserving user inputs across re-runs
     existing = doc.stage_data.get(stage.name, {})
     new_entry: dict = {}
-    if existing.get("clarification_responses"):
-        new_entry["clarification_responses"] = existing["clarification_responses"]
+    if existing.get("qa_history"):
+        new_entry["qa_history"] = existing["qa_history"]
+    if existing.get("free_prompt"):
+        new_entry["free_prompt"] = existing["free_prompt"]
 
     if stage.output and stage.output in parsed:
         new_entry[stage.output] = parsed[stage.output]
@@ -138,13 +184,82 @@ async def _run_llm_text(
             field = o.get("field")
             if field and field in parsed:
                 new_entry[field] = parsed[field]
-    if stage.clarifications and "clarification_requests" in parsed:
+    if "clarification_requests" in parsed:
         new_entry["clarification_requests"] = parsed["clarification_requests"]
 
     stage_data = dict(doc.stage_data)
     stage_data[stage.name] = new_entry
     logger.info("LLM text '%s' for %s: keys=%s", stage.name, doc.id[:8], list(new_entry.keys()))
     return stage_data
+
+
+async def _run_embed(doc: Document, stage: StageDefinition, ollama_base_url: str, db) -> None:
+    from adapters.outbound.ollama import generate_embed
+    from adapters.outbound import qdrant as _qdrant
+    from adapters.outbound import open_webui as _open_webui
+
+    input_text = ""
+    if stage.input:
+        for _, sd in doc.stage_data.items():
+            if isinstance(sd, dict) and stage.input in sd:
+                input_text = sd[stage.input]
+                break
+
+    if not input_text:
+        raise ValueError(f"Embed stage '{stage.name}': no text found for input '{stage.input}'")
+
+    # Collect metadata
+    all_data: dict = {}
+    for sd in doc.stage_data.values():
+        if isinstance(sd, dict):
+            all_data.update(sd)
+    metadata: dict = {}
+    for field in (stage.metadata_fields or []):
+        if field in all_data:
+            metadata[field] = all_data[field]
+    if doc.title:
+        metadata["title"] = doc.title
+    if doc.date_month:
+        metadata["date_month"] = doc.date_month
+
+    now_str = datetime.now(timezone.utc).isoformat()
+
+    for dest in (stage.destinations or []):
+        dtype = dest.get("type")
+
+        if dtype == "qdrant":
+            vector = await generate_embed(ollama_base_url, stage.model, input_text)
+            payload = {"doc_id": doc.id, "text": input_text, **metadata}
+            await _qdrant.upsert(
+                dest.get("url", ""), dest.get("collection", "remarkable"),
+                doc.id, vector, payload, dest.get("api_key") or None,
+            )
+            await db.append_event(doc.id, stage.name, "synced", now_str, {"destination": "qdrant"})
+            logger.info("Embedded %s into qdrant/%s", doc.id[:8], dest.get("collection"))
+
+        elif dtype == "open_webui":
+            await _open_webui.upsert(
+                base_url=dest.get("url", ""),
+                api_key=dest.get("api_key", ""),
+                knowledge_id=dest.get("knowledge_id", ""),
+                doc_id=doc.id,
+                title=doc.title or doc.id,
+                text=input_text,
+                metadata=metadata,
+            )
+            await db.append_event(doc.id, stage.name, "synced", now_str, {"destination": "open_webui"})
+
+        else:
+            logger.warning("Unknown embed destination type '%s' for doc %s", dtype, doc.id[:8])
+
+
+async def _was_stopped(doc_id: str, db) -> bool:
+    """Return True if the document was externally stopped while the worker was running."""
+    current = await db.get(doc_id)
+    if current and current.stage_state != "running":
+        logger.info("Doc %s was stopped externally — discarding result", doc_id[:8])
+        return True
+    return False
 
 
 async def _process_document(
@@ -162,6 +277,8 @@ async def _process_document(
     try:
         if stage.type == "computer_vision":
             stage_data, title, png_path = await _run_ocr(doc, stage, filesystem, ollama_base_url)
+            if await _was_stopped(doc.id, db):
+                return
             now_str = datetime.now(timezone.utc).isoformat()
             updated = replace(doc, stage_data=stage_data, title=title, png_path=png_path)
             next_stage = config.next_stage(stage.name)
@@ -170,21 +287,47 @@ async def _process_document(
             await db.append_event(doc.id, stage.name, "completed", now_str)
             logger.info("Doc %s → %s", doc.id[:8], updated.current_stage)
 
-        elif stage.type == "manual_review":
-            await db.update(set_waiting(doc, now_str))
-            # No event append here — worker just parks the doc; review service logs the event
-
         elif stage.type == "llm_text":
-            stage_data = await _run_llm_text(doc, stage, ollama_base_url)
+            if not _check_start_if(doc, stage):
+                await db.update(set_waiting(doc, now_str))
+                return
+            stage_data = await _run_llm_text(doc, stage, ollama_base_url, db=db)
+            from adapters.outbound import streams as _streams
+            if await _was_stopped(doc.id, db):
+                await _streams.put_done(doc.id)
+                return
             now_str = datetime.now(timezone.utc).isoformat()
+            if not _check_continue_if(stage_data, stage):
+                # Park for human review at current stage
+                updated = replace(doc, stage_data=stage_data, stage_state="waiting", updated_at=now_str)
+                await db.update(updated)
+                await db.append_event(doc.id, stage.name, "awaiting_review", now_str)
+                await _streams.put_done(doc.id)
+                return
             updated = replace(doc, stage_data=stage_data)
             next_stage = config.next_stage(stage.name)
             updated = advance(updated, next_stage.name, now_str) if next_stage else set_done(updated, now_str)
             await db.update(updated)
             await db.append_event(doc.id, stage.name, "completed", now_str)
+            await _streams.put_done(doc.id)
+            logger.info("Doc %s → %s", doc.id[:8], updated.current_stage)
+
+        elif stage.type == "embed":
+            await _run_embed(doc, stage, ollama_base_url, db)
+            now_str = datetime.now(timezone.utc).isoformat()
+            next_stage = config.next_stage(stage.name)
+            updated = advance(doc, next_stage.name, now_str) if next_stage else set_done(doc, now_str)
+            await db.update(updated)
+            await db.append_event(doc.id, stage.name, "completed", now_str)
             logger.info("Doc %s → %s", doc.id[:8], updated.current_stage)
 
     except Exception as exc:
+        from adapters.outbound.ollama import GenerationCancelled
+        from adapters.outbound import streams as _streams
+        await _streams.put_done(doc.id)
+        if isinstance(exc, GenerationCancelled):
+            logger.info("Doc %s stream cancelled mid-flight (stopped externally)", doc.id[:8])
+            return  # doc state already set to error by the stop endpoint
         logger.error("Stage '%s' failed for %s: %s", stage.name, doc.id[:8], exc, exc_info=True)
         now_str = datetime.now(timezone.utc).isoformat()
         await db.append_event(doc.id, stage.name, "failed", now_str, {"error": str(exc)})

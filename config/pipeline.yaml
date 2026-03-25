@@ -15,10 +15,10 @@ stages:
     prompt: prompts/clarify.txt
     input: ocr_raw
     output: clarified_text
-    clarifications: true
-
-  - name: review_clarify
-    type: manual_review
+    start_if:
+      context_provided: true
+    continue_if:
+      - confidence: high
 
   - name: classify
     type: llm_text
@@ -30,9 +30,10 @@ stages:
         type: json_array
       - field: summary
         type: text
-
-  - name: review_classify
-    type: manual_review
+    start_if:
+      context_provided: true
+    continue_if:
+      - confidence: high
 
   - name: embed
     type: embed
@@ -44,3 +45,7 @@ stages:
         url: ${QDRANT_URL}
         collection: ${QDRANT_COLLECTION}
         api_key: ${QDRANT_API_KEY}
+      - type: open_webui
+        url: ${OPEN_WEBUI_URL}
+        api_key: ${OPEN_WEBUI_API_KEY}
+        knowledge_id: ${OPEN_WEBUI_KNOWLEDGE_ID}

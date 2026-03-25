@@ -1,0 +1,246 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+.doc-section{background:#fff;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.1);padding:1rem;margin-bottom:1rem;}
+.doc-section h2{font-size:.95rem;font-weight:700;color:#495057;margin:0 0 .75rem;text-transform:uppercase;letter-spacing:.04em;}
+.field-label{font-size:.75rem;font-weight:600;color:#6c757d;text-transform:uppercase;letter-spacing:.04em;margin-bottom:.25rem;}
+.field-content{background:#f8f9fa;border:1px solid #dee2e6;border-radius:4px;padding:.6rem;font-family:monospace;font-size:.82rem;white-space:pre-wrap;max-height:400px;overflow-y:auto;margin:0 0 .75rem;}
+.doc-actions{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;}
+.btn{padding:.35rem .9rem;border-radius:4px;border:none;cursor:pointer;font-size:.9rem;font-weight:600;}
+.btn-approve{background:#d4edda;color:#155724;}
+.btn-reject{background:#f8d7da;color:#721c24;}
+.btn-clarify{background:#fff3cd;color:#856404;}
+.review-panels{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:.75rem;}
+.panel-label{font-size:.8rem;font-weight:600;color:#6c757d;margin-bottom:.3rem;}
+.panel-content{background:#f8f9fa;border:1px solid #dee2e6;border-radius:4px;padding:.6rem;font-family:monospace;font-size:.82rem;white-space:pre-wrap;margin:0;}
+pre.panel-content,div.panel-content,textarea.panel-content{max-height:400px;overflow-y:auto;}
+textarea.panel-content{resize:vertical;}
+.review-tabs{display:flex;gap:.25rem;margin-bottom:.6rem;}
+.review-tab{padding:.2rem .7rem;border-radius:4px;border:1px solid #dee2e6;background:#f8f9fa;color:#495057;cursor:pointer;font-size:.85rem;}
+.review-tab.active{background:#495057;color:#fff;border-color:#495057;}
+.diff-view .diff-add{background:#d4edda;color:#155724;white-space:pre-wrap;}
+.diff-view .diff-del{background:#f8d7da;color:#721c24;white-space:pre-wrap;}
+.diff-view .diff-eq{white-space:pre-wrap;}
+.ctx-required{border:2px solid #dc3545 !important;background:#fff8f8 !important;}
+</style>
+
+<div style="margin-bottom:.75rem;">
+  <a href="/" style="color:#6c757d;text-decoration:none;font-size:.9rem;">← Dashboard</a>
+</div>
+
+<!-- Header -->
+<div class="doc-section" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:.75rem;">
+  <div>
+    <div style="display:flex;align-items:baseline;gap:.75rem;flex-wrap:wrap;margin-bottom:.3rem;">
+      <h1 style="margin:0;font-size:1.4rem;">{{ doc.title or "(untitled)" }}</h1>
+      <code style="font-size:.9rem;">{{ doc.current_stage }}</code>
+      <span class="badge badge-{{ doc.stage_state }}">{{ doc.stage_state }}</span>
+    </div>
+    <div style="color:#6c757d;font-size:.82rem;">Received {{ doc.created_at[:19].replace("T"," ") }}</div>
+  </div>
+  <div class="doc-actions">
+    {% if doc.stage_state == 'running' %}
+    <form method="post" action="/documents/{{ doc.id }}/stop">
+      <button class="btn" style="background:#fff3cd;color:#856404;border:1px solid #856404;">Stop</button>
+    </form>
+    {% elif doc.stage_state == 'error' %}
+    <form method="post" action="/documents/{{ doc.id }}/retry">
+      <button class="btn" style="background:#f8d7da;color:#721c24;border:1px solid #721c24;">Retry</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Title edit -->
+<div class="doc-section">
+  <h2>Title</h2>
+  <form method="post" action="/documents/{{ doc.id }}/title" style="display:flex;gap:.5rem;">
+    <input type="text" name="title" value="{{ doc.title or '' }}"
+           style="flex:1;padding:.3rem .5rem;border:1px solid #ced4da;border-radius:4px;font-size:.9rem;">
+    <button type="submit" class="btn" style="border:1px solid #6c757d;background:#e9ecef;color:#495057;">Save</button>
+  </form>
+</div>
+
+<!-- Document context -->
+<div class="doc-section" {% if context_required %}style="border:2px solid #dc3545;"{% endif %}>
+  <h2 style="{% if context_required %}color:#dc3545;{% endif %}">
+    Document context{% if context_required %} <span style="font-size:.8rem;font-weight:400;">— required to continue</span>{% endif %}
+  </h2>
+  <form method="post" action="/documents/{{ doc.id }}/context">
+    <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.4rem;">
+      <select id="ctx-lib"
+              style="padding:.3rem .5rem;border:1px solid #ced4da;border-radius:4px;font-size:.85rem;"
+              hx-get="/api/context-library"
+              hx-trigger="click once"
+              hx-target="#ctx-lib"
+              hx-swap="innerHTML"
+              onchange="document.getElementById('ctx-text').value = this.value">
+        <option value="">— load saved —</option>
+      </select>
+    </div>
+    <textarea id="ctx-text" name="document_context" rows="4"
+              class="{% if context_required %}ctx-required{% endif %}"
+              style="width:100%;padding:.4rem .5rem;border:1px solid #ced4da;border-radius:4px;font-size:.88rem;font-family:monospace;resize:vertical;margin-bottom:.4rem;"
+              placeholder="Describe this document — used by clarify, classify, and other stages that require context…">{{ document_context }}</textarea>
+    <div style="display:flex;gap:.5rem;">
+      <button type="submit" class="btn" style="border:1px solid #6c757d;background:#e9ecef;color:#495057;">Save context</button>
+      {% if context_required %}
+      <button type="submit" formaction="/documents/{{ doc.id }}/set-context"
+              class="btn btn-approve">Save &amp; run now</button>
+      {% endif %}
+    </div>
+  </form>
+</div>
+
+<!-- Stage results -->
+{% for sd in stage_displays %}
+<div class="doc-section">
+  <h2>{{ sd.name }}</h2>
+  {% for field, value in sd.fields.items() %}
+  <div class="field-label">{{ field }}</div>
+  <pre class="field-content">{{ value }}</pre>
+  {% endfor %}
+</div>
+{% endfor %}
+
+<!-- Live LLM log (shown while running) -->
+{% if doc.stage_state == 'running' %}
+<div class="doc-section" id="llm-log-section">
+  <h2>Live output — <span id="llm-stage-label">{{ doc.current_stage }}</span>
+    <span style="font-size:.8rem;font-weight:400;color:#6c757d;margin-left:.5rem;" id="llm-status">connecting…</span>
+  </h2>
+  <pre id="llm-log" style="background:#1e1e1e;color:#d4d4d4;border-radius:4px;padding:.75rem;font-size:.8rem;min-height:80px;max-height:500px;overflow-y:auto;white-space:pre-wrap;margin:0;"></pre>
+</div>
+{% endif %}
+
+<!-- Review section (waiting + has LLM output) -->
+{% if review %}
+<div class="doc-section">
+  <h2>Review — {{ review.llm_stage.name }}
+    {% if review.confidence %}
+    <span class="badge badge-{% if review.confidence == 'high' %}done{% elif review.confidence == 'medium' %}waiting{% else %}error{% endif %}"
+          style="font-size:.75rem;font-weight:600;margin-left:.5rem;">{{ review.confidence }} confidence</span>
+    {% endif %}
+    {% if review.qa_rounds %}
+    <span style="font-size:.78rem;color:#6c757d;font-weight:400;margin-left:.5rem;">{{ review.qa_rounds }} Q&amp;A round{% if review.qa_rounds != 1 %}s{% endif %}</span>
+    {% endif %}
+  </h2>
+
+  {% if review.llm_stage.output %}
+  <!-- Single-output stage: show side-by-side editable comparison -->
+  <div class="review-tabs">
+    <button class="review-tab active" onclick="showRevTab(this,'rev-side')">Side by side</button>
+    <button class="review-tab" onclick="showRevTab(this,'rev-diff')">Diff</button>
+  </div>
+  <form method="post" action="/documents/{{ doc.id }}/approve">
+    <div id="rev-side" class="review-panels">
+      <div>
+        <div class="panel-label">Before ({{ review.llm_stage.input }})</div>
+        <pre class="panel-content">{{ review.input_text }}</pre>
+      </div>
+      <div>
+        <div class="panel-label">After ({{ review.llm_stage.output }}) — editable</div>
+        <textarea name="edited_text" class="panel-content" id="after-text"
+                  style="width:100%;font-family:monospace;font-size:.82rem;height:400px;">{{ review.output_text }}</textarea>
+      </div>
+    </div>
+    <div id="rev-diff" class="review-panels" style="display:none">
+      <div style="grid-column:1/-1">
+        <div class="panel-label">Diff</div>
+        <div class="panel-content diff-view">{{ review.diff_html | safe }}</div>
+      </div>
+    </div>
+    <div class="doc-actions">
+      <button type="submit" class="btn btn-approve">Approve</button>
+      <button type="submit" formaction="/documents/{{ doc.id }}/reject" class="btn btn-reject">Reject</button>
+    </div>
+  </form>
+  {% else %}
+  <!-- Multi-output stage: results already shown above, just approve/reject -->
+  <form method="post" action="/documents/{{ doc.id }}/approve">
+    <div class="doc-actions">
+      <button type="submit" class="btn btn-approve">Approve</button>
+      <button type="submit" formaction="/documents/{{ doc.id }}/reject" class="btn btn-reject">Reject</button>
+    </div>
+  </form>
+  {% endif %}
+
+  <form method="post" action="/documents/{{ doc.id }}/clarify"
+        style="margin-top:.75rem;border-top:1px solid #dee2e6;padding-top:.75rem;">
+    {% if review.clarification_requests %}
+    <div style="border:1px solid #dee2e6;border-radius:4px;padding:.75rem;margin-bottom:.5rem;">
+      <strong style="font-size:.85rem;">Clarifications needed:</strong>
+      {% for req in review.clarification_requests %}
+      <div style="margin:.5rem 0 .75rem;">
+        <div><code>{{ req.segment }}</code> — {{ req.question }}</div>
+        <input type="text" name="answer_{{ loop.index0 }}" placeholder="Your answer…"
+               style="width:100%;padding:.3rem .5rem;border:1px solid #ced4da;border-radius:4px;font-size:.88rem;margin-top:.25rem;">
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    <div style="margin-bottom:.5rem;">
+      <label style="display:block;font-size:.82rem;color:#6c757d;margin-bottom:.25rem;">Additional instructions (optional)</label>
+      <textarea name="free_prompt" rows="3"
+                style="width:100%;padding:.4rem .5rem;border:1px solid #ced4da;border-radius:4px;font-size:.85rem;font-family:monospace;resize:vertical;"
+                placeholder="e.g. 'focus on the meeting action items, not the discussion'…"></textarea>
+    </div>
+    <input type="hidden" name="document_context" id="clarify-ctx">
+    <button type="submit" class="btn btn-clarify"
+            onclick="document.getElementById('clarify-ctx').value=document.getElementById('ctx-text').value">
+      Re-run with instructions
+    </button>
+  </form>
+</div>
+{% endif %}
+
+<!-- Replay -->
+{% if replay_stages %}
+<div class="doc-section">
+  <h2>Replay from stage</h2>
+  <div class="doc-actions">
+    {% for stage in replay_stages %}
+    <form method="post" action="/documents/{{ doc.id }}/replay/{{ stage.name }}">
+      <button type="submit" class="btn"
+              style="border:1px solid #6c757d;background:#e9ecef;color:#495057;font-size:.85rem;"
+              onclick="return confirm('Replay from {{ stage.name }}? This will clear downstream stage data.')">{{ stage.name }}</button>
+    </form>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<script>
+function showRevTab(btn, panelId) {
+  ['rev-side','rev-diff'].forEach(function(id){document.getElementById(id).style.display='none';});
+  document.querySelectorAll('.review-tab').forEach(function(b){b.classList.remove('active');});
+  document.getElementById(panelId).style.display='';
+  btn.classList.add('active');
+}
+
+// Live token stream + state-change watcher
+(function() {
+  var logEl = document.getElementById('llm-log');
+  var statusEl = document.getElementById('llm-status');
+  var docId = '{{ doc.id }}';
+  var es = new EventSource('/api/documents/' + docId + '/stream');
+  es.addEventListener('token', function(e) {
+    if (!logEl) return;
+    var data = JSON.parse(e.data);
+    logEl.textContent += data.text;
+    logEl.scrollTop = logEl.scrollHeight;
+    if (statusEl) statusEl.textContent = 'streaming…';
+  });
+  es.addEventListener('done', function() {
+    es.close();
+    if (statusEl) statusEl.textContent = 'done — reloading…';
+    setTimeout(function(){ window.location.reload(); }, 800);
+  });
+  es.onerror = function() {
+    es.close();
+    if (statusEl) statusEl.textContent = 'stream ended';
+    setTimeout(function(){ window.location.reload(); }, 2000);
+  };
+})();
+</script>
+{% endblock %}

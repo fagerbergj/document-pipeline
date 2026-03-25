@@ -130,6 +130,15 @@ class Database:
             row = await cur.fetchone()
             return self._row_to_doc(row) if row else None
 
+    async def reset_running(self) -> int:
+        """On startup, reset any docs stuck in 'running' back to 'pending'."""
+        async with self._conn.execute(
+            "UPDATE documents SET stage_state='pending' WHERE stage_state='running'"
+        ) as cur:
+            count = cur.rowcount
+        await self._conn.commit()
+        return count
+
     async def get_pending(self, stage_name: str) -> list[Document]:
         async with self._conn.execute(
             "SELECT * FROM documents WHERE current_stage=? AND stage_state='pending' ORDER BY created_at ASC",
@@ -145,10 +154,28 @@ class Database:
         ) as cur:
             return [self._row_to_doc(r) for r in await cur.fetchall()]
 
-    async def list_documents(self) -> list[Document]:
-        async with self._conn.execute(
-            "SELECT * FROM documents WHERE current_stage != 'deleted' ORDER BY created_at DESC"
-        ) as cur:
+    async def list_documents(
+        self,
+        stage: Optional[str] = None,
+        state: Optional[str] = None,
+        sort: str = "created_desc",
+    ) -> list[Document]:
+        conditions = ["current_stage != 'deleted'"]
+        params: list = []
+        if stage:
+            conditions.append("current_stage = ?")
+            params.append(stage)
+        if state:
+            conditions.append("stage_state = ?")
+            params.append(state)
+        order = {
+            "created_desc": "created_at DESC",
+            "created_asc": "created_at ASC",
+            "title_asc": "LOWER(COALESCE(title,'')) ASC",
+            "title_desc": "LOWER(COALESCE(title,'')) DESC",
+        }.get(sort, "created_at DESC")
+        sql = f"SELECT * FROM documents WHERE {' AND '.join(conditions)} ORDER BY {order}"
+        async with self._conn.execute(sql, params) as cur:
             return [self._row_to_doc(r) for r in await cur.fetchall()]
 
     async def append_event(
