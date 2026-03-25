@@ -1,0 +1,46 @@
+max_concurrent: 1
+
+stages:
+  - name: ocr
+    type: computer_vision
+    model: ${OCR_MODEL}
+    prompt: prompts/ocr.txt
+    outputs:
+      - field: ocr_raw
+        type: text
+
+  - name: clarify
+    type: llm_text
+    model: ${CLARIFY_MODEL}
+    prompt: prompts/clarify.txt
+    input: ocr_raw
+    output: clarified_text
+    clarifications: true
+
+  - name: review_clarify
+    type: manual_review
+
+  - name: classify
+    type: llm_text
+    model: ${CLASSIFY_MODEL}
+    prompt: prompts/classify.txt
+    input: clarified_text
+    outputs:
+      - field: tags
+        type: json_array
+      - field: summary
+        type: text
+
+  - name: review_classify
+    type: manual_review
+
+  - name: embed
+    type: embed
+    model: ${EMBED_MODEL}
+    input: clarified_text
+    metadata_fields: [title, tags, summary, date_month]
+    destinations:
+      - type: qdrant
+        url: ${QDRANT_URL}
+        collection: ${QDRANT_COLLECTION}
+        api_key: ${QDRANT_API_KEY}

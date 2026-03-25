@@ -1,0 +1,16 @@
+services:
+  pipeline:
+    build: .
+    container_name: remarkable-bridge
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - OCR_MODEL=${OCR_MODEL:-glm-ocr}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - VAULT_PATH=/vault
+    volumes:
+      - ./data:/data
+      - /mnt/personal01/remarkable:/vault
+    restart: unless-stopped
