@@ -125,11 +125,13 @@ textarea.panel-content{resize:vertical;}
     <span style="font-size:.78rem;color:#6c757d;font-weight:400;margin-left:.5rem;">{{ review.qa_rounds }} Q&amp;A round{% if review.qa_rounds != 1 %}s{% endif %}</span>
     {% endif %}
   </h2>
+
+  {% if review.llm_stage.output %}
+  <!-- Single-output stage: show side-by-side editable comparison -->
   <div class="review-tabs">
     <button class="review-tab active" onclick="showRevTab(this,'rev-side')">Side by side</button>
     <button class="review-tab" onclick="showRevTab(this,'rev-diff')">Diff</button>
   </div>
-
   <form method="post" action="/documents/{{ doc.id }}/approve">
     <div id="rev-side" class="review-panels">
       <div>
@@ -137,14 +139,9 @@ textarea.panel-content{resize:vertical;}
         <pre class="panel-content">{{ review.input_text }}</pre>
       </div>
       <div>
-        {% if review.llm_stage.output %}
         <div class="panel-label">After ({{ review.llm_stage.output }}) — editable</div>
         <textarea name="edited_text" class="panel-content" id="after-text"
                   style="width:100%;font-family:monospace;font-size:.82rem;height:400px;">{{ review.output_text }}</textarea>
-        {% else %}
-        <div class="panel-label">After</div>
-        <pre class="panel-content" style="height:400px;">{{ review.output_text }}</pre>
-        {% endif %}
       </div>
     </div>
     <div id="rev-diff" class="review-panels" style="display:none">
@@ -158,11 +155,19 @@ textarea.panel-content{resize:vertical;}
       <button type="submit" formaction="/documents/{{ doc.id }}/reject" class="btn btn-reject">Reject</button>
     </div>
   </form>
+  {% else %}
+  <!-- Multi-output stage: results already shown above, just approve/reject -->
+  <form method="post" action="/documents/{{ doc.id }}/approve">
+    <div class="doc-actions">
+      <button type="submit" class="btn btn-approve">Approve</button>
+      <button type="submit" formaction="/documents/{{ doc.id }}/reject" class="btn btn-reject">Reject</button>
+    </div>
+  </form>
+  {% endif %}
 
-  {% if review.llm_stage.clarifications %}
+  {% if review.clarification_requests %}
   <form method="post" action="/documents/{{ doc.id }}/clarify"
         style="margin-top:.75rem;border-top:1px solid #dee2e6;padding-top:.75rem;">
-    {% if review.clarification_requests %}
     <div style="border:1px solid #dee2e6;border-radius:4px;padding:.75rem;margin-bottom:.5rem;">
       <strong style="font-size:.85rem;">Clarifications needed:</strong>
       {% for req in review.clarification_requests %}
@@ -173,7 +178,6 @@ textarea.panel-content{resize:vertical;}
       </div>
       {% endfor %}
     </div>
-    {% endif %}
     <div style="margin-bottom:.5rem;">
       <label style="display:block;font-size:.82rem;color:#6c757d;margin-bottom:.25rem;">Additional instructions (optional)</label>
       <textarea name="free_prompt" rows="3"
@@ -183,7 +187,7 @@ textarea.panel-content{resize:vertical;}
     <input type="hidden" name="document_context" id="clarify-ctx">
     <button type="submit" class="btn btn-clarify"
             onclick="document.getElementById('clarify-ctx').value=document.getElementById('ctx-text').value">
-      Re-run clarifier
+      Re-run with clarifications
     </button>
   </form>
   {% endif %}
