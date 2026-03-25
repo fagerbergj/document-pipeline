@@ -1,11 +1,30 @@
 from __future__ import annotations
 
+import json
 import logging
 from typing import Optional
 
 import httpx
 
 logger = logging.getLogger(__name__)
+
+
+def _build_markdown(title: str, text: str, metadata: Optional[dict]) -> str:
+    """Render the document as markdown with YAML frontmatter."""
+    meta = metadata or {}
+    lines = ["---"]
+    lines.append(f"title: {json.dumps(title)}")
+    for key, value in meta.items():
+        if isinstance(value, list):
+            lines.append(f"{key}: {json.dumps(value)}")
+        elif value is not None:
+            lines.append(f"{key}: {json.dumps(str(value))}")
+    lines.append("---")
+    lines.append("")
+    lines.append(f"# {title}")
+    lines.append("")
+    lines.append(text)
+    return "\n".join(lines)
 
 
 async def upsert(
@@ -17,25 +36,27 @@ async def upsert(
     text: str,
     metadata: Optional[dict] = None,
 ):
-    """Upload text as a file to Open WebUI and add it to a knowledge base.
+    """Upload document as markdown with frontmatter to Open WebUI and add to a knowledge base.
 
     If a file with the same doc_id already exists (tracked via filename), it is
     deleted first so the knowledge base stays up-to-date on re-runs.
     """
     headers = {"Authorization": f"Bearer {api_key}"}
-    filename = f"{doc_id}.txt"
+    filename = f"{doc_id}.md"
+    content = _build_markdown(title, text, metadata)
 
     async with httpx.AsyncClient(timeout=60.0, base_url=base_url) as client:
-        # Delete existing file for this doc if present
-        existing = await _find_file(client, headers, filename)
-        if existing:
-            await _delete_file(client, headers, knowledge_id, existing["id"])
+        # Delete existing file for this doc if present (check both .md and legacy .txt)
+        for name in (filename, f"{doc_id}.txt"):
+            existing = await _find_file(client, headers, name)
+            if existing:
+                await _delete_file(client, headers, knowledge_id, existing["id"])
 
-        # Upload the text file
+        # Upload the markdown file
         file_resp = await client.post(
             "/api/v1/files/",
             headers=headers,
-            files={"file": (filename, text.encode(), "text/plain")},
+            files={"file": (filename, content.encode(), "text/markdown")},
             data={"metadata": "{}"},
         )
         if file_resp.is_error:
@@ -63,11 +84,11 @@ async def delete(
     doc_id: str,
 ):
     headers = {"Authorization": f"Bearer {api_key}"}
-    filename = f"{doc_id}.txt"
     async with httpx.AsyncClient(timeout=30.0, base_url=base_url) as client:
-        existing = await _find_file(client, headers, filename)
-        if existing:
-            await _delete_file(client, headers, knowledge_id, existing["id"])
+        for filename in (f"{doc_id}.md", f"{doc_id}.txt"):
+            existing = await _find_file(client, headers, filename)
+            if existing:
+                await _delete_file(client, headers, knowledge_id, existing["id"])
 
 
 async def _find_file(client: httpx.AsyncClient, headers: dict, filename: str) -> Optional[dict]:
