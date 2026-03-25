@@ -13,7 +13,7 @@ from core.domain.pipeline import PipelineConfig, StageDefinition
 logger = logging.getLogger(__name__)
 
 # Stage types implemented in this phase. Worker silently skips others.
-_HANDLED_TYPES = {"computer_vision", "llm_text"}
+_HANDLED_TYPES = {"computer_vision", "llm_text", "embed"}
 
 _GENERIC_FILENAMES = {"remarkable", "untitled", "image", "attachment", "document"}
 
@@ -193,6 +193,44 @@ async def _run_llm_text(
     return stage_data
 
 
+async def _run_embed(doc: Document, stage: StageDefinition, ollama_base_url: str, qdrant_url: str, qdrant_collection: str, qdrant_api_key: str, db) -> None:
+    from adapters.outbound.ollama import generate_embed
+    from adapters.outbound import qdrant as _qdrant
+
+    input_text = ""
+    if stage.input:
+        for _, sd in doc.stage_data.items():
+            if isinstance(sd, dict) and stage.input in sd:
+                input_text = sd[stage.input]
+                break
+
+    if not input_text:
+        raise ValueError(f"Embed stage '{stage.name}': no text found for input '{stage.input}'")
+
+    vector = await generate_embed(ollama_base_url, stage.model, input_text)
+
+    # Collect metadata fields
+    all_data: dict = {}
+    for sd in doc.stage_data.values():
+        if isinstance(sd, dict):
+            all_data.update(sd)
+
+    payload: dict = {"doc_id": doc.id, "text": input_text}
+    for field in (stage.metadata_fields or []):
+        if field in all_data:
+            payload[field] = all_data[field]
+    if doc.title:
+        payload["title"] = doc.title
+    if doc.date_month:
+        payload["date_month"] = doc.date_month
+
+    await _qdrant.upsert(qdrant_url, qdrant_collection, doc.id, vector, payload, qdrant_api_key or None)
+
+    now_str = datetime.now(timezone.utc).isoformat()
+    await db.append_event(doc.id, stage.name, "synced", now_str, {"destination": "qdrant"})
+    logger.info("Embedded %s into qdrant/%s", doc.id[:8], qdrant_collection)
+
+
 async def _was_stopped(doc_id: str, db) -> bool:
     """Return True if the document was externally stopped while the worker was running."""
     current = await db.get(doc_id)
@@ -209,6 +247,9 @@ async def _process_document(
     filesystem,
     ollama_base_url: str,
     config: PipelineConfig,
+    qdrant_url: str = "",
+    qdrant_collection: str = "",
+    qdrant_api_key: str = "",
 ):
     now_str = datetime.now(timezone.utc).isoformat()
     await db.update(set_running(doc, now_str))
@@ -252,6 +293,15 @@ async def _process_document(
             await _streams.put_done(doc.id)
             logger.info("Doc %s → %s", doc.id[:8], updated.current_stage)
 
+        elif stage.type == "embed":
+            await _run_embed(doc, stage, ollama_base_url, qdrant_url, qdrant_collection, qdrant_api_key, db)
+            now_str = datetime.now(timezone.utc).isoformat()
+            next_stage = config.next_stage(stage.name)
+            updated = advance(doc, next_stage.name, now_str) if next_stage else set_done(doc, now_str)
+            await db.update(updated)
+            await db.append_event(doc.id, stage.name, "completed", now_str)
+            logger.info("Doc %s → %s", doc.id[:8], updated.current_stage)
+
     except Exception as exc:
         from adapters.outbound.ollama import GenerationCancelled
         from adapters.outbound import streams as _streams
@@ -274,7 +324,15 @@ async def _process_document(
             await db.update(set_error(doc, now_str))
 
 
-async def run_worker(config: PipelineConfig, db, vault_path: str, ollama_base_url: str):
+async def run_worker(
+    config: PipelineConfig,
+    db,
+    vault_path: str,
+    ollama_base_url: str,
+    qdrant_url: str = "",
+    qdrant_collection: str = "",
+    qdrant_api_key: str = "",
+):
     from adapters.outbound import filesystem
     from adapters.outbound.ollama import unload_model
 
@@ -296,7 +354,8 @@ async def run_worker(config: PipelineConfig, db, vault_path: str, ollama_base_ur
                 logger.info("Stage '%s': processing %d doc(s)", stage.name, len(docs))
                 for doc in docs:
                     async with sem:
-                        await _process_document(doc, stage, db, filesystem, ollama_base_url, config)
+                        await _process_document(doc, stage, db, filesystem, ollama_base_url, config,
+                                                qdrant_url, qdrant_collection, qdrant_api_key)
 
                 if stage.model:
                     await unload_model(ollama_base_url, stage.model)

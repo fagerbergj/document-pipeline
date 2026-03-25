@@ -69,6 +69,23 @@ async def generate_text(
     return "".join(chunks).strip()
 
 
+async def generate_embed(base_url: str, model: str, text: str) -> list[float]:
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        resp = await client.post(
+            f"{base_url}/api/embed",
+            json={"model": model, "input": text},
+        )
+        if resp.is_error:
+            logger.error("Ollama embed error %s: %s", resp.status_code, resp.text[:200])
+        resp.raise_for_status()
+        data = resp.json()
+        # /api/embed returns {"embeddings": [[...]]}
+        embeddings = data.get("embeddings") or data.get("embedding")
+        if isinstance(embeddings[0], list):
+            return embeddings[0]
+        return embeddings
+
+
 async def unload_model(base_url: str, model: str):
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:

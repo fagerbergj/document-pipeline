@@ -22,6 +22,9 @@ async def lifespan(app: FastAPI):
     db_path = os.environ.get("DB_PATH", "/data/pipeline.db")
     vault_path = os.environ.get("VAULT_PATH", "/vault")
     ollama_base_url = os.environ.get("OLLAMA_BASE_URL", "http://ollama:11434")
+    qdrant_url = os.environ.get("QDRANT_URL", "")
+    qdrant_collection = os.environ.get("QDRANT_COLLECTION", "remarkable")
+    qdrant_api_key = os.environ.get("QDRANT_API_KEY", "")
 
     db = Database(db_path)
     await db.init()
@@ -39,7 +42,7 @@ async def lifespan(app: FastAPI):
     app.state.ollama_base_url = ollama_base_url
 
     worker_task = asyncio.create_task(
-        run_worker(config, db, vault_path, ollama_base_url)
+        run_worker(config, db, vault_path, ollama_base_url, qdrant_url, qdrant_collection, qdrant_api_key)
     )
 
     yield
