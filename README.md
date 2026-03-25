@@ -59,10 +59,10 @@ In production the service is deployed via `home-server/notes/docker-compose.yml`
 ```
 document-pipeline/
 ├── core/           Domain logic — state machine, pipeline config, services
-├── adapters/       I/O adapters — inbound (webhook, UI) and outbound (Ollama, SQLite, Qdrant)
+├── adapters/       I/O adapters — inbound (webhook, API) and outbound (Ollama, SQLite, Qdrant)
 ├── config/         pipeline.yaml + documentation
 ├── store/          Database schema documentation
-├── ui/             Jinja2 templates (HTMX-powered, no build step)
+├── frontend/       React + Vite UI (TypeScript + Tailwind, built into frontend/dist/)
 ├── api/            API reference documentation
 └── prompts/        LLM prompt templates (plain text, edit without touching code)
 ```
@@ -97,9 +97,7 @@ Add an entry under `destinations` in the `embed` stage in `config/pipeline.yaml`
 
 ## Sub-documentation
 
-- [`PLAN.md`](PLAN.md) — delivery phases and current status
 - [`core/README.md`](core/README.md) — architecture, domain model, services
 - [`store/README.md`](store/README.md) — database schema
 - [`config/README.md`](config/README.md) — pipeline.yaml reference
-- [`ui/README.md`](ui/README.md) — UI guide
 - [`api/README.md`](api/README.md) — API reference

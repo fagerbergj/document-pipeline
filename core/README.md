@@ -7,9 +7,10 @@ Domain logic for the document pipeline. No external I/O — this package never i
 ```
 adapters/inbound/      →  core/services/  →  adapters/outbound/
   webhook.py                ingest.py           sqlite.py
-  ui.py                     worker.py           filesystem.py
+  api.py                    worker.py           filesystem.py
                             review.py           ollama.py
                                                 qdrant.py
+                                                open_webui.py
 ```
 
 Inbound adapters translate external requests into core service calls. Core services contain all business logic. Outbound adapters implement I/O. Core never knows about HTTP status codes, SQL syntax, or file paths — it reasons in terms of `Document` entities and service results.
@@ -155,7 +156,7 @@ After each batch, `POST /api/generate` with `keep_alive=0` to Ollama to free VRA
 
 ### `core/services/review.py`
 
-Called by `adapters/inbound/ui.py` for review UI actions.
+Called by `adapters/inbound/api.py` for review actions.
 
 **`approve(doc, config, db, now_str) → Document`**
 - Advance document to the next stage in pipeline order

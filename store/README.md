@@ -1,6 +1,6 @@
 # store/
 
-SQLite database schema. One database file, three tables.
+SQLite database schema. One database file, four tables.
 
 The database file lives at `/data/pipeline.db` inside the container (bind-mounted from the host).
 
@@ -35,21 +35,29 @@ CREATE INDEX idx_documents_hash ON documents(content_hash);
 
 ```json
 {
+  "_ingest": {
+    "document_context": "User-supplied context about this document"
+  },
   "ocr": {
     "ocr_raw": "The quick brown fox..."
   },
   "clarify": {
     "clarified_text": "The quick brown fox...",
+    "confidence": "high",
     "clarification_requests": [
       {"segment": "qu??k", "question": "Did you write 'quick' or 'quiet'?"}
     ],
-    "clarification_responses": [
-      {"segment": "qu??k", "answer": "quick"}
+    "qa_history": [
+      {
+        "responses": [{"segment": "qu??k", "answer": "quick"}],
+        "free_prompt": ""
+      }
     ]
   },
   "classify": {
     "tags": ["productivity", "notes"],
-    "summary": "A note about..."
+    "summary": "A note about...",
+    "confidence": "high"
   }
 }
 ```
@@ -82,9 +90,11 @@ CREATE INDEX idx_events_document ON stage_events(document_id, stage, event_type)
 | `completed` | Stage succeeded |
 | `failed` | Stage raised an exception (may retry) |
 | `reviewed` | User approved in review UI |
-| `rejected` | User rejected (resets to previous stage) |
-| `reprocess` | User triggered reprocess-from-stage |
-| `deleted` | User triggered delete |
+| `rejected` | User rejected (resets to current stage pending) |
+| `context_set` | User provided document context |
+| `replayed` | User triggered replay from a prior stage |
+| `stopped` | User manually stopped a running document |
+| `retried` | User manually retried an errored document |
 
 ---
 
@@ -101,6 +111,25 @@ CREATE TABLE document_destinations (
     PRIMARY KEY (document_id, destination_type)
 );
 ```
+
+---
+
+### `key_value`
+
+General-purpose persistent key-value store. Used to store the context library so it survives container rebuilds.
+
+```sql
+CREATE TABLE key_value (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+```
+
+**Current keys:**
+
+| Key | Value |
+|---|---|
+| `context_library` | JSON array of `{name, text}` objects |
 
 ---
 
