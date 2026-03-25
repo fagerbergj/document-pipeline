@@ -1,1 +1,14 @@
 <div class="ocr-detail">{{ ocr_text }}</div>
+{% if completed_stages %}
+<div style="margin-top:.6rem; display:flex; gap:.4rem; flex-wrap:wrap; align-items:center;">
+  <span style="font-size:.8rem; color:#6c757d;">Replay from:</span>
+  {% for stage in completed_stages %}
+  <button hx-post="/api/documents/{{ doc.id }}/replay/{{ stage.name }}"
+          hx-target="#dashboard-content"
+          hx-swap="innerHTML"
+          hx-confirm="Replay from '{{ stage.name }}'? This will clear all downstream stage data."
+          onclick="event.stopPropagation()"
+          style="padding:.15rem .5rem;font-size:.78rem;border-radius:4px;border:1px solid #6c757d;background:#e9ecef;color:#495057;cursor:pointer">{{ stage.name }}</button>
+  {% endfor %}
+</div>
+{% endif %}

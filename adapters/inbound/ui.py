@@ -74,13 +74,46 @@ async def documents_table(request: Request):
 async def document_ocr(request: Request, doc_id: str):
     """Returns the OCR text snippet for inline expansion."""
     db = request.app.state.db
+    config = request.app.state.pipeline
     doc = await db.get(doc_id)
     if doc is None:
         return HTMLResponse("<em>Not found</em>", status_code=404)
     ocr_text = (doc.stage_data.get("ocr") or {}).get("ocr_raw", "(no OCR text yet)")
+    # Stages that have been run (have data in stage_data, excluding _ingest)
+    completed_stages = [s for s in config.stages if s.name in doc.stage_data]
     return templates.TemplateResponse(
         "partials/ocr_detail.html",
-        {"request": request, "doc": doc, "ocr_text": ocr_text},
+        {"request": request, "doc": doc, "ocr_text": ocr_text,
+         "completed_stages": completed_stages},
+    )
+
+
+@router.post("/api/documents/{doc_id}/replay/{stage_name}", response_class=HTMLResponse)
+async def document_replay(request: Request, doc_id: str, stage_name: str):
+    """Reset a document to replay from the given stage, clearing downstream stage_data."""
+    db = request.app.state.db
+    config = request.app.state.pipeline
+    doc = await db.get(doc_id)
+    if doc is None:
+        return HTMLResponse("<em>Not found</em>", status_code=404)
+    if config.get_stage(stage_name) is None:
+        return HTMLResponse("<em>Unknown stage</em>", status_code=400)
+
+    # Find stage index and clear data for this stage and everything after
+    stage_names = [s.name for s in config.stages]
+    replay_idx = stage_names.index(stage_name)
+    stage_data = {k: v for k, v in doc.stage_data.items()
+                  if k == "_ingest" or k not in stage_names[replay_idx:]}
+
+    now_str = datetime.now(timezone.utc).isoformat()
+    updated = replace(doc, current_stage=stage_name, stage_state="pending",
+                      stage_data=stage_data, updated_at=now_str)
+    await db.update(updated)
+    await db.append_event(doc_id, stage_name, "replayed", now_str)
+    docs = await db.list_documents()
+    return templates.TemplateResponse(
+        "partials/document_table.html",
+        {"request": request, "docs": docs, "state_order": _STATE_ORDER},
     )
 
 
