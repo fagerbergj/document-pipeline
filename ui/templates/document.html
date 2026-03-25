@@ -113,10 +113,18 @@ textarea.panel-content{resize:vertical;}
 </div>
 {% endif %}
 
-<!-- Review section (waiting + not needs_context) -->
-{% if review and not review.needs_context %}
+<!-- Review section (waiting + has LLM output) -->
+{% if review %}
 <div class="doc-section">
-  <h2>Review — {{ review.llm_stage.name }}</h2>
+  <h2>Review — {{ review.llm_stage.name }}
+    {% if review.confidence %}
+    <span class="badge badge-{% if review.confidence == 'high' %}done{% elif review.confidence == 'medium' %}waiting{% else %}error{% endif %}"
+          style="font-size:.75rem;font-weight:600;margin-left:.5rem;">{{ review.confidence }} confidence</span>
+    {% endif %}
+    {% if review.qa_rounds %}
+    <span style="font-size:.78rem;color:#6c757d;font-weight:400;margin-left:.5rem;">{{ review.qa_rounds }} Q&amp;A round{% if review.qa_rounds != 1 %}s{% endif %}</span>
+    {% endif %}
+  </h2>
   <div class="review-tabs">
     <button class="review-tab active" onclick="showRevTab(this,'rev-side')">Side by side</button>
     <button class="review-tab" onclick="showRevTab(this,'rev-diff')">Diff</button>

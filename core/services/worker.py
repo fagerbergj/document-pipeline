@@ -13,9 +13,37 @@ from core.domain.pipeline import PipelineConfig, StageDefinition
 logger = logging.getLogger(__name__)
 
 # Stage types implemented in this phase. Worker silently skips others.
-_HANDLED_TYPES = {"computer_vision", "manual_review", "llm_text"}
+_HANDLED_TYPES = {"computer_vision", "llm_text"}
 
 _GENERIC_FILENAMES = {"remarkable", "untitled", "image", "attachment", "document"}
+
+_CONFIDENCE_LEVELS = {"low": 0, "medium": 1, "high": 2}
+
+
+def _check_start_if(doc: Document, stage: StageDefinition) -> bool:
+    """Return False if start conditions are not yet met (should park as waiting)."""
+    rules = stage.start_if or {}
+    # backward compat: require_context maps to start_if.context_provided
+    if stage.require_context or rules.get("context_provided"):
+        if not doc.stage_data.get("_ingest", {}).get("document_context"):
+            return False
+    return True
+
+
+def _check_continue_if(stage_data: dict, stage: StageDefinition) -> bool:
+    """Return True if the LLM output satisfies a continue rule (auto-advance without review)."""
+    rules = stage.continue_if
+    if not rules:
+        return True  # no rules → always auto-advance
+    sdata = stage_data.get(stage.name, {})
+    for rule in rules:
+        if "confidence" in rule:
+            required = _CONFIDENCE_LEVELS.get(rule["confidence"], 2)
+            actual = _CONFIDENCE_LEVELS.get(sdata.get("confidence", "low"), 0)
+            if actual >= required:
+                return True
+        # user_approves: true means this rule can never be auto-satisfied
+    return False
 
 
 def _sanitize(name: str) -> str:
@@ -106,17 +134,16 @@ async def _run_llm_text(
     if stage.prompt:
         raw_template = Path(stage.prompt).read_text(encoding="utf-8")
         existing = doc.stage_data.get(stage.name, {})
-        clarification_responses = existing.get("clarification_responses", [])
         context_path = Path("prompts/user_context.txt")
         context = ""
         if context_path.exists():
             raw = context_path.read_text(encoding="utf-8")
-            # Strip comment lines
             context = "\n".join(l for l in raw.splitlines() if not l.startswith("#")).strip()
         document_context = doc.stage_data.get("_ingest", {}).get("document_context", "")
+        qa_history = existing.get("qa_history", [])
         free_prompt = existing.get("free_prompt", "")
         prompt_text = Template(raw_template).render(
-            clarification_responses=clarification_responses,
+            qa_history=qa_history,
             context=context,
             document_context=document_context,
             free_prompt=free_prompt,
@@ -145,8 +172,8 @@ async def _run_llm_text(
     # Build new stage entry, preserving user inputs across re-runs
     existing = doc.stage_data.get(stage.name, {})
     new_entry: dict = {}
-    if existing.get("clarification_responses"):
-        new_entry["clarification_responses"] = existing["clarification_responses"]
+    if existing.get("qa_history"):
+        new_entry["qa_history"] = existing["qa_history"]
     if existing.get("free_prompt"):
         new_entry["free_prompt"] = existing["free_prompt"]
 
@@ -200,20 +227,23 @@ async def _process_document(
             await db.append_event(doc.id, stage.name, "completed", now_str)
             logger.info("Doc %s → %s", doc.id[:8], updated.current_stage)
 
-        elif stage.type == "manual_review":
-            await db.update(set_waiting(doc, now_str))
-            # No event append here — worker just parks the doc; review service logs the event
-
         elif stage.type == "llm_text":
-            if stage.require_context and not doc.stage_data.get("_ingest", {}).get("document_context"):
+            if not _check_start_if(doc, stage):
                 await db.update(set_waiting(doc, now_str))
-                return  # park until context is provided; review service will reset to pending
+                return
             stage_data = await _run_llm_text(doc, stage, ollama_base_url, db=db)
             from adapters.outbound import streams as _streams
             if await _was_stopped(doc.id, db):
                 await _streams.put_done(doc.id)
                 return
             now_str = datetime.now(timezone.utc).isoformat()
+            if not _check_continue_if(stage_data, stage):
+                # Park for human review at current stage
+                updated = replace(doc, stage_data=stage_data, stage_state="waiting", updated_at=now_str)
+                await db.update(updated)
+                await db.append_event(doc.id, stage.name, "awaiting_review", now_str)
+                await _streams.put_done(doc.id)
+                return
             updated = replace(doc, stage_data=stage_data)
             next_stage = config.next_stage(stage.name)
             updated = advance(updated, next_stage.name, now_str) if next_stage else set_done(updated, now_str)

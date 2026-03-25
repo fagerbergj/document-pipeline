@@ -16,10 +16,10 @@ stages:
     input: ocr_raw
     output: clarified_text
     clarifications: true
-    require_context: true
-
-  - name: review_clarify
-    type: manual_review
+    start_if:
+      context_provided: true
+    continue_if:
+      - confidence: high
 
   - name: classify
     type: llm_text
@@ -31,9 +31,8 @@ stages:
         type: json_array
       - field: summary
         type: text
-
-  - name: review_classify
-    type: manual_review
+    continue_if:
+      - confidence: high
 
   - name: embed
     type: embed
