@@ -14,16 +14,35 @@
 </style>
 <h1>Dashboard</h1>
 
-<div class="counts"
-     id="status-counts"
-     hx-get="/api/counts"
-     hx-trigger="every 10s"
-     hx-target="#status-counts"
-     hx-swap="innerHTML">
-  {% include "partials/status_counts.html" %}
+<div style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:.5rem;margin-bottom:.25rem;">
+  <div class="counts"
+       id="status-counts"
+       hx-get="/api/counts"
+       hx-trigger="every 10s"
+       hx-target="#status-counts"
+       hx-swap="innerHTML">
+    {% include "partials/status_counts.html" %}
+  </div>
+  <div style="font-size:.8rem;color:#adb5bd;padding-bottom:.6rem;">
+    Refreshing in <span id="refresh-countdown">10</span>s
+  </div>
 </div>
 
 <div id="dashboard-content">
   {% include "partials/document_table.html" %}
 </div>
+<script>
+var _cd = 10;
+var _cdEl = document.getElementById('refresh-countdown');
+setInterval(function() {
+  _cd--;
+  if (_cd <= 0) _cd = 10;
+  if (_cdEl) _cdEl.textContent = _cd;
+}, 1000);
+document.addEventListener('htmx:afterSettle', function(e) {
+  if (e.detail && e.detail.target && e.detail.target.id === 'status-counts') {
+    _cd = 10;
+  }
+});
+</script>
 {% endblock %}

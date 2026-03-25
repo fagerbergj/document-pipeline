@@ -32,6 +32,7 @@ async def generate_text(
     prompt: str,
     input_text: str,
     is_stopped=None,
+    on_chunk=None,
 ) -> str:
     """Stream a text generation from Ollama.
 
@@ -55,7 +56,10 @@ async def generate_text(
             async for line in resp.aiter_lines():
                 if line:
                     data = json.loads(line)
-                    chunks.append(data.get("response", ""))
+                    chunk = data.get("response", "")
+                    chunks.append(chunk)
+                    if on_chunk and chunk:
+                        await on_chunk(chunk)
                     if data.get("done"):
                         break
                     if is_stopped and len(chunks) % check_interval == 0:

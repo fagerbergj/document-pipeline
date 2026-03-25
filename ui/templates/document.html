@@ -13,7 +13,8 @@
 .review-panels{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:.75rem;}
 .panel-label{font-size:.8rem;font-weight:600;color:#6c757d;margin-bottom:.3rem;}
 .panel-content{background:#f8f9fa;border:1px solid #dee2e6;border-radius:4px;padding:.6rem;font-family:monospace;font-size:.82rem;white-space:pre-wrap;margin:0;}
-pre.panel-content,div.panel-content{max-height:400px;overflow-y:auto;}
+pre.panel-content,div.panel-content,textarea.panel-content{max-height:400px;overflow-y:auto;}
+textarea.panel-content{resize:vertical;}
 .review-tabs{display:flex;gap:.25rem;margin-bottom:.6rem;}
 .review-tab{padding:.2rem .7rem;border-radius:4px;border:1px solid #dee2e6;background:#f8f9fa;color:#495057;cursor:pointer;font-size:.85rem;}
 .review-tab.active{background:#495057;color:#fff;border-color:#495057;}
@@ -102,6 +103,16 @@ pre.panel-content,div.panel-content{max-height:400px;overflow-y:auto;}
 </div>
 {% endfor %}
 
+<!-- Live LLM log (shown while running) -->
+{% if doc.stage_state == 'running' %}
+<div class="doc-section" id="llm-log-section">
+  <h2>Live output — <span id="llm-stage-label">{{ doc.current_stage }}</span>
+    <span style="font-size:.8rem;font-weight:400;color:#6c757d;margin-left:.5rem;" id="llm-status">connecting…</span>
+  </h2>
+  <pre id="llm-log" style="background:#1e1e1e;color:#d4d4d4;border-radius:4px;padding:.75rem;font-size:.8rem;min-height:80px;max-height:500px;overflow-y:auto;white-space:pre-wrap;margin:0;"></pre>
+</div>
+{% endif %}
+
 <!-- Review section (waiting + not needs_context) -->
 {% if review and not review.needs_context %}
 <div class="doc-section">
@@ -119,8 +130,8 @@ pre.panel-content,div.panel-content{max-height:400px;overflow-y:auto;}
       </div>
       <div>
         <div class="panel-label">After ({{ review.llm_stage.output }}) — editable</div>
-        <textarea name="edited_text" class="panel-content" rows="14"
-                  style="resize:vertical;width:100%;font-family:monospace;font-size:.82rem;">{{ review.output_text }}</textarea>
+        <textarea name="edited_text" class="panel-content" id="after-text"
+                  style="width:100%;font-family:monospace;font-size:.82rem;height:400px;">{{ review.output_text }}</textarea>
       </div>
     </div>
     <div id="rev-diff" class="review-panels" style="display:none">
@@ -189,5 +200,30 @@ function showRevTab(btn, panelId) {
   document.getElementById(panelId).style.display='';
   btn.classList.add('active');
 }
+
+// Live token stream
+(function() {
+  var logEl = document.getElementById('llm-log');
+  if (!logEl) return;
+  var statusEl = document.getElementById('llm-status');
+  var docId = '{{ doc.id }}';
+  var es = new EventSource('/api/documents/' + docId + '/stream');
+  es.addEventListener('token', function(e) {
+    var data = JSON.parse(e.data);
+    logEl.textContent += data.text;
+    logEl.scrollTop = logEl.scrollHeight;
+    statusEl.textContent = 'streaming…';
+  });
+  es.addEventListener('done', function() {
+    es.close();
+    statusEl.textContent = 'done — reloading…';
+    setTimeout(function(){ window.location.reload(); }, 800);
+  });
+  es.onerror = function() {
+    statusEl.textContent = 'stream ended';
+    es.close();
+    setTimeout(function(){ window.location.reload(); }, 2000);
+  };
+})();
 </script>
 {% endblock %}

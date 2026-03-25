@@ -7,8 +7,11 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
+import asyncio
+import json as _json
+
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
 from core.services import review as review_service
@@ -690,6 +693,42 @@ async def doc_clarify(request: Request, doc_id: str):
         free_prompt=free_prompt,
     )
     return _doc_redirect(doc_id)
+
+
+@router.get("/api/documents/{doc_id}/stream")
+async def doc_token_stream(request: Request, doc_id: str):
+    """SSE endpoint: streams LLM tokens while the document is running, then sends 'done'."""
+    from adapters.outbound import streams as _streams
+    db = request.app.state.db
+
+    async def generate():
+        q = _streams.get_queue(doc_id)
+        last_state_check = asyncio.get_event_loop().time()
+        while True:
+            if await request.is_disconnected():
+                break
+            try:
+                item = await asyncio.wait_for(q.get(), timeout=1.5)
+                if item is None:
+                    yield f"event: done\ndata: {{}}\n\n"
+                    break
+                yield f"event: token\ndata: {_json.dumps(item)}\n\n"
+            except asyncio.TimeoutError:
+                # Periodic fallback: if doc is no longer running, close stream
+                now = asyncio.get_event_loop().time()
+                if now - last_state_check > 4.0:
+                    last_state_check = now
+                    doc = await db.get(doc_id)
+                    if doc and doc.stage_state != "running":
+                        yield f"event: done\ndata: {{}}\n\n"
+                        break
+                yield ": ping\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/healthz")

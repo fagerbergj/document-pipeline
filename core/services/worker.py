@@ -128,8 +128,14 @@ async def _run_llm_text(
         current = await db.get(doc.id)
         return current is not None and current.stage_state != "running"
 
+    from adapters.outbound import streams as _streams
+    _q = _streams.get_queue(doc.id)
+
+    async def _on_chunk(chunk: str):
+        await _q.put({"type": "token", "text": chunk})
+
     raw_response = await generate_text(ollama_base_url, stage.model, prompt_text, input_text,
-                                        is_stopped=_is_stopped)
+                                        is_stopped=_is_stopped, on_chunk=_on_chunk)
 
     # Strip markdown fences and parse JSON
     cleaned = re.sub(r"^```(?:json)?\s*", "", raw_response.strip())
@@ -203,7 +209,9 @@ async def _process_document(
                 await db.update(set_waiting(doc, now_str))
                 return  # park until context is provided; review service will reset to pending
             stage_data = await _run_llm_text(doc, stage, ollama_base_url, db=db)
+            from adapters.outbound import streams as _streams
             if await _was_stopped(doc.id, db):
+                await _streams.put_done(doc.id)
                 return
             now_str = datetime.now(timezone.utc).isoformat()
             updated = replace(doc, stage_data=stage_data)
@@ -211,10 +219,13 @@ async def _process_document(
             updated = advance(updated, next_stage.name, now_str) if next_stage else set_done(updated, now_str)
             await db.update(updated)
             await db.append_event(doc.id, stage.name, "completed", now_str)
+            await _streams.put_done(doc.id)
             logger.info("Doc %s → %s", doc.id[:8], updated.current_stage)
 
     except Exception as exc:
         from adapters.outbound.ollama import GenerationCancelled
+        from adapters.outbound import streams as _streams
+        await _streams.put_done(doc.id)
         if isinstance(exc, GenerationCancelled):
             logger.info("Doc %s stream cancelled mid-flight (stopped externally)", doc.id[:8])
             return  # doc state already set to error by the stop endpoint
