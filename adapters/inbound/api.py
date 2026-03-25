@@ -180,13 +180,15 @@ async def get_counts(request: Request):
 @router.get("/documents")
 async def list_documents(
     request: Request,
-    stage: Optional[str] = Query(default=None),
-    state: Optional[str] = Query(default=None),
-    sort: str = Query(default="created_desc"),
+    stages: Optional[str] = Query(default=None),  # comma-separated
+    states: Optional[str] = Query(default=None),  # comma-separated
+    sort: str = Query(default="pipeline"),
 ):
     db = request.app.state.db
     config = request.app.state.pipeline
-    docs = await db.list_documents(stage=stage, state=state, sort=sort)
+    stage_list = [s.strip() for s in stages.split(",")] if stages else None
+    state_list = [s.strip() for s in states.split(",")] if states else None
+    docs = await db.list_documents(stages=stage_list, states=state_list, sort=sort)
     return [_doc_summary(doc, config) for doc in docs]
 
 

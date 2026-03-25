@@ -11,10 +11,10 @@ async function apiFetch(path: string, options?: RequestInit) {
 export const api = {
   stages: (): Promise<{ stages: string[] }> => apiFetch('/api/v1/pipeline/stages'),
   counts: (): Promise<Counts> => apiFetch('/api/v1/counts'),
-  documents: (params?: { stage?: string; state?: string; sort?: string }): Promise<DocumentSummary[]> => {
+  documents: (params?: { stages?: string; states?: string; sort?: string }): Promise<DocumentSummary[]> => {
     const q = new URLSearchParams()
-    if (params?.stage) q.set('stage', params.stage)
-    if (params?.state) q.set('state', params.state)
+    if (params?.stages) q.set('stages', params.stages)
+    if (params?.states) q.set('states', params.states)
     if (params?.sort) q.set('sort', params.sort)
     return apiFetch(`/api/v1/documents?${q}`)
   },

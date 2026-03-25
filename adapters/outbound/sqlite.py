@@ -166,22 +166,30 @@ class Database:
         self,
         stage: Optional[str] = None,
         state: Optional[str] = None,
-        sort: str = "created_desc",
+        stages: Optional[list] = None,
+        states: Optional[list] = None,
+        sort: str = "created_asc",
     ) -> list[Document]:
         conditions = ["current_stage != 'deleted'"]
         params: list = []
-        if stage:
-            conditions.append("current_stage = ?")
-            params.append(stage)
-        if state:
-            conditions.append("stage_state = ?")
-            params.append(state)
+        # multi-value takes precedence over single-value
+        active_stages = stages or ([stage] if stage else None)
+        active_states = states or ([state] if state else None)
+        if active_stages:
+            placeholders = ",".join("?" * len(active_stages))
+            conditions.append(f"current_stage IN ({placeholders})")
+            params.extend(active_stages)
+        if active_states:
+            placeholders = ",".join("?" * len(active_states))
+            conditions.append(f"stage_state IN ({placeholders})")
+            params.extend(active_states)
         order = {
+            "pipeline": "current_stage ASC, created_at ASC",
             "created_desc": "created_at DESC",
             "created_asc": "created_at ASC",
             "title_asc": "LOWER(COALESCE(title,'')) ASC",
             "title_desc": "LOWER(COALESCE(title,'')) DESC",
-        }.get(sort, "created_at DESC")
+        }.get(sort, "current_stage ASC, created_at ASC")
         sql = f"SELECT * FROM documents WHERE {' AND '.join(conditions)} ORDER BY {order}"
         async with self._conn.execute(sql, params) as cur:
             return [self._row_to_doc(r) for r in await cur.fetchall()]
