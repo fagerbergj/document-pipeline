@@ -100,6 +100,14 @@ def _build_review_items(docs: list, config) -> list[dict]:
     return items
 
 
+def _table_response(request, docs, config):
+    return templates.TemplateResponse(
+        "partials/document_table.html",
+        {"request": request, "docs": docs, "state_order": _STATE_ORDER,
+         "needs_context_ids": _needs_context_ids(docs, config)},
+    )
+
+
 def _needs_context_ids(docs: list, config) -> set:
     """Return set of doc IDs that are blocked waiting for document context."""
     out = set()
@@ -187,34 +195,28 @@ async def document_replay(request: Request, doc_id: str, stage_name: str):
                       stage_data=stage_data, updated_at=now_str)
     await db.update(updated)
     await db.append_event(doc_id, stage_name, "replayed", now_str)
-    docs = await db.list_documents()
-    return templates.TemplateResponse(
-        "partials/document_table.html",
-        {"request": request, "docs": docs, "state_order": _STATE_ORDER},
-    )
+    return _table_response(request, await db.list_documents(), config)
 
 
 @router.post("/api/documents/{doc_id}/stop", response_class=HTMLResponse)
 async def document_stop(request: Request, doc_id: str):
     """Stop a running document by setting it to error state."""
     db = request.app.state.db
+    config = request.app.state.pipeline
     doc = await db.get(doc_id)
     if doc is None:
         return HTMLResponse("<em>Not found</em>", status_code=404)
     now_str = datetime.now(timezone.utc).isoformat()
     await db.update(replace(doc, stage_state="error", updated_at=now_str))
     await db.append_event(doc_id, doc.current_stage, "stopped", now_str)
-    docs = await db.list_documents()
-    return templates.TemplateResponse(
-        "partials/document_table.html",
-        {"request": request, "docs": docs, "state_order": _STATE_ORDER},
-    )
+    return _table_response(request, await db.list_documents(), config)
 
 
 @router.post("/api/documents/{doc_id}/title", response_class=HTMLResponse)
 async def document_set_title(request: Request, doc_id: str):
     """Update the document title."""
     db = request.app.state.db
+    config = request.app.state.pipeline
     doc = await db.get(doc_id)
     if doc is None:
         return HTMLResponse("<em>Not found</em>", status_code=404)
@@ -224,17 +226,14 @@ async def document_set_title(request: Request, doc_id: str):
         return HTMLResponse("<em>Title required</em>", status_code=400)
     now_str = datetime.now(timezone.utc).isoformat()
     await db.update(replace(doc, title=new_title, updated_at=now_str))
-    docs = await db.list_documents()
-    return templates.TemplateResponse(
-        "partials/document_table.html",
-        {"request": request, "docs": docs, "state_order": _STATE_ORDER},
-    )
+    return _table_response(request, await db.list_documents(), config)
 
 
 @router.post("/api/documents/{doc_id}/retry", response_class=HTMLResponse)
 async def document_retry(request: Request, doc_id: str):
     """Reset an errored document back to pending on its current stage."""
     db = request.app.state.db
+    config = request.app.state.pipeline
     doc = await db.get(doc_id)
     if doc is None:
         return HTMLResponse("<em>Not found</em>", status_code=404)
@@ -242,11 +241,7 @@ async def document_retry(request: Request, doc_id: str):
     updated = replace(doc, stage_state="pending", updated_at=now_str)
     await db.update(updated)
     await db.append_event(doc_id, doc.current_stage, "retried", now_str)
-    docs = await db.list_documents()
-    return templates.TemplateResponse(
-        "partials/document_table.html",
-        {"request": request, "docs": docs, "state_order": _STATE_ORDER},
-    )
+    return _table_response(request, await db.list_documents(), config)
 
 
 @router.get("/review", response_class=HTMLResponse)

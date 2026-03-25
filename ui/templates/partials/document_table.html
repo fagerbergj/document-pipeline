@@ -6,6 +6,7 @@
       <th>Stage</th>
       <th>State</th>
       <th>Received</th>
+      <th style="width:2.5rem;"></th>
     </tr>
   </thead>
   <tbody>
@@ -20,25 +21,48 @@
       </td>
       <td><code>{{ doc.current_stage }}</code></td>
       <td><span class="badge badge-{{ doc.stage_state }}">{{ doc.stage_state }}</span></td>
-      <td>
-        {{ doc.created_at[:19].replace("T", " ") }}
-        {% if doc.stage_state == 'running' %}
-        <form method="post" action="/documents/{{ doc.id }}/stop" style="display:inline"
-              onclick="event.stopPropagation()">
-          <button style="margin-left:.5rem;padding:.15rem .5rem;font-size:.78rem;border-radius:4px;border:1px solid #856404;background:#fff3cd;color:#856404;cursor:pointer">Stop</button>
-        </form>
-        {% endif %}
-        {% if doc.stage_state == 'error' %}
-        <form method="post" action="/documents/{{ doc.id }}/retry" style="display:inline"
-              onclick="event.stopPropagation()">
-          <button style="margin-left:.5rem;padding:.15rem .5rem;font-size:.78rem;border-radius:4px;border:1px solid #721c24;background:#f8d7da;color:#721c24;cursor:pointer">Retry</button>
-        </form>
-        {% endif %}
+      <td style="color:#6c757d;font-size:.88rem;">{{ doc.created_at[:19].replace("T", " ") }}</td>
+      <td onclick="event.stopPropagation()">
+        <div class="kebab-wrap" id="kb-{{ doc.id }}">
+          <button class="kebab-btn" onclick="toggleKebab('{{ doc.id }}')" title="Actions">⋯</button>
+          <div class="kebab-menu" id="km-{{ doc.id }}">
+            <a href="/documents/{{ doc.id }}">Open</a>
+            <hr class="kebab-sep">
+            {% if doc.stage_state == 'running' %}
+            <button hx-post="/api/documents/{{ doc.id }}/stop"
+                    hx-target="#doc-table-wrap" hx-swap="outerHTML"
+                    class="danger">Stop</button>
+            {% endif %}
+            {% if doc.stage_state == 'error' %}
+            <button hx-post="/api/documents/{{ doc.id }}/retry"
+                    hx-target="#doc-table-wrap" hx-swap="outerHTML">Retry</button>
+            {% endif %}
+            {% if doc.stage_data %}
+            <button hx-post="/api/documents/{{ doc.id }}/replay/{{ doc.current_stage }}"
+                    hx-target="#doc-table-wrap" hx-swap="outerHTML"
+                    hx-confirm="Replay from '{{ doc.current_stage }}'?">Replay current stage</button>
+            {% endif %}
+          </div>
+        </div>
       </td>
     </tr>
     {% else %}
-    <tr><td colspan="4" style="text-align:center; color:#6c757d; padding:2rem;">No documents yet.</td></tr>
+    <tr><td colspan="5" style="text-align:center; color:#6c757d; padding:2rem;">No documents yet.</td></tr>
     {% endfor %}
   </tbody>
 </table>
 </div>
+
+<script>
+function toggleKebab(id) {
+  var menu = document.getElementById('km-' + id);
+  var isOpen = menu.classList.contains('open');
+  document.querySelectorAll('.kebab-menu.open').forEach(function(m){ m.classList.remove('open'); });
+  if (!isOpen) menu.classList.add('open');
+}
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.kebab-wrap')) {
+    document.querySelectorAll('.kebab-menu.open').forEach(function(m){ m.classList.remove('open'); });
+  }
+});
+</script>
