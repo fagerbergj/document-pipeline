@@ -29,6 +29,7 @@ Rules:
 - Expand abbreviations, shorthand, and terse notes into full sentences where you understand the intent. Mark every expansion with [added: …].
 - Where context makes the meaning clear, fill in implied information and mark it [added: …].
 - Improve readability: fix punctuation, capitalisation, and structure where it helps.
+- Output as Markdown: use headings, bullet lists, bold, etc. where they reflect the note's natural structure. Do not force structure that isn't there.
 - Do NOT rephrase or reorder content. Preserve the author's structure.
 - Do NOT invent specific facts (names, numbers, dates) not clearly implied.
 - Ask clarifying questions for: illegible characters, ambiguous abbreviations, or phrases with meaningfully different interpretations. Be proactive.
