@@ -10,37 +10,30 @@
   </thead>
   <tbody>
     {% for doc in docs %}
-    <tr
-      hx-get="/api/documents/{{ doc.id }}/ocr"
-      hx-target="#detail-{{ doc.id }}"
-      hx-swap="innerHTML"
-      hx-trigger="click"
-      onclick="toggleDetail('{{ doc.id }}')"
-    >
-      <td>{{ doc.title or "(untitled)" }}</td>
+    <tr onclick="window.location='/documents/{{ doc.id }}'" style="cursor:pointer;">
+      <td>
+        <a href="/documents/{{ doc.id }}" onclick="event.stopPropagation()"
+           style="color:inherit;text-decoration:none;font-weight:500;">{{ doc.title or "(untitled)" }}</a>
+        {% if doc.id in needs_context_ids %}
+        <span title="Context required" style="margin-left:.4rem;color:#dc3545;font-size:.75rem;font-weight:600;">⚠ needs context</span>
+        {% endif %}
+      </td>
       <td><code>{{ doc.current_stage }}</code></td>
       <td><span class="badge badge-{{ doc.stage_state }}">{{ doc.stage_state }}</span></td>
       <td>
         {{ doc.created_at[:19].replace("T", " ") }}
         {% if doc.stage_state == 'running' %}
-        <button hx-post="/api/documents/{{ doc.id }}/stop"
-                hx-target="#dashboard-content"
-                hx-swap="innerHTML"
-                onclick="event.stopPropagation()"
-                style="margin-left:.5rem;padding:.15rem .5rem;font-size:.78rem;border-radius:4px;border:1px solid #856404;background:#fff3cd;color:#856404;cursor:pointer">Stop</button>
+        <form method="post" action="/documents/{{ doc.id }}/stop" style="display:inline"
+              onclick="event.stopPropagation()">
+          <button style="margin-left:.5rem;padding:.15rem .5rem;font-size:.78rem;border-radius:4px;border:1px solid #856404;background:#fff3cd;color:#856404;cursor:pointer">Stop</button>
+        </form>
         {% endif %}
         {% if doc.stage_state == 'error' %}
-        <button hx-post="/api/documents/{{ doc.id }}/retry"
-                hx-target="#dashboard-content"
-                hx-swap="innerHTML"
-                onclick="event.stopPropagation()"
-                style="margin-left:.5rem;padding:.15rem .5rem;font-size:.78rem;border-radius:4px;border:1px solid #721c24;background:#f8d7da;color:#721c24;cursor:pointer">Retry</button>
+        <form method="post" action="/documents/{{ doc.id }}/retry" style="display:inline"
+              onclick="event.stopPropagation()">
+          <button style="margin-left:.5rem;padding:.15rem .5rem;font-size:.78rem;border-radius:4px;border:1px solid #721c24;background:#f8d7da;color:#721c24;cursor:pointer">Retry</button>
+        </form>
         {% endif %}
-      </td>
-    </tr>
-    <tr class="detail-row" id="row-detail-{{ doc.id }}" style="display:none">
-      <td colspan="4">
-        <div id="detail-{{ doc.id }}">Loading…</div>
       </td>
     </tr>
     {% else %}
@@ -49,10 +42,3 @@
   </tbody>
 </table>
 </div>
-
-<script>
-function toggleDetail(id) {
-  const row = document.getElementById('row-detail-' + id);
-  row.style.display = row.style.display === 'none' ? '' : 'none';
-}
-</script>

@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from core.services import review as review_service
@@ -100,14 +100,30 @@ def _build_review_items(docs: list, config) -> list[dict]:
     return items
 
 
+def _needs_context_ids(docs: list, config) -> set:
+    """Return set of doc IDs that are blocked waiting for document context."""
+    out = set()
+    for doc in docs:
+        stage_def = config.get_stage(doc.current_stage)
+        if (
+            stage_def
+            and stage_def.require_context
+            and not doc.stage_data.get("_ingest", {}).get("document_context")
+        ):
+            out.add(doc.id)
+    return out
+
+
 @router.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
     db = request.app.state.db
+    config = request.app.state.pipeline
     docs = await db.list_documents()
     counts = await db.status_counts()
     return templates.TemplateResponse(
         "dashboard.html",
-        {"request": request, "docs": docs, "counts": counts, "state_order": _STATE_ORDER},
+        {"request": request, "docs": docs, "counts": counts, "state_order": _STATE_ORDER,
+         "needs_context_ids": _needs_context_ids(docs, config)},
     )
 
 
@@ -123,10 +139,13 @@ async def status_counts(request: Request):
 @router.get("/api/documents", response_class=HTMLResponse)
 async def documents_table(request: Request):
     """HTMX target: refreshes the document table body."""
-    docs = await request.app.state.db.list_documents()
+    db = request.app.state.db
+    config = request.app.state.pipeline
+    docs = await db.list_documents()
     return templates.TemplateResponse(
         "partials/document_table.html",
-        {"request": request, "docs": docs, "state_order": _STATE_ORDER},
+        {"request": request, "docs": docs, "state_order": _STATE_ORDER,
+         "needs_context_ids": _needs_context_ids(docs, config)},
     )
 
 
@@ -431,6 +450,251 @@ async def context_library_delete(request: Request):
         "partials/context_library_manage.html",
         {"request": request, "entries": _load_context_library()},
     )
+
+
+def _doc_redirect(doc_id: str):
+    return RedirectResponse(f"/documents/{doc_id}", status_code=303)
+
+
+def _build_doc_view(doc, config) -> dict:
+    stage_def = config.get_stage(doc.current_stage)
+    document_context = doc.stage_data.get("_ingest", {}).get("document_context", "")
+
+    # context_required: doc is parked waiting for context before it can run
+    context_required = (
+        doc.stage_state in ("waiting", "pending")
+        and stage_def is not None
+        and stage_def.require_context
+        and not document_context
+    )
+
+    review = None
+    if doc.stage_state == "waiting" and not (stage_def and stage_def.require_context):
+        prev = config.prev_stage(doc.current_stage)
+        if prev:
+            llm_data = doc.stage_data.get(prev.name, {})
+            input_text = ""
+            if prev.input:
+                for _, sdata in doc.stage_data.items():
+                    if isinstance(sdata, dict) and prev.input in sdata:
+                        input_text = sdata[prev.input]
+                        break
+            output_text = llm_data.get(prev.output, "") if prev.output else ""
+            review = {
+                "needs_context": False,
+                "llm_stage": prev,
+                "input_text": input_text,
+                "output_text": output_text,
+                "diff_html": _diff_html(input_text, output_text),
+                "clarification_requests": llm_data.get("clarification_requests", []),
+            }
+
+    stage_displays = []
+    for s in config.stages:
+        if s.type == "manual_review":
+            continue
+        sdata = doc.stage_data.get(s.name)
+        if not sdata:
+            continue
+        fields = {}
+        if s.output and s.output in sdata:
+            fields[s.output] = sdata[s.output]
+        if s.outputs:
+            for o in s.outputs:
+                field = o.get("field")
+                if field and field in sdata:
+                    fields[field] = sdata[field]
+        if not fields and s.type == "computer_vision" and "ocr_raw" in sdata:
+            fields["ocr_raw"] = sdata["ocr_raw"]
+        if fields:
+            stage_displays.append({"name": s.name, "type": s.type, "fields": fields})
+
+    replay_stages = [s for s in config.stages if s.name in doc.stage_data]
+
+    return {
+        "document_context": document_context,
+        "context_required": context_required,
+        "stage_displays": stage_displays,
+        "replay_stages": replay_stages,
+        "review": review,
+    }
+
+
+@router.get("/documents/{doc_id}", response_class=HTMLResponse)
+async def document_page(request: Request, doc_id: str):
+    db = request.app.state.db
+    config = request.app.state.pipeline
+    doc = await db.get(doc_id)
+    if doc is None:
+        return HTMLResponse("<em>Not found</em>", status_code=404)
+    return templates.TemplateResponse(
+        "document.html",
+        {"request": request, "doc": doc, **_build_doc_view(doc, config)},
+    )
+
+
+@router.post("/documents/{doc_id}/title")
+async def doc_set_title(request: Request, doc_id: str):
+    db = request.app.state.db
+    doc = await db.get(doc_id)
+    if doc is None:
+        return HTMLResponse("<em>Not found</em>", status_code=404)
+    form = await request.form()
+    new_title = form.get("title", "").strip()
+    if new_title:
+        now_str = datetime.now(timezone.utc).isoformat()
+        await db.update(replace(doc, title=new_title, updated_at=now_str))
+    return _doc_redirect(doc_id)
+
+
+@router.post("/documents/{doc_id}/context")
+async def doc_save_context(request: Request, doc_id: str):
+    """Save document context without changing stage state."""
+    db = request.app.state.db
+    doc = await db.get(doc_id)
+    if doc is None:
+        return HTMLResponse("<em>Not found</em>", status_code=404)
+    form = await request.form()
+    document_context = form.get("document_context", "").strip()
+    stage_data = dict(doc.stage_data)
+    ingest = dict(stage_data.get("_ingest", {}))
+    ingest["document_context"] = document_context
+    stage_data["_ingest"] = ingest
+    now_str = datetime.now(timezone.utc).isoformat()
+    await db.update(replace(doc, stage_data=stage_data, updated_at=now_str))
+    return _doc_redirect(doc_id)
+
+
+@router.post("/documents/{doc_id}/set-context")
+async def doc_set_context_and_run(request: Request, doc_id: str):
+    """Save context and reset stage to pending so the worker picks it up."""
+    db = request.app.state.db
+    doc = await db.get(doc_id)
+    if doc is None:
+        return HTMLResponse("<em>Not found</em>", status_code=404)
+    form = await request.form()
+    document_context = form.get("document_context", "").strip()
+    stage_data = dict(doc.stage_data)
+    ingest = dict(stage_data.get("_ingest", {}))
+    ingest["document_context"] = document_context
+    stage_data["_ingest"] = ingest
+    now_str = datetime.now(timezone.utc).isoformat()
+    updated = replace(doc, stage_data=stage_data, stage_state="pending", updated_at=now_str)
+    await db.update(updated)
+    await db.append_event(doc_id, doc.current_stage, "context_set", now_str)
+    return _doc_redirect(doc_id)
+
+
+@router.post("/documents/{doc_id}/stop")
+async def doc_stop(request: Request, doc_id: str):
+    db = request.app.state.db
+    doc = await db.get(doc_id)
+    if doc is None:
+        return HTMLResponse("<em>Not found</em>", status_code=404)
+    now_str = datetime.now(timezone.utc).isoformat()
+    await db.update(replace(doc, stage_state="error", updated_at=now_str))
+    await db.append_event(doc_id, doc.current_stage, "stopped", now_str)
+    return _doc_redirect(doc_id)
+
+
+@router.post("/documents/{doc_id}/retry")
+async def doc_retry(request: Request, doc_id: str):
+    db = request.app.state.db
+    doc = await db.get(doc_id)
+    if doc is None:
+        return HTMLResponse("<em>Not found</em>", status_code=404)
+    now_str = datetime.now(timezone.utc).isoformat()
+    await db.update(replace(doc, stage_state="pending", updated_at=now_str))
+    await db.append_event(doc_id, doc.current_stage, "retried", now_str)
+    return _doc_redirect(doc_id)
+
+
+@router.post("/documents/{doc_id}/replay/{stage_name}")
+async def doc_replay(request: Request, doc_id: str, stage_name: str):
+    db = request.app.state.db
+    config = request.app.state.pipeline
+    doc = await db.get(doc_id)
+    if doc is None:
+        return HTMLResponse("<em>Not found</em>", status_code=404)
+    stage_names = [s.name for s in config.stages]
+    if stage_name not in stage_names:
+        return HTMLResponse("<em>Unknown stage</em>", status_code=400)
+    replay_idx = stage_names.index(stage_name)
+    stage_data = {k: v for k, v in doc.stage_data.items()
+                  if k == "_ingest" or k not in stage_names[replay_idx:]}
+    now_str = datetime.now(timezone.utc).isoformat()
+    updated = replace(doc, current_stage=stage_name, stage_state="pending",
+                      stage_data=stage_data, updated_at=now_str)
+    await db.update(updated)
+    await db.append_event(doc_id, stage_name, "replayed", now_str)
+    return _doc_redirect(doc_id)
+
+
+@router.post("/documents/{doc_id}/approve")
+async def doc_approve(request: Request, doc_id: str):
+    db = request.app.state.db
+    config = request.app.state.pipeline
+    doc = await db.get(doc_id)
+    if doc is None:
+        return HTMLResponse("<em>Not found</em>", status_code=404)
+    form = await request.form()
+    edited = form.get("edited_text", "").strip()
+    if edited:
+        prev = config.prev_stage(doc.current_stage)
+        if prev and prev.output:
+            stage_data = dict(doc.stage_data)
+            entry = dict(stage_data.get(prev.name, {}))
+            entry[prev.output] = edited
+            stage_data[prev.name] = entry
+            doc = replace(doc, stage_data=stage_data)
+            await db.update(doc)
+    await review_service.approve(doc, config, db, datetime.now(timezone.utc).isoformat())
+    return _doc_redirect(doc_id)
+
+
+@router.post("/documents/{doc_id}/reject")
+async def doc_reject(request: Request, doc_id: str):
+    db = request.app.state.db
+    config = request.app.state.pipeline
+    doc = await db.get(doc_id)
+    if doc is None:
+        return HTMLResponse("<em>Not found</em>", status_code=404)
+    await review_service.reject(doc, config, db, datetime.now(timezone.utc).isoformat())
+    return _doc_redirect(doc_id)
+
+
+@router.post("/documents/{doc_id}/clarify")
+async def doc_clarify(request: Request, doc_id: str):
+    db = request.app.state.db
+    config = request.app.state.pipeline
+    doc = await db.get(doc_id)
+    if doc is None:
+        return HTMLResponse("<em>Not found</em>", status_code=404)
+    prev = config.prev_stage(doc.current_stage)
+    if prev is None:
+        return HTMLResponse("<em>No previous stage</em>", status_code=400)
+    stage_name = prev.name
+    form = await request.form()
+    existing_requests = (doc.stage_data.get(stage_name) or {}).get("clarification_requests", [])
+    clarification_responses = [
+        {"segment": req["segment"], "answer": form.get(f"answer_{i}", "").strip()}
+        for i, req in enumerate(existing_requests)
+    ]
+    free_prompt = form.get("free_prompt", "").strip()
+    document_context = form.get("document_context", "").strip()
+    if document_context:
+        stage_data = dict(doc.stage_data)
+        ingest = dict(stage_data.get("_ingest", {}))
+        ingest["document_context"] = document_context
+        stage_data["_ingest"] = ingest
+        doc = replace(doc, stage_data=stage_data)
+        await db.update(doc)
+    await review_service.reject_with_clarifications(
+        doc, stage_name, clarification_responses, config, db,
+        datetime.now(timezone.utc).isoformat(),
+        free_prompt=free_prompt,
+    )
+    return _doc_redirect(doc_id)
 
 
 @router.get("/healthz")
