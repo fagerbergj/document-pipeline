@@ -129,7 +129,7 @@ function ContextSection({ doc, onRefresh }: { doc: DocumentDetail; onRefresh: ()
           className={`w-full text-sm font-mono border rounded-lg px-3 py-2 resize-y mb-3 focus:outline-none focus:ring-2 ${required ? 'border-red-300 bg-red-50 focus:ring-red-200' : 'border-gray-200 focus:ring-blue-200'}`}
           placeholder="Describe this document — used by clarify, classify, and other stages that require context…" />
       ) : (
-        <div className="prose prose-sm prose-gray max-w-none bg-gray-50 border border-gray-100 rounded-lg px-4 py-3 mb-3 cursor-text" onClick={() => setEditing(true)}>
+        <div className="prose prose-sm prose-gray max-w-none bg-gray-50 border border-gray-100 rounded-lg px-4 py-3 max-h-96 overflow-y-auto mb-3 cursor-text" onClick={() => setEditing(true)}>
           <ReactMarkdown>{ctx}</ReactMarkdown>
         </div>
       )}
@@ -222,7 +222,7 @@ function StageResultSection({ name, fields }: { name: string; fields: Record<str
                 )}
               </div>
               {isMarkdown(value) && !raw ? (
-                <div className="prose prose-sm prose-gray max-w-none bg-gray-50 border border-gray-100 rounded-lg px-4 py-3">
+                <div className="prose prose-sm prose-gray max-w-none bg-gray-50 border border-gray-100 rounded-lg px-4 py-3 max-h-96 overflow-y-auto">
                   <ReactMarkdown>{value}</ReactMarkdown>
                 </div>
               ) : (
