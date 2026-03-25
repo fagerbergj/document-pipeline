@@ -92,6 +92,7 @@ function TitleSection({ doc, onRefresh }: { doc: DocumentDetail; onRefresh: () =
 function ContextSection({ doc, onRefresh }: { doc: DocumentDetail; onRefresh: () => void }) {
   const [ctx, setCtx] = useState(doc.document_context)
   const [entries, setEntries] = useState<{ name: string; text: string }[]>([])
+  const [editing, setEditing] = useState(!doc.document_context)
   const saveMut = useMutation({ mutationFn: (c: string) => api.saveContext(doc.id, c), onSuccess: onRefresh })
   const setMut = useMutation({ mutationFn: (c: string) => api.setContext(doc.id, c), onSuccess: onRefresh })
 
@@ -108,17 +109,30 @@ function ContextSection({ doc, onRefresh }: { doc: DocumentDetail; onRefresh: ()
           Document context
           {required && <span className="ml-1 font-normal normal-case text-red-500">— required to continue</span>}
         </div>
-        {entries.length > 0 && (
-          <select onChange={e => { if (e.target.value) setCtx(e.target.value) }}
-            className="text-xs border border-gray-200 rounded px-2 py-1 bg-white text-gray-600">
-            <option value="">Load saved…</option>
-            {entries.map(e => <option key={e.name} value={e.text}>{e.name}</option>)}
-          </select>
-        )}
+        <div className="flex items-center gap-2">
+          {ctx && (
+            <button onClick={() => setEditing(e => !e)} className="text-xs text-gray-400 hover:text-gray-600">
+              {editing ? 'Preview' : 'Edit'}
+            </button>
+          )}
+          {entries.length > 0 && editing && (
+            <select onChange={e => { if (e.target.value) setCtx(e.target.value) }}
+              className="text-xs border border-gray-200 rounded px-2 py-1 bg-white text-gray-600">
+              <option value="">Load saved…</option>
+              {entries.map(e => <option key={e.name} value={e.text}>{e.name}</option>)}
+            </select>
+          )}
+        </div>
       </div>
-      <textarea value={ctx} onChange={e => setCtx(e.target.value)} rows={4}
-        className={`w-full text-sm font-mono border rounded-lg px-3 py-2 resize-y mb-3 focus:outline-none focus:ring-2 ${required ? 'border-red-300 bg-red-50 focus:ring-red-200' : 'border-gray-200 focus:ring-blue-200'}`}
-        placeholder="Describe this document — used by clarify, classify, and other stages that require context…" />
+      {editing || !ctx ? (
+        <textarea value={ctx} onChange={e => setCtx(e.target.value)} rows={4}
+          className={`w-full text-sm font-mono border rounded-lg px-3 py-2 resize-y mb-3 focus:outline-none focus:ring-2 ${required ? 'border-red-300 bg-red-50 focus:ring-red-200' : 'border-gray-200 focus:ring-blue-200'}`}
+          placeholder="Describe this document — used by clarify, classify, and other stages that require context…" />
+      ) : (
+        <div className="prose prose-sm prose-gray max-w-none bg-gray-50 border border-gray-100 rounded-lg px-4 py-3 mb-3 cursor-text" onClick={() => setEditing(true)}>
+          <ReactMarkdown>{ctx}</ReactMarkdown>
+        </div>
+      )}
       <div className="flex gap-2">
         <button onClick={() => saveMut.mutate(ctx)} disabled={saveMut.isPending}
           className="px-3 py-1.5 text-xs font-medium border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50">
