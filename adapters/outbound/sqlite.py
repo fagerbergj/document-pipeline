@@ -130,6 +130,15 @@ class Database:
             row = await cur.fetchone()
             return self._row_to_doc(row) if row else None
 
+    async def reset_running(self) -> int:
+        """On startup, reset any docs stuck in 'running' back to 'pending'."""
+        async with self._conn.execute(
+            "UPDATE documents SET stage_state='pending' WHERE stage_state='running'"
+        ) as cur:
+            count = cur.rowcount
+        await self._conn.commit()
+        return count
+
     async def get_pending(self, stage_name: str) -> list[Document]:
         async with self._conn.execute(
             "SELECT * FROM documents WHERE current_stage=? AND stage_state='pending' ORDER BY created_at ASC",

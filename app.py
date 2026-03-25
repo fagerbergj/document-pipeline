@@ -25,6 +25,9 @@ async def lifespan(app: FastAPI):
 
     db = Database(db_path)
     await db.init()
+    recovered = await db.reset_running()
+    if recovered:
+        logger.warning("Startup: reset %d stuck 'running' doc(s) to pending", recovered)
     logger.info("Database ready: %s", db_path)
 
     config = PipelineConfig.from_yaml("config/pipeline.yaml")

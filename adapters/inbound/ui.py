@@ -724,9 +724,9 @@ async def doc_token_stream(request: Request, doc_id: str):
                     break
                 yield f"event: token\ndata: {_json.dumps(item)}\n\n"
             except asyncio.TimeoutError:
-                # Periodic fallback: if doc is no longer running, close stream
+                # Poll doc state — handles reconnect after restart (queue is new/empty)
                 now = asyncio.get_event_loop().time()
-                if now - last_state_check > 4.0:
+                if now - last_state_check > 3.0:
                     last_state_check = now
                     doc = await db.get(doc_id)
                     if doc and doc.stage_state != "running":
