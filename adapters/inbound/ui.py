@@ -10,7 +10,9 @@ from pathlib import Path
 import asyncio
 import json as _json
 
-from fastapi import APIRouter, Request
+from typing import Optional
+
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
@@ -126,15 +128,23 @@ def _needs_context_ids(docs: list, config) -> set:
 
 
 @router.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request):
+async def dashboard(
+    request: Request,
+    stage: Optional[str] = Query(default=None),
+    state: Optional[str] = Query(default=None),
+    sort: str = Query(default="created_desc"),
+):
     db = request.app.state.db
     config = request.app.state.pipeline
-    docs = await db.list_documents()
+    docs = await db.list_documents(stage=stage, state=state, sort=sort)
     counts = await db.status_counts()
+    all_stages = [s.name for s in config.stages]
     return templates.TemplateResponse(
         "dashboard.html",
         {"request": request, "docs": docs, "counts": counts, "state_order": _STATE_ORDER,
-         "needs_context_ids": _needs_context_ids(docs, config)},
+         "needs_context_ids": _needs_context_ids(docs, config),
+         "all_stages": all_stages,
+         "filter_stage": stage or "", "filter_state": state or "", "filter_sort": sort},
     )
 
 

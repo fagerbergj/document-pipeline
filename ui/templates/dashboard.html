@@ -14,6 +14,31 @@
 </style>
 <h1>Dashboard</h1>
 
+<form method="get" action="/" style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:1rem;">
+  <select name="stage" style="padding:.3rem .5rem;border:1px solid #ced4da;border-radius:4px;font-size:.88rem;">
+    <option value="">All stages</option>
+    {% for s in all_stages %}
+    <option value="{{ s }}" {% if filter_stage == s %}selected{% endif %}>{{ s }}</option>
+    {% endfor %}
+  </select>
+  <select name="state" style="padding:.3rem .5rem;border:1px solid #ced4da;border-radius:4px;font-size:.88rem;">
+    <option value="">All states</option>
+    {% for st in ['pending','running','waiting','error','done'] %}
+    <option value="{{ st }}" {% if filter_state == st %}selected{% endif %}>{{ st }}</option>
+    {% endfor %}
+  </select>
+  <select name="sort" style="padding:.3rem .5rem;border:1px solid #ced4da;border-radius:4px;font-size:.88rem;">
+    <option value="created_desc" {% if filter_sort == 'created_desc' %}selected{% endif %}>Newest first</option>
+    <option value="created_asc"  {% if filter_sort == 'created_asc'  %}selected{% endif %}>Oldest first</option>
+    <option value="title_asc"    {% if filter_sort == 'title_asc'    %}selected{% endif %}>Title A→Z</option>
+    <option value="title_desc"   {% if filter_sort == 'title_desc'   %}selected{% endif %}>Title Z→A</option>
+  </select>
+  <button type="submit" style="padding:.3rem .75rem;border:1px solid #6c757d;border-radius:4px;background:#e9ecef;font-size:.88rem;cursor:pointer;">Filter</button>
+  {% if filter_stage or filter_state or filter_sort != 'created_desc' %}
+  <a href="/" style="font-size:.85rem;color:#6c757d;">Clear</a>
+  {% endif %}
+</form>
+
 <div style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:.5rem;margin-bottom:.25rem;">
   <div class="counts"
        id="status-counts"
