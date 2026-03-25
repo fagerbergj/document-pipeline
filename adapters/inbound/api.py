@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import json as _json
 from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Request, Query
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from core.services import review as review_service
 
@@ -401,3 +402,42 @@ async def delete_context_entry(request: Request, name: str):
     entries = [e for e in await _load_context_library(db) if e["name"] != name]
     await _save_context_library(db, entries)
     return entries
+
+
+@router.get("/documents/{doc_id}/stream")
+async def doc_token_stream(request: Request, doc_id: str):
+    """SSE endpoint: streams LLM tokens while the document is running, then sends 'done'."""
+    from adapters.outbound import streams as _streams
+    db = request.app.state.db
+
+    doc = await db.get(doc_id)
+    initial_state = f"{doc.current_stage}:{doc.stage_state}" if doc else ""
+
+    async def generate():
+        q = _streams.get_queue(doc_id)
+        last_state_check = asyncio.get_event_loop().time()
+        while True:
+            if await request.is_disconnected():
+                break
+            try:
+                item = await asyncio.wait_for(q.get(), timeout=1.5)
+                if item is None:
+                    yield f"event: done\ndata: {{}}\n\n"
+                    break
+                yield f"event: token\ndata: {_json.dumps(item)}\n\n"
+            except asyncio.TimeoutError:
+                now = asyncio.get_event_loop().time()
+                if now - last_state_check > 3.0:
+                    last_state_check = now
+                    current = await db.get(doc_id)
+                    current_state = f"{current.current_stage}:{current.stage_state}" if current else ""
+                    if current_state != initial_state:
+                        yield f"event: done\ndata: {{}}\n\n"
+                        break
+                yield ": ping\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

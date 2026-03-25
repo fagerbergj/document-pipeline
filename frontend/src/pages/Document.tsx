@@ -122,7 +122,7 @@ function LiveLogSection({ docId, onDone }: { docId: string; onDone: () => void }
   const [status, setStatus] = useState('connecting…')
 
   useEffect(() => {
-    const es = new EventSource(`/api/documents/${docId}/stream`)
+    const es = new EventSource(`/api/v1/documents/${docId}/stream`)
     es.addEventListener('token', (e) => {
       const data = JSON.parse((e as MessageEvent).data)
       if (logRef.current) {

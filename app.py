@@ -11,7 +11,6 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from adapters.inbound.api import router as api_v1_router
-from adapters.inbound.ui import router as ui_router
 from adapters.inbound.webhook import router as webhook_router
 from adapters.outbound.sqlite import Database
 from core.domain.pipeline import PipelineConfig
@@ -61,7 +60,6 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="document-pipeline", lifespan=lifespan)
 app.include_router(webhook_router)
 app.include_router(api_v1_router)
-app.include_router(ui_router)
 
 # Serve React app (only if built dist exists)
 _FRONTEND_DIST = Path("frontend/dist")
