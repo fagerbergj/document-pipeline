@@ -85,13 +85,13 @@ async def _run_ocr(
 
 
 async def _run_llm_text(
-    doc: Document, stage: StageDefinition, ollama_base_url: str
+    doc: Document, stage: StageDefinition, ollama_base_url: str, db=None
 ) -> dict:
     """Returns updated stage_data dict."""
     import json
     import re
     from jinja2 import Template
-    from adapters.outbound.ollama import generate_text
+    from adapters.outbound.ollama import generate_text, GenerationCancelled as _GC  # noqa: F401
 
     # Find input value — search all stage_data dicts for stage.input field
     input_text = ""
@@ -122,7 +122,14 @@ async def _run_llm_text(
             free_prompt=free_prompt,
         )
 
-    raw_response = await generate_text(ollama_base_url, stage.model, prompt_text, input_text)
+    async def _is_stopped():
+        if db is None:
+            return False
+        current = await db.get(doc.id)
+        return current is not None and current.stage_state != "running"
+
+    raw_response = await generate_text(ollama_base_url, stage.model, prompt_text, input_text,
+                                        is_stopped=_is_stopped)
 
     # Strip markdown fences and parse JSON
     cleaned = re.sub(r"^```(?:json)?\s*", "", raw_response.strip())
@@ -195,7 +202,7 @@ async def _process_document(
             if stage.require_context and not doc.stage_data.get("_ingest", {}).get("document_context"):
                 await db.update(set_waiting(doc, now_str))
                 return  # park until context is provided; review service will reset to pending
-            stage_data = await _run_llm_text(doc, stage, ollama_base_url)
+            stage_data = await _run_llm_text(doc, stage, ollama_base_url, db=db)
             if await _was_stopped(doc.id, db):
                 return
             now_str = datetime.now(timezone.utc).isoformat()
@@ -207,6 +214,10 @@ async def _process_document(
             logger.info("Doc %s → %s", doc.id[:8], updated.current_stage)
 
     except Exception as exc:
+        from adapters.outbound.ollama import GenerationCancelled
+        if isinstance(exc, GenerationCancelled):
+            logger.info("Doc %s stream cancelled mid-flight (stopped externally)", doc.id[:8])
+            return  # doc state already set to error by the stop endpoint
         logger.error("Stage '%s' failed for %s: %s", stage.name, doc.id[:8], exc, exc_info=True)
         now_str = datetime.now(timezone.utc).isoformat()
         await db.append_event(doc.id, stage.name, "failed", now_str, {"error": str(exc)})

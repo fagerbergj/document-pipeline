@@ -384,6 +384,55 @@ async def document_set_context(request: Request, doc_id: str):
     )
 
 
+@router.get("/contexts", response_class=HTMLResponse)
+async def contexts_page(request: Request):
+    entries = _load_context_library()
+    return templates.TemplateResponse(
+        "contexts.html", {"request": request, "entries": entries}
+    )
+
+
+@router.get("/api/context-library/manage", response_class=HTMLResponse)
+async def context_library_manage_get(request: Request):
+    return templates.TemplateResponse(
+        "partials/context_library_manage.html",
+        {"request": request, "entries": _load_context_library()},
+    )
+
+
+@router.post("/api/context-library/manage", response_class=HTMLResponse)
+async def context_library_manage_save(request: Request):
+    form = await request.form()
+    name = form.get("library_name", "").strip()
+    text = form.get("library_text", "").strip()
+    if name and text:
+        entries = _load_context_library()
+        for e in entries:
+            if e["name"] == name:
+                e["text"] = text
+                break
+        else:
+            entries.append({"name": name, "text": text})
+        _save_context_library(entries)
+    return templates.TemplateResponse(
+        "partials/context_library_manage.html",
+        {"request": request, "entries": _load_context_library()},
+    )
+
+
+@router.post("/api/context-library/delete", response_class=HTMLResponse)
+async def context_library_delete(request: Request):
+    form = await request.form()
+    name = form.get("name", "").strip()
+    if name:
+        entries = [e for e in _load_context_library() if e["name"] != name]
+        _save_context_library(entries)
+    return templates.TemplateResponse(
+        "partials/context_library_manage.html",
+        {"request": request, "entries": _load_context_library()},
+    )
+
+
 @router.get("/healthz")
 async def healthz():
     return {"status": "ok"}
