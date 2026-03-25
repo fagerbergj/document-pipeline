@@ -9,23 +9,44 @@
     <span class="badge badge-waiting">{{ doc.current_stage }}</span>
     <span style="color:#6c757d; font-size:0.85rem;">{{ doc.created_at[:19].replace("T", " ") }}</span>
   </div>
-  <div class="review-panels">
+
+  {# Tab bar #}
+  <div class="review-tabs">
+    <button class="review-tab active" onclick="showTab(this,'side-{{ doc.id }}','{{ doc.id }}')">Side by side</button>
+    <button class="review-tab"        onclick="showTab(this,'diff-{{ doc.id }}','{{ doc.id }}')">Diff</button>
+  </div>
+
+  {# Side-by-side view #}
+  <div id="side-{{ doc.id }}" class="review-panels">
     <div class="review-panel">
       <div class="panel-label">Before ({{ item.llm_stage.input }})</div>
       <pre class="panel-content">{{ item.input_text }}</pre>
     </div>
     <div class="review-panel">
-      <div class="panel-label">After ({{ item.llm_stage.output }})</div>
-      <pre class="panel-content">{{ item.output_text }}</pre>
+      <div class="panel-label">After ({{ item.llm_stage.output }}) — editable</div>
+      <textarea id="edit-{{ doc.id }}" name="edited_text"
+                class="panel-content" style="resize:vertical; width:100%; font-family:monospace; font-size:.82rem;">{{ item.output_text }}</textarea>
     </div>
   </div>
+
+  {# Diff view #}
+  <div id="diff-{{ doc.id }}" class="review-panels" style="display:none">
+    <div class="review-panel" style="grid-column:1/-1">
+      <div class="panel-label">Diff</div>
+      <div class="panel-content diff-view">{{ item.diff_html | safe }}</div>
+    </div>
+  </div>
+
+  {# Actions #}
   <div class="review-actions">
     <button hx-post="/api/review/{{ doc.id }}/approve"
+            hx-include="#edit-{{ doc.id }}"
             hx-target="#review-list" hx-swap="innerHTML"
             class="btn btn-approve">Approve</button>
     <button hx-post="/api/review/{{ doc.id }}/reject"
             hx-target="#review-list" hx-swap="innerHTML"
             class="btn btn-reject">Reject</button>
+
     {% if item.clarification_requests %}
     <form hx-post="/api/review/{{ doc.id }}/clarify"
           hx-target="#review-list" hx-swap="innerHTML">
@@ -46,3 +67,16 @@
 </div>
 {% endfor %}
 {% endif %}
+
+<script>
+function showTab(btn, panelId, docId) {
+  ['side-' + docId, 'diff-' + docId].forEach(function(id) {
+    document.getElementById(id).style.display = 'none';
+  });
+  btn.closest('.review-card').querySelectorAll('.review-tab').forEach(function(b) {
+    b.classList.remove('active');
+  });
+  document.getElementById(panelId).style.display = '';
+  btn.classList.add('active');
+}
+</script>

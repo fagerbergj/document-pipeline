@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import difflib
+import html
 from dataclasses import replace
 from datetime import datetime, timezone
 
@@ -13,6 +15,25 @@ router = APIRouter()
 templates = Jinja2Templates(directory="ui/templates")
 
 _STATE_ORDER = ["pending", "running", "waiting", "error", "done"]
+
+
+def _diff_html(before: str, after: str) -> str:
+    """Return a line-level diff as an HTML fragment with added/removed highlights."""
+    before_lines = before.splitlines()
+    after_lines = after.splitlines()
+    matcher = difflib.SequenceMatcher(None, before_lines, after_lines, autojunk=False)
+    parts = []
+    for op, i1, i2, j1, j2 in matcher.get_opcodes():
+        if op == "equal":
+            for line in before_lines[i1:i2]:
+                parts.append(f'<div class="diff-eq">{html.escape(line) or "&nbsp;"}</div>')
+        elif op in ("replace", "delete"):
+            for line in before_lines[i1:i2]:
+                parts.append(f'<div class="diff-del">- {html.escape(line)}</div>')
+        if op in ("replace", "insert"):
+            for line in after_lines[j1:j2]:
+                parts.append(f'<div class="diff-add">+ {html.escape(line)}</div>')
+    return "\n".join(parts)
 
 
 def _build_review_items(docs: list, config) -> list[dict]:
@@ -35,6 +56,7 @@ def _build_review_items(docs: list, config) -> list[dict]:
             "llm_stage": prev,
             "input_text": input_text,
             "output_text": output_text,
+            "diff_html": _diff_html(input_text, output_text),
             "clarification_requests": clarification_requests,
         })
     return items
@@ -79,7 +101,6 @@ async def document_ocr(request: Request, doc_id: str):
     if doc is None:
         return HTMLResponse("<em>Not found</em>", status_code=404)
     ocr_text = (doc.stage_data.get("ocr") or {}).get("ocr_raw", "(no OCR text yet)")
-    # Stages that have been run (have data in stage_data, excluding _ingest)
     completed_stages = [s for s in config.stages if s.name in doc.stage_data]
     return templates.TemplateResponse(
         "partials/ocr_detail.html",
@@ -99,7 +120,6 @@ async def document_replay(request: Request, doc_id: str, stage_name: str):
     if config.get_stage(stage_name) is None:
         return HTMLResponse("<em>Unknown stage</em>", status_code=400)
 
-    # Find stage index and clear data for this stage and everything after
     stage_names = [s.name for s in config.stages]
     replay_idx = stage_names.index(stage_name)
     stage_data = {k: v for k, v in doc.stage_data.items()
@@ -161,6 +181,20 @@ async def review_approve(request: Request, doc_id: str):
     doc = await db.get(doc_id)
     if doc is None:
         return HTMLResponse("<em>Not found</em>", status_code=404)
+
+    # Save any manual edits to the output field before approving
+    form = await request.form()
+    edited = form.get("edited_text", "").strip()
+    if edited:
+        prev = config.prev_stage(doc.current_stage)
+        if prev and prev.output:
+            stage_data = dict(doc.stage_data)
+            entry = dict(stage_data.get(prev.name, {}))
+            entry[prev.output] = edited
+            stage_data[prev.name] = entry
+            doc = replace(doc, stage_data=stage_data)
+            await db.update(doc)
+
     await review_service.approve(doc, config, db, datetime.now(timezone.utc).isoformat())
     items = _build_review_items(await db.get_waiting(), config)
     return templates.TemplateResponse(
