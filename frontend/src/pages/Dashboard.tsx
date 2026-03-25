@@ -153,7 +153,7 @@ function InlineTitle({ docId, title, onNavigate, onSaved }: {
         ref={inputRef}
         value={value}
         onChange={e => setValue(e.target.value)}
-        onBlur={() => { mut.mutate(value) }}
+        onBlur={() => mut.mutate(value)}
         onKeyDown={e => {
           if (e.key === 'Enter') { e.preventDefault(); mut.mutate(value) }
           if (e.key === 'Escape') { setValue(title ?? ''); setEditing(false) }
@@ -166,13 +166,20 @@ function InlineTitle({ docId, title, onNavigate, onSaved }: {
   }
 
   return (
-    <span
-      className="text-sm font-medium text-gray-800 group-hover:text-blue-600 transition-colors cursor-pointer"
-      onClick={onNavigate}
-      onDoubleClick={e => { e.stopPropagation(); setEditing(true) }}
-      title="Double-click to rename"
-    >
-      {title || <span className="text-gray-400 italic font-normal">untitled</span>}
+    <span className="flex items-center gap-1.5 group/title">
+      <span
+        className="text-sm font-medium text-gray-800 group-hover:text-blue-600 transition-colors cursor-pointer"
+        onClick={onNavigate}
+      >
+        {title || <span className="text-gray-400 italic font-normal">untitled</span>}
+      </span>
+      <button
+        onClick={e => { e.stopPropagation(); setValue(title ?? ''); setEditing(true) }}
+        className="opacity-0 group-hover/title:opacity-100 text-gray-400 hover:text-gray-600 transition-opacity"
+        title="Rename"
+      >
+        ✎
+      </button>
     </span>
   )
 }
