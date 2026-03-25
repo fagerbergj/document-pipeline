@@ -44,7 +44,7 @@ class Document:
 
 `advance(doc, next_stage)` — returns a new `Document` with `current_stage=next_stage, stage_state='pending'`.
 
-`set_waiting(doc)` — sets `stage_state='waiting'` (for `manual_review` stages).
+`set_waiting(doc)` — sets `stage_state='waiting'` (for stages parked awaiting context or review).
 
 `set_running(doc)` — sets `stage_state='running'`.
 
@@ -73,14 +73,15 @@ class PipelineConfig:
 @dataclass
 class StageDefinition:
     name: str
-    type: str          # 'computer_vision'|'llm_text'|'manual_review'|'embed'
+    type: str          # 'computer_vision'|'llm_text'|'embed'
     model: str | None
     prompt: str | None  # path to prompt file, e.g. 'prompts/ocr.txt'
     input: str | None   # field name in stage_data to pass as input
     output: str | None  # field name to write result to in stage_data
     outputs: list[dict] | None   # multi-output spec [{field, type}]
-    clarifications: bool         # enables Q&A loop (llm_text only)
     destinations: list[dict] | None  # embed stage only
+    start_if: dict | None        # conditions to start stage (else park as waiting)
+    continue_if: list[dict] | None   # conditions to auto-advance (else park for review)
 ```
 
 ---
@@ -141,9 +142,8 @@ For each doc:
 | Stage type | Handler |
 |---|---|
 | `computer_vision` | Call `ollama.generate_vision(model, prompt, image_bytes)` |
-| `llm_text` | Call `ollama.generate_text(model, prompt, input_text, clarification_context?)` |
-| `manual_review` | Call `set_waiting(doc)`, append event — worker does nothing else |
-| `embed` | Call `ollama.embed(model, text)` → upsert to each destination |
+| `llm_text` | Check `start_if` (park as waiting if not met); call `ollama.generate_text`; check `continue_if` (park for review if not met) |
+| `embed` | Call `ollama.embed(model, text)` → upsert to each destination (qdrant, open_webui) |
 
 **Post-OCR duplicate title check:**
 After OCR completes, before advancing to the next stage, check if another document with the same `title` and `stage_state != 'deleted'` exists. If so, set `current_stage='duplicate_review', stage_state='waiting'`.
@@ -157,35 +157,19 @@ After each batch, `POST /api/generate` with `keep_alive=0` to Ollama to free VRA
 
 Called by `adapters/inbound/ui.py` for review UI actions.
 
-**`approve(doc_id) → Document`**
-- Fetch document, verify `stage_state='waiting'`
-- Append `stage_events` row `event_type='reviewed'`
-- Advance to next stage (skip `manual_review` stages in the scan)
+**`approve(doc, config, db, now_str) → Document`**
+- Advance document to the next stage in pipeline order
+- Append `stage_events` row `event_type='approved'`
 - Return updated document
 
-**`reject(doc_id, edits: dict | None) → Document`**
-- Fetch document, verify `stage_state='waiting'`
-- If `edits` provided, merge into `stage_data`
+**`reject(doc, config, db, now_str) → Document`**
+- Reset `stage_state='pending'` on the current stage so the worker re-runs it
 - Append `stage_events` row `event_type='rejected'`
-- Find the previous non-review stage, reset it to `pending`
 - Return updated document
 
-**`reject_with_clarifications(doc_id, clarification_responses: list[dict]) → Document`**
-- Stores `clarification_responses` into `stage_data.<prev_stage>.clarification_responses`
-- Resets previous stage to `pending` (worker will re-run with clarification context)
-
-**`delete(doc_id) → Document`**
-- Soft-delete: set `current_stage='deleted', stage_state='done'`
-- Append `stage_events` row `event_type='deleted'`
-- Call Qdrant delete if the document has a Qdrant destination entry
+**`reject_with_clarifications(doc, clarification_responses, config, db, now_str, free_prompt="") → Document`**
+- Appends a Q&A round to `stage_data.<stage>.qa_history`
+- Clears `clarification_requests` (will be regenerated on re-run)
+- Resets `stage_state='pending'` (worker re-runs with Q&A history as additional context)
+- Append `stage_events` row `event_type='clarified'`
 - Return updated document
-
-**`resolve_duplicate(doc_id, resolution: str) → Document`**
-- `resolution` is `'keep_both'`, `'replace_existing'`, or `'discard'`
-- `'keep_both'`: advance to next non-review stage
-- `'replace_existing'`: delete the existing document (Qdrant + soft-delete), advance current
-- `'discard'`: soft-delete current document
-
-**`reprocess_from(doc_id, stage_name: str) → Document`**
-- Reset `current_stage=stage_name, stage_state='pending'`
-- Append `stage_events` row `event_type='reprocess'`

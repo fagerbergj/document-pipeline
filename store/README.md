@@ -115,12 +115,12 @@ CREATE TABLE document_destinations (
 | `ocr` | `error` | OCR failed 3 times, needs manual intervention |
 | `clarify` | `pending` | Waiting for clarify worker |
 | `clarify` | `running` | Clarify in progress |
+| `clarify` | `waiting` | Parked — context not set or LLM confidence not high |
 | `clarify` | `error` | Clarify failed 3 times |
-| `review_clarify` | `waiting` | Paused at manual review gate |
 | `classify` | `pending` | Waiting for classify worker |
 | `classify` | `running` | Classify in progress |
+| `classify` | `waiting` | Parked — context not set or LLM confidence not high |
 | `classify` | `error` | Classify failed 3 times |
-| `review_classify` | `waiting` | Paused at manual review gate |
 | `embed` | `pending` | Waiting for embed worker |
 | `embed` | `running` | Embed in progress |
 | `embed` | `error` | Embed failed 3 times |

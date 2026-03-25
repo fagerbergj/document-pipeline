@@ -10,10 +10,10 @@ reMarkable tablet
   → POST /webhook (this service)
   → OCR (computer vision model via Ollama)
   → Clarify (LLM cleanup + Q&A clarification loop)
-  → [manual review checkpoint]
+      [parks for review if confidence < high]
   → Classify (tags + summary)
-  → [manual review checkpoint]
-  → Embed → Qdrant (vector store)
+      [parks for review if confidence < high]
+  → Embed → Qdrant + Open WebUI (vector stores)
 ```
 
 All stages, models, prompts, and review gates are defined in [`config/pipeline.yaml`](config/README.md) — no code changes needed to add, remove, or reorder stages.
@@ -40,6 +40,9 @@ Copy from `home-server/.env`. Required variables per phase:
 | `QDRANT_URL` | 5 | Qdrant endpoint (e.g. `http://qdrant:6333`) |
 | `QDRANT_COLLECTION` | 5 | Collection name (e.g. `remarkable`) |
 | `QDRANT_API_KEY` | 5 | Optional Qdrant API key |
+| `OPEN_WEBUI_URL` | 5 | Open WebUI base URL |
+| `OPEN_WEBUI_API_KEY` | 5 | Open WebUI API key |
+| `OPEN_WEBUI_KNOWLEDGE_ID` | 5 | Knowledge base ID in Open WebUI |
 
 ### Run (standalone dev)
 
@@ -87,15 +90,6 @@ Swapping an adapter (e.g. replacing SQLite with Postgres, or Qdrant with another
 ### Change a prompt
 
 Edit the relevant file in `prompts/`. The worker reloads prompts on each stage run (no restart needed in dev, restart required in prod).
-
-### Add a manual review checkpoint
-
-Insert a `manual_review` stage anywhere in `config/pipeline.yaml`:
-
-```yaml
-- name: review_after_my_stage
-  type: manual_review
-```
 
 ### Add an embed destination
 

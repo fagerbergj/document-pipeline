@@ -38,7 +38,7 @@ The webhook returns immediately after saving the PNG and creating the DB row. OC
 
 ### `GET /api/documents`
 
-Returns all non-deleted documents, ordered by `created_at DESC`.
+Returns the document table HTML partial for HTMX. All non-deleted documents.
 
 **Query parameters:**
 
@@ -46,129 +46,131 @@ Returns all non-deleted documents, ordered by `created_at DESC`.
 |---|---|---|---|
 | `stage` | string | — | Filter by `current_stage` |
 | `state` | string | — | Filter by `stage_state` |
-| `limit` | int | 50 | Max results |
-| `offset` | int | 0 | Pagination offset |
-
-**Response (200):**
-```json
-[
-  {
-    "id": "uuid",
-    "title": "My Note",
-    "current_stage": "review_clarify",
-    "stage_state": "waiting",
-    "created_at": "2024-01-15T10:30:00Z",
-    "updated_at": "2024-01-15T10:31:05Z",
-    "date_month": "2024-01",
-    "png_path": "/mnt/personal01/remarkable/2024-01/a1b2c3d4_My_Note.png",
-    "stage_data": { ... }
-  }
-]
-```
+| `sort` | string | `created_desc` | Sort order: `created_desc`, `created_asc`, `title_asc`, `title_desc` |
 
 ---
 
-## Review
+## Document detail and review actions
 
-### `POST /api/review/{id}/approve`
+All review actions are submitted as HTML form POSTs from the document detail page (`/documents/{id}`) and redirect back to that page on success. They return HTML, not JSON.
 
-Approves a document at a `manual_review` stage. The document must have `stage_state='waiting'`.
+### `GET /documents/{id}`
 
-**Request body (optional):**
-```json
-{
-  "edits": {
-    "clarified_text": "Updated text after review..."
-  }
-}
-```
-
-If `edits` is provided, field values are merged into `stage_data` before advancing.
-
-**Response (200):** Updated document object (same shape as `GET /api/documents` item).
-
-**Response (409):** Document is not in `waiting` state.
+Document detail page. Also the review UI for parked documents.
 
 ---
 
-### `POST /api/review/{id}/reject`
+### `POST /documents/{id}/approve`
 
-Rejects a document at a `manual_review` stage. Resets the preceding non-review stage to `pending`.
-
-**Request body (optional):**
-```json
-{
-  "edits": {
-    "clarified_text": "Corrected text..."
-  }
-}
-```
-
-**Response (200):** Updated document object.
+Advances a parked document to the next stage. Accepts an optional `edited_text` form field; if provided and the current stage has a single-text `output`, the edited value is saved before advancing.
 
 ---
 
-### `POST /api/review/{id}/clarify`
+### `POST /documents/{id}/reject`
 
-Re-runs the preceding `llm_text` stage with clarification responses. Only valid when the stage had `clarifications: true` and `stage_data.<stage>` contains `clarification_requests`.
-
-**Request body:**
-```json
-{
-  "clarification_responses": [
-    {"segment": "qu??k", "answer": "quick"},
-    {"segment": "Jn 3:16", "answer": "John 3:16 (Bible reference)"}
-  ]
-}
-```
-
-**Response (200):** Updated document object.
+Resets the current stage to `pending` so the worker re-runs it.
 
 ---
 
-## Duplicate review
+### `POST /documents/{id}/clarify`
 
-### `POST /api/duplicate/{id}/resolve`
-
-Resolves a duplicate review. The document must have `current_stage='duplicate_review', stage_state='waiting'`.
-
-**Request body:**
-```json
-{
-  "resolution": "keep_both"
-}
-```
-
-`resolution` values: `keep_both` | `replace_existing` | `discard`
-
-**Response (200):** Updated document object.
+Appends a Q&A round to `stage_data.<stage>.qa_history` and resets the stage to `pending`. Form fields: one `answer_N` field per clarification request, plus an optional `free_prompt` field.
 
 ---
 
-## Document actions
+### `POST /documents/{id}/stop`
 
-### `POST /api/documents/{id}/delete`
-
-Soft-deletes a document. Sets `current_stage='deleted', stage_state='done'`. Also removes from Qdrant if a destination record exists.
-
-**Response (200):** `{"status": "ok"}`
+Stops a running document by setting `stage_state='error'`.
 
 ---
 
-### `POST /api/documents/{id}/reprocess`
+### `POST /documents/{id}/retry`
 
-Resets a document to a given stage.
+Resets an errored document back to `pending` on its current stage.
 
-**Request body:**
-```json
-{
-  "stage": "clarify"
-}
-```
+---
 
-**Response (200):** Updated document object.
+### `POST /documents/{id}/replay/{stage_name}`
 
-**Response (400):** Stage name not found in pipeline config.
+Resets the document to replay from the given stage, clearing all downstream `stage_data` entries.
+
+---
+
+### `POST /documents/{id}/title`
+
+Updates the document title. Form field: `title`.
+
+---
+
+### `POST /documents/{id}/context`
+
+Saves document context without changing stage state. Form field: `document_context`.
+
+---
+
+### `POST /documents/{id}/set-context`
+
+Saves document context and resets the stage to `pending` so the worker picks it up. Form field: `document_context`.
+
+---
+
+## HTMX partials
+
+### `GET /api/documents`
+
+Returns the document table partial (`partials/document_table.html`). Used by HTMX to refresh the table.
+
+**Query parameters:** `stage`, `state`, `sort` — same filters as the dashboard.
+
+---
+
+### `GET /api/documents/{id}/stream`
+
+SSE endpoint. Streams LLM tokens while a document is in `running` state, then emits a `done` event when the stage completes or the document state changes.
+
+---
+
+### `POST /api/documents/{id}/replay/{stage_name}`
+
+HTMX variant of the replay action — returns the updated document table partial instead of redirecting.
+
+---
+
+### `POST /api/documents/{id}/stop`
+
+HTMX variant of stop — returns the updated document table partial.
+
+---
+
+### `POST /api/documents/{id}/title`
+
+HTMX variant of title update — returns the updated document table partial.
+
+---
+
+### `POST /api/documents/{id}/retry`
+
+HTMX variant of retry — returns the updated document table partial.
+
+---
+
+## Context library
+
+### `GET /contexts`
+
+Context library management page.
+
+### `GET /api/context-library`
+
+Returns the context picker dropdown partial.
+
+### `POST /api/context-library`
+
+Adds or updates a context entry. Form fields: `library_name`, `library_text`.
+
+### `POST /api/context-library/delete`
+
+Deletes a context entry. Form field: `name`.
 
 ---
 
@@ -180,11 +182,9 @@ Resets a document to a given stage.
 
 ---
 
-## Phase 5 additions
+## Qdrant MCP server (Claude Code)
 
-### Qdrant MCP server (Claude Code)
-
-After Phase 5, a Qdrant MCP server can be configured so Claude Code can query the `remarkable` collection directly.
+A Qdrant MCP server can be configured so Claude Code can query the `remarkable` collection directly.
 
 Add to `~/.claude/settings.json`:
 ```json

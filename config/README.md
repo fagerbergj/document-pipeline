@@ -18,13 +18,14 @@ Pipeline configuration. Everything about what stages run, in what order, with wh
 | Key | Type | Required | Stage types | Description |
 |---|---|---|---|---|
 | `name` | string | yes | all | Unique stage identifier. Used as key in `stage_data` and in `stage_events`. |
-| `type` | string | yes | all | `computer_vision` \| `llm_text` \| `manual_review` \| `embed` |
+| `type` | string | yes | all | `computer_vision` \| `llm_text` \| `embed` |
 | `model` | string | `computer_vision`, `llm_text`, `embed` | — | Ollama model name. Supports `${VAR}` substitution. |
 | `prompt` | string | `computer_vision`, `llm_text` | — | Path to prompt file (relative to repo root). |
 | `input` | string | `llm_text`, `embed` | — | Field name in `stage_data` to use as input text. |
 | `output` | string | `llm_text` | — | Field name in `stage_data` to write result to. Use when there is a single text output. |
 | `outputs` | list | `computer_vision`, `llm_text` | — | Multi-output spec. Use instead of `output` when there are multiple outputs or non-text types. See below. |
-| `clarifications` | bool | `llm_text` | — | Enables the Q&A clarification loop. Default `false`. |
+| `start_if` | dict | `llm_text` | — | Conditions required to start the stage. If not met, parks as `waiting`. Keys: `context_provided`. |
+| `continue_if` | list | `llm_text` | — | List of rules; if none match, parks as `waiting` for human review. Each rule is a dict of AND'd conditions (e.g. `{confidence: high}` or `{user_approves: true}`). Rules in the list are OR'd. |
 | `metadata_fields` | list | `embed` | — | Fields from `documents` and `stage_data` to include as Qdrant payload. |
 | `destinations` | list | `embed` | — | List of embed sink definitions. See below. |
 
@@ -39,10 +40,11 @@ Pipeline configuration. Everything about what stages run, in what order, with wh
 
 | Key | Type | Required | Description |
 |---|---|---|---|
-| `type` | string | yes | `qdrant` (the only supported type) |
-| `url` | string | yes | Qdrant base URL. Supports `${VAR}`. |
-| `collection` | string | yes | Collection name. Supports `${VAR}`. |
-| `api_key` | string | no | Optional Qdrant API key. Supports `${VAR}`. |
+| `type` | string | yes | `qdrant` or `open_webui` |
+| `url` | string | yes | Base URL of the destination. Supports `${VAR}`. |
+| `api_key` | string | no | API key. Supports `${VAR}`. |
+| `collection` | string | `qdrant` only | Qdrant collection name. Supports `${VAR}`. |
+| `knowledge_id` | string | `open_webui` only | Open WebUI knowledge base ID. Supports `${VAR}`. |
 
 ---
 
@@ -64,6 +66,9 @@ Values in `pipeline.yaml` can reference environment variables using `${VAR}` syn
 | `QDRANT_URL` | 5 | `embed` | Qdrant base URL (e.g. `http://qdrant:6333`) |
 | `QDRANT_COLLECTION` | 5 | `embed` | Qdrant collection name (e.g. `remarkable`) |
 | `QDRANT_API_KEY` | 5 | `embed` | Optional Qdrant API key |
+| `OPEN_WEBUI_URL` | 5 | `embed` | Open WebUI base URL |
+| `OPEN_WEBUI_API_KEY` | 5 | `embed` | Open WebUI API key |
+| `OPEN_WEBUI_KNOWLEDGE_ID` | 5 | `embed` | Knowledge base ID in Open WebUI |
 
 All variables are also listed in the root `README.md`.
 
@@ -89,10 +94,10 @@ stages:
     prompt: prompts/clarify.txt
     input: ocr_raw
     output: clarified_text
-    clarifications: true
-
-  - name: review_clarify
-    type: manual_review
+    start_if:
+      context_provided: true
+    continue_if:
+      - confidence: high
 
   - name: classify
     type: llm_text
@@ -104,9 +109,10 @@ stages:
         type: json_array
       - field: summary
         type: text
-
-  - name: review_classify
-    type: manual_review
+    start_if:
+      context_provided: true
+    continue_if:
+      - confidence: high
 
   - name: embed
     type: embed
@@ -118,6 +124,10 @@ stages:
         url: ${QDRANT_URL}
         collection: ${QDRANT_COLLECTION}
         api_key: ${QDRANT_API_KEY}
+      - type: open_webui
+        url: ${OPEN_WEBUI_URL}
+        api_key: ${OPEN_WEBUI_API_KEY}
+        knowledge_id: ${OPEN_WEBUI_KNOWLEDGE_ID}
 ```
 
 ---
@@ -137,9 +147,9 @@ stages:
 
 Create `prompts/my_stage.txt` with the prompt. Set `MY_MODEL` in `.env`. No code changes required.
 
-### Toggle a manual review checkpoint
+### Always require human review for a stage
 
-Remove the `manual_review` stage entry from `pipeline.yaml`. The worker will automatically skip to the next stage. Existing documents in `waiting` state will need to be manually approved first.
+Add `continue_if: [{user_approves: true}]` to an `llm_text` stage. This rule can never be auto-satisfied, so every document will park for human review after that stage runs.
 
 ### Disable a stage temporarily
 
