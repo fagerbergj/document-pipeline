@@ -1,0 +1,4 @@
+<option value="">— choose saved context —</option>
+{% for entry in entries %}
+<option value="{{ entry.text | e }}">{{ entry.name | e }}</option>
+{% endfor %}

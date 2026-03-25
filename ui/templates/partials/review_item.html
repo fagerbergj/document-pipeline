@@ -6,17 +6,70 @@
 <div class="review-card">
   <div class="review-header">
     <strong>{{ doc.title or "(untitled)" }}</strong>
+    {% if item.needs_context %}
+    <span class="badge badge-waiting">needs context</span>
+    {% else %}
     <span class="badge badge-waiting">{{ doc.current_stage }}</span>
+    {% endif %}
     <span style="color:#6c757d; font-size:0.85rem;">{{ doc.created_at[:19].replace("T", " ") }}</span>
   </div>
 
-  {# Tab bar #}
+  {% if item.needs_context %}
+  {# ── Context form ── #}
+  <form hx-post="/api/documents/{{ doc.id }}/set-context"
+        hx-target="#review-list" hx-swap="innerHTML">
+
+    <div style="margin-bottom:.75rem;">
+      <label style="display:block;font-size:.85rem;font-weight:600;color:#495057;margin-bottom:.3rem;">
+        What is this document about?
+      </label>
+      <textarea id="ctx-{{ doc.id }}" name="document_context" rows="5"
+                style="width:100%;padding:.5rem;border:1px solid #ced4da;border-radius:4px;font-size:.88rem;font-family:monospace;resize:vertical;"
+                placeholder="Describe the document so the clarifier can interpret it correctly…">{{ item.document_context }}</textarea>
+    </div>
+
+    {# Library load/save #}
+    <div style="display:flex;gap:.75rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:.5rem;">
+      <div style="display:flex;gap:.35rem;align-items:center;">
+        <label style="font-size:.8rem;color:#6c757d;">Load saved:</label>
+        <select id="lib-{{ doc.id }}"
+                style="padding:.3rem .5rem;border:1px solid #ced4da;border-radius:4px;font-size:.85rem;"
+                hx-get="/api/context-library"
+                hx-trigger="click once"
+                hx-target="#lib-{{ doc.id }}"
+                hx-swap="innerHTML"
+                onchange="document.getElementById('ctx-{{ doc.id }}').value = this.value">
+          <option value="">— choose —</option>
+        </select>
+      </div>
+    </div>
+
+    <details style="margin-bottom:.75rem;">
+      <summary style="cursor:pointer;font-size:.82rem;color:#6c757d;">Save to library…</summary>
+      <div style="margin-top:.4rem;display:flex;gap:.4rem;align-items:center;">
+        <input type="text" id="libname-{{ doc.id }}" placeholder="Entry name"
+               style="padding:.3rem .5rem;border:1px solid #ced4da;border-radius:4px;font-size:.85rem;flex:1;">
+        <input type="hidden" id="libtext-{{ doc.id }}">
+        <button type="button"
+                onclick="saveToLibrary('{{ doc.id }}')"
+                style="padding:.3rem .7rem;border:1px solid #6c757d;border-radius:4px;background:#e9ecef;font-size:.85rem;cursor:pointer;">
+          Save
+        </button>
+      </div>
+    </details>
+
+    <div class="review-actions">
+      <button type="submit" class="btn btn-approve">Set context &amp; run clarifier</button>
+    </div>
+  </form>
+
+  {% else %}
+  {# ── Normal review card ── #}
   <div class="review-tabs">
     <button class="review-tab active" onclick="showTab(this,'side-{{ doc.id }}','{{ doc.id }}')">Side by side</button>
     <button class="review-tab"        onclick="showTab(this,'diff-{{ doc.id }}','{{ doc.id }}')">Diff</button>
   </div>
 
-  {# Side-by-side view #}
   <div id="side-{{ doc.id }}" class="review-panels">
     <div class="review-panel">
       <div class="panel-label">Before ({{ item.llm_stage.input }})</div>
@@ -25,11 +78,10 @@
     <div class="review-panel">
       <div class="panel-label">After ({{ item.llm_stage.output }}) — editable</div>
       <textarea id="edit-{{ doc.id }}" name="edited_text"
-                class="panel-content" style="resize:vertical; width:100%; font-family:monospace; font-size:.82rem;">{{ item.output_text }}</textarea>
+                class="panel-content" style="resize:vertical;width:100%;font-family:monospace;font-size:.82rem;">{{ item.output_text }}</textarea>
     </div>
   </div>
 
-  {# Diff view #}
   <div id="diff-{{ doc.id }}" class="review-panels" style="display:none">
     <div class="review-panel" style="grid-column:1/-1">
       <div class="panel-label">Diff</div>
@@ -37,7 +89,6 @@
     </div>
   </div>
 
-  {# Actions #}
   <div class="review-actions">
     <button hx-post="/api/review/{{ doc.id }}/approve"
             hx-include="#edit-{{ doc.id }}"
@@ -46,24 +97,37 @@
     <button hx-post="/api/review/{{ doc.id }}/reject"
             hx-target="#review-list" hx-swap="innerHTML"
             class="btn btn-reject">Reject</button>
-
-    {% if item.clarification_requests %}
-    <form hx-post="/api/review/{{ doc.id }}/clarify"
-          hx-target="#review-list" hx-swap="innerHTML">
-      <div class="clarification-panel">
-        <strong>Clarifications needed:</strong>
-        {% for req in item.clarification_requests %}
-        <div class="clarification-item">
-          <div><code>{{ req.segment }}</code> — {{ req.question }}</div>
-          <input type="text" name="answer_{{ loop.index0 }}"
-                 placeholder="Your answer…" class="clarification-input">
-        </div>
-        {% endfor %}
-      </div>
-      <button type="submit" class="btn btn-clarify">Re-run with clarifications</button>
-    </form>
-    {% endif %}
   </div>
+
+  {# Re-run panel — always shown for llm stages with clarifications #}
+  {% if item.llm_stage.clarifications %}
+  <form hx-post="/api/review/{{ doc.id }}/clarify"
+        hx-target="#review-list" hx-swap="innerHTML"
+        style="margin-top:.75rem;border-top:1px solid #dee2e6;padding-top:.75rem;">
+    {% if item.clarification_requests %}
+    <div class="clarification-panel">
+      <strong style="font-size:.85rem;">Clarifications needed:</strong>
+      {% for req in item.clarification_requests %}
+      <div class="clarification-item">
+        <div><code>{{ req.segment }}</code> — {{ req.question }}</div>
+        <input type="text" name="answer_{{ loop.index0 }}"
+               placeholder="Your answer…" class="clarification-input">
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    <div style="margin-bottom:.5rem;">
+      <label style="display:block;font-size:.82rem;color:#6c757d;margin-bottom:.25rem;">
+        Additional instructions (optional — guide the re-run freely)
+      </label>
+      <textarea name="free_prompt" rows="3"
+                style="width:100%;padding:.4rem .5rem;border:1px solid #ced4da;border-radius:4px;font-size:.85rem;font-family:monospace;resize:vertical;"
+                placeholder="e.g. 'The third bullet is a proper noun, keep it capitalised' or any other instruction…"></textarea>
+    </div>
+    <button type="submit" class="btn btn-clarify">Re-run clarifier</button>
+  </form>
+  {% endif %}
+  {% endif %}
 </div>
 {% endfor %}
 {% endif %}
@@ -78,5 +142,19 @@ function showTab(btn, panelId, docId) {
   });
   document.getElementById(panelId).style.display = '';
   btn.classList.add('active');
+}
+
+function saveToLibrary(docId) {
+  var name = document.getElementById('libname-' + docId).value.trim();
+  var text = document.getElementById('ctx-' + docId).value.trim();
+  if (!name || !text) return;
+  var fd = new FormData();
+  fd.append('library_name', name);
+  fd.append('library_text', text);
+  fetch('/api/context-library', { method: 'POST', body: fd })
+    .then(function(r) { return r.text(); })
+    .then(function(html) {
+      document.getElementById('lib-' + docId).innerHTML = html;
+    });
 }
 </script>

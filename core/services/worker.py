@@ -113,9 +113,13 @@ async def _run_llm_text(
             raw = context_path.read_text(encoding="utf-8")
             # Strip comment lines
             context = "\n".join(l for l in raw.splitlines() if not l.startswith("#")).strip()
+        document_context = doc.stage_data.get("_ingest", {}).get("document_context", "")
+        free_prompt = existing.get("free_prompt", "")
         prompt_text = Template(raw_template).render(
             clarification_responses=clarification_responses,
             context=context,
+            document_context=document_context,
+            free_prompt=free_prompt,
         )
 
     raw_response = await generate_text(ollama_base_url, stage.model, prompt_text, input_text)
@@ -125,11 +129,13 @@ async def _run_llm_text(
     cleaned = re.sub(r"\s*```$", "", cleaned)
     parsed = json.loads(cleaned)
 
-    # Build new stage entry, preserving existing clarification_responses on re-run
+    # Build new stage entry, preserving user inputs across re-runs
     existing = doc.stage_data.get(stage.name, {})
     new_entry: dict = {}
     if existing.get("clarification_responses"):
         new_entry["clarification_responses"] = existing["clarification_responses"]
+    if existing.get("free_prompt"):
+        new_entry["free_prompt"] = existing["free_prompt"]
 
     if stage.output and stage.output in parsed:
         new_entry[stage.output] = parsed[stage.output]
@@ -175,6 +181,9 @@ async def _process_document(
             # No event append here — worker just parks the doc; review service logs the event
 
         elif stage.type == "llm_text":
+            if stage.require_context and not doc.stage_data.get("_ingest", {}).get("document_context"):
+                await db.update(set_waiting(doc, now_str))
+                return  # park until context is provided; review service will reset to pending
             stage_data = await _run_llm_text(doc, stage, ollama_base_url)
             now_str = datetime.now(timezone.utc).isoformat()
             updated = replace(doc, stage_data=stage_data)

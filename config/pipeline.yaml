@@ -16,6 +16,7 @@ stages:
     input: ocr_raw
     output: clarified_text
     clarifications: true
+    require_context: true
 
   - name: review_clarify
     type: manual_review

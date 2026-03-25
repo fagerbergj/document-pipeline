@@ -36,11 +36,14 @@ async def reject_with_clarifications(
     config: PipelineConfig,
     db,
     now_str: str,
+    free_prompt: str = "",
 ) -> Document:
-    """Save reviewer answers into stage_data[stage_name] and reset that stage to pending."""
+    """Save reviewer answers and optional free_prompt into stage_data[stage_name], reset to pending."""
     stage_data = dict(doc.stage_data)
     entry = dict(stage_data.get(stage_name, {}))
     entry["clarification_responses"] = clarification_responses
+    if free_prompt:
+        entry["free_prompt"] = free_prompt
     stage_data[stage_name] = entry
     updated = replace(
         doc,

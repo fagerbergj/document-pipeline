@@ -2,14 +2,33 @@ from __future__ import annotations
 
 import difflib
 import html
+import json
 from dataclasses import replace
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from core.services import review as review_service
+
+_CONTEXT_LIBRARY_PATH = Path("prompts/context_library.json")
+
+
+def _load_context_library() -> list[dict]:
+    if not _CONTEXT_LIBRARY_PATH.exists():
+        return []
+    try:
+        return json.loads(_CONTEXT_LIBRARY_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+
+def _save_context_library(entries: list[dict]) -> None:
+    _CONTEXT_LIBRARY_PATH.write_text(
+        json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
 
 router = APIRouter()
 templates = Jinja2Templates(directory="ui/templates")
@@ -39,6 +58,23 @@ def _diff_html(before: str, after: str) -> str:
 def _build_review_items(docs: list, config) -> list[dict]:
     items = []
     for doc in docs:
+        stage_def = config.get_stage(doc.current_stage)
+
+        # Needs-context: parked on an llm_text stage awaiting document_context
+        if stage_def and stage_def.require_context:
+            items.append({
+                "doc": doc,
+                "needs_context": True,
+                "document_context": doc.stage_data.get("_ingest", {}).get("document_context", ""),
+                "llm_stage": stage_def,
+                "input_text": "",
+                "output_text": "",
+                "diff_html": "",
+                "clarification_requests": [],
+            })
+            continue
+
+        # Normal manual_review: show prev llm stage output for approval
         prev = config.prev_stage(doc.current_stage)
         if prev is None:
             continue
@@ -53,11 +89,13 @@ def _build_review_items(docs: list, config) -> list[dict]:
         clarification_requests = llm_data.get("clarification_requests", [])
         items.append({
             "doc": doc,
+            "needs_context": False,
             "llm_stage": prev,
             "input_text": input_text,
             "output_text": output_text,
             "diff_html": _diff_html(input_text, output_text),
             "clarification_requests": clarification_requests,
+            "document_context": "",
         })
     return items
 
@@ -231,10 +269,67 @@ async def review_clarify_submit(request: Request, doc_id: str):
         {"segment": req["segment"], "answer": form.get(f"answer_{i}", "").strip()}
         for i, req in enumerate(existing_requests)
     ]
+    free_prompt = form.get("free_prompt", "").strip()
     await review_service.reject_with_clarifications(
         doc, stage_name, clarification_responses, config, db,
         datetime.now(timezone.utc).isoformat(),
+        free_prompt=free_prompt,
     )
+    items = _build_review_items(await db.get_waiting(), config)
+    return templates.TemplateResponse(
+        "partials/review_item.html", {"request": request, "review_items": items}
+    )
+
+
+@router.get("/api/context-library", response_class=HTMLResponse)
+async def context_library_get(request: Request):
+    entries = _load_context_library()
+    return templates.TemplateResponse(
+        "partials/context_library.html", {"request": request, "entries": entries}
+    )
+
+
+@router.post("/api/context-library", response_class=HTMLResponse)
+async def context_library_save(request: Request):
+    form = await request.form()
+    name = form.get("library_name", "").strip()
+    text = form.get("library_text", "").strip()
+    if name and text:
+        entries = _load_context_library()
+        for e in entries:
+            if e["name"] == name:
+                e["text"] = text
+                break
+        else:
+            entries.append({"name": name, "text": text})
+        _save_context_library(entries)
+    return templates.TemplateResponse(
+        "partials/context_library.html",
+        {"request": request, "entries": _load_context_library()},
+    )
+
+
+@router.post("/api/documents/{doc_id}/set-context", response_class=HTMLResponse)
+async def document_set_context(request: Request, doc_id: str):
+    """Save document_context into stage_data._ingest and reset stage to pending."""
+    db = request.app.state.db
+    config = request.app.state.pipeline
+    doc = await db.get(doc_id)
+    if doc is None:
+        return HTMLResponse("<em>Not found</em>", status_code=404)
+    form = await request.form()
+    document_context = form.get("document_context", "").strip()
+
+    stage_data = dict(doc.stage_data)
+    ingest = dict(stage_data.get("_ingest", {}))
+    ingest["document_context"] = document_context
+    stage_data["_ingest"] = ingest
+
+    now_str = datetime.now(timezone.utc).isoformat()
+    updated = replace(doc, stage_data=stage_data, stage_state="pending", updated_at=now_str)
+    await db.update(updated)
+    await db.append_event(doc_id, doc.current_stage, "context_set", now_str)
+
     items = _build_review_items(await db.get_waiting(), config)
     return templates.TemplateResponse(
         "partials/review_item.html", {"request": request, "review_items": items}
