@@ -270,6 +270,17 @@ async def review_clarify_submit(request: Request, doc_id: str):
         for i, req in enumerate(existing_requests)
     ]
     free_prompt = form.get("free_prompt", "").strip()
+    document_context = form.get("document_context", "").strip()
+
+    # Save updated document_context if provided
+    if document_context:
+        stage_data = dict(doc.stage_data)
+        ingest = dict(stage_data.get("_ingest", {}))
+        ingest["document_context"] = document_context
+        stage_data["_ingest"] = ingest
+        doc = replace(doc, stage_data=stage_data)
+        await db.update(doc)
+
     await review_service.reject_with_clarifications(
         doc, stage_name, clarification_responses, config, db,
         datetime.now(timezone.utc).isoformat(),

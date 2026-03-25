@@ -65,6 +65,32 @@
 
   {% else %}
   {# ── Normal review card ── #}
+
+  {# Document context — always editable on review cards #}
+  <details style="margin-bottom:.75rem;" {% if item.document_context %}open{% endif %}>
+    <summary style="cursor:pointer;font-size:.85rem;font-weight:600;color:#6c757d;">Document context</summary>
+    <div style="margin-top:.4rem;display:flex;gap:.4rem;flex-direction:column;">
+      <textarea id="ctx-{{ doc.id }}" rows="3"
+                style="width:100%;padding:.4rem .5rem;border:1px solid #ced4da;border-radius:4px;font-size:.85rem;font-family:monospace;resize:vertical;"
+                placeholder="Describe this document — used when re-running the clarifier…">{{ item.document_context }}</textarea>
+      <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
+        <select id="lib-{{ doc.id }}"
+                style="padding:.3rem .5rem;border:1px solid #ced4da;border-radius:4px;font-size:.85rem;"
+                hx-get="/api/context-library"
+                hx-trigger="click once"
+                hx-target="#lib-{{ doc.id }}"
+                hx-swap="innerHTML"
+                onchange="document.getElementById('ctx-{{ doc.id }}').value = this.value">
+          <option value="">— load saved —</option>
+        </select>
+        <input type="text" id="libname-{{ doc.id }}" placeholder="Save as…"
+               style="padding:.3rem .5rem;border:1px solid #ced4da;border-radius:4px;font-size:.85rem;flex:1;min-width:100px;">
+        <button type="button" onclick="saveToLibrary('{{ doc.id }}')"
+                style="padding:.3rem .7rem;border:1px solid #6c757d;border-radius:4px;background:#e9ecef;font-size:.85rem;cursor:pointer;">Save</button>
+      </div>
+    </div>
+  </details>
+
   <div class="review-tabs">
     <button class="review-tab active" onclick="showTab(this,'side-{{ doc.id }}','{{ doc.id }}')">Side by side</button>
     <button class="review-tab"        onclick="showTab(this,'diff-{{ doc.id }}','{{ doc.id }}')">Diff</button>
@@ -124,7 +150,11 @@
                 style="width:100%;padding:.4rem .5rem;border:1px solid #ced4da;border-radius:4px;font-size:.85rem;font-family:monospace;resize:vertical;"
                 placeholder="e.g. 'The third bullet is a proper noun, keep it capitalised' or any other instruction…"></textarea>
     </div>
-    <button type="submit" class="btn btn-clarify">Re-run clarifier</button>
+    <input type="hidden" name="document_context" id="ctx-hidden-{{ doc.id }}">
+    <button type="submit" class="btn btn-clarify"
+            onclick="document.getElementById('ctx-hidden-{{ doc.id }}').value = document.getElementById('ctx-{{ doc.id }}').value">
+      Re-run clarifier
+    </button>
   </form>
   {% endif %}
   {% endif %}
