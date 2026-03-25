@@ -1,14 +1,15 @@
 import { useState, useEffect, useRef } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
 import StatusBadge from '../components/StatusBadge'
 import LoadingSpinner from '../components/LoadingSpinner'
-import type { DocumentDetail, ClarificationRequest } from '../types'
+import type { DocumentDetail, ClarificationRequest, StageEvent } from '../types'
 
 export default function Document() {
   const { id } = useParams<{ id: string }>()
   const qc = useQueryClient()
+  const navigate = useNavigate()
 
   const { data: doc, isLoading } = useQuery({
     queryKey: ['document', id],
@@ -17,18 +18,33 @@ export default function Document() {
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['document', id] })
 
+  const deleteMut = useMutation({
+    mutationFn: () => api.deleteDocument(id!),
+    onSuccess: () => navigate('/'),
+  })
+
   if (isLoading) return <LoadingSpinner />
   if (!doc) return <div className="text-gray-500 py-12 text-center">Document not found</div>
 
+  const errorEvents = doc.events.filter(e => e.event_type === 'failed')
+
   return (
     <div className="space-y-4 max-w-4xl">
-      <Link to="/" className="text-sm text-gray-500 hover:text-gray-700">← Dashboard</Link>
+      <div className="flex items-center justify-between">
+        <Link to="/" className="text-sm text-gray-500 hover:text-gray-700">← Dashboard</Link>
+        <button
+          onClick={() => { if (confirm('Delete this document? This cannot be undone.')) deleteMut.mutate() }}
+          className="text-sm text-red-500 hover:text-red-700">
+          Delete
+        </button>
+      </div>
       <HeaderSection doc={doc} onRefresh={refresh} />
       <ContextSection doc={doc} onRefresh={refresh} />
       {doc.stage_displays.map(sd => (
         <StageResultSection key={sd.name} name={sd.name} fields={sd.fields} />
       ))}
       {doc.stage_state === 'running' && <LiveLogSection docId={doc.id} onDone={refresh} />}
+      {errorEvents.length > 0 && <EventLogSection events={errorEvents} />}
       {doc.review && <ReviewSection doc={doc} review={doc.review} onRefresh={refresh} />}
       {doc.replay_stages.length > 0 && <ReplaySection doc={doc} onRefresh={refresh} />}
     </div>
@@ -279,6 +295,22 @@ function DiffView({ before, after }: { before: string; after: string }) {
     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
       <pre className="bg-gray-50 border border-gray-200 rounded p-2 text-xs font-mono whitespace-pre-wrap h-96 overflow-y-auto">{before}</pre>
       <pre className="bg-gray-50 border border-gray-200 rounded p-2 text-xs font-mono whitespace-pre-wrap h-96 overflow-y-auto">{after}</pre>
+    </div>
+  )
+}
+
+function EventLogSection({ events }: { events: StageEvent[] }) {
+  return (
+    <div className="bg-white rounded-lg shadow-sm p-4 border border-red-200">
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-red-600 mb-3">Error log</h2>
+      <div className="space-y-2">
+        {events.map((e, i) => (
+          <div key={i} className="text-xs font-mono bg-red-50 border border-red-100 rounded p-2">
+            <div className="text-gray-400 mb-1">{e.timestamp.slice(0,19).replace('T',' ')} · {e.stage}</div>
+            <div className="text-red-700 whitespace-pre-wrap">{e.data?.error ?? '(no detail)'}</div>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

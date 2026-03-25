@@ -30,7 +30,7 @@ async def _save_context_library(db, entries: list[dict]) -> None:
     await db.kv_set(_CTX_LIB_KEY, _json.dumps(entries, ensure_ascii=False))
 
 
-def _build_doc_detail(doc, config) -> dict:
+def _build_doc_detail(doc, config, events: list | None = None) -> dict:
     stage_def = config.get_stage(doc.current_stage)
     document_context = doc.stage_data.get("_ingest", {}).get("document_context", "")
 
@@ -137,6 +137,7 @@ def _build_doc_detail(doc, config) -> dict:
         "review": review,
         "replay_stages": replay_stages,
         "needs_context": needs_context,
+        "events": events or [],
     }
 
 
@@ -200,7 +201,18 @@ async def get_document(request: Request, doc_id: str):
     doc = await db.get(doc_id)
     if doc is None:
         return JSONResponse({"error": "not found"}, status_code=404)
-    return _build_doc_detail(doc, config)
+    events = await db.get_events(doc_id)
+    return _build_doc_detail(doc, config, events)
+
+
+@router.delete("/documents/{doc_id}")
+async def delete_document(request: Request, doc_id: str):
+    db = request.app.state.db
+    doc = await db.get(doc_id)
+    if doc is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    await db.delete(doc_id)
+    return {"ok": True}
 
 
 @router.post("/documents/{doc_id}/title")

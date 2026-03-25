@@ -204,6 +204,28 @@ class Database:
         )
         await self._conn.commit()
 
+    async def get_events(self, document_id: str) -> list[dict]:
+        async with self._conn.execute(
+            "SELECT timestamp, stage, event_type, data FROM stage_events WHERE document_id=? ORDER BY id ASC",
+            (document_id,),
+        ) as cur:
+            rows = await cur.fetchall()
+            return [
+                {
+                    "timestamp": r["timestamp"],
+                    "stage": r["stage"],
+                    "event_type": r["event_type"],
+                    "data": json.loads(r["data"]) if r["data"] else None,
+                }
+                for r in rows
+            ]
+
+    async def delete(self, document_id: str) -> None:
+        await self._conn.execute("DELETE FROM stage_events WHERE document_id=?", (document_id,))
+        await self._conn.execute("DELETE FROM document_destinations WHERE document_id=?", (document_id,))
+        await self._conn.execute("DELETE FROM documents WHERE id=?", (document_id,))
+        await self._conn.commit()
+
     async def count_failures(self, document_id: str, stage: str) -> int:
         async with self._conn.execute(
             "SELECT COUNT(*) FROM stage_events WHERE document_id=? AND stage=? AND event_type='failed'",

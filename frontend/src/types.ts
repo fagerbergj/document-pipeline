@@ -30,6 +30,13 @@ export interface StageDisplay {
   fields: Record<string, string>
 }
 
+export interface StageEvent {
+  timestamp: string
+  stage: string
+  event_type: string
+  data: { error?: string } | null
+}
+
 export interface DocumentDetail {
   id: string
   title: string | null
@@ -42,6 +49,7 @@ export interface DocumentDetail {
   stage_displays: StageDisplay[]
   review: Review | null
   replay_stages: { name: string }[]
+  events: StageEvent[]
 }
 
 export interface ContextEntry {

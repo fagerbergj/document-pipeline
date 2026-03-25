@@ -37,6 +37,8 @@ export const api = {
     apiFetch(`/api/v1/documents/${id}/retry`, { method: 'POST' }),
   replay: (id: string, stage: string): Promise<DocumentDetail> =>
     apiFetch(`/api/v1/documents/${id}/replay/${stage}`, { method: 'POST' }),
+  deleteDocument: (id: string): Promise<{ ok: boolean }> =>
+    apiFetch(`/api/v1/documents/${id}`, { method: 'DELETE' }),
   contextLibrary: (): Promise<ContextEntry[]> => apiFetch('/api/v1/context-library'),
   saveContextEntry: (name: string, text: string): Promise<ContextEntry[]> =>
     apiFetch('/api/v1/context-library', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, text }) }),
