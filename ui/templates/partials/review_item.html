@@ -67,7 +67,7 @@
   {# ── Normal review card ── #}
 
   {# Document context — always editable on review cards #}
-  <details style="margin-bottom:.75rem;" {% if item.document_context %}open{% endif %}>
+  <details style="margin-bottom:.75rem;" open>
     <summary style="cursor:pointer;font-size:.85rem;font-weight:600;color:#6c757d;">Document context</summary>
     <div style="margin-top:.4rem;display:flex;gap:.4rem;flex-direction:column;">
       <textarea id="ctx-{{ doc.id }}" rows="3"
@@ -104,7 +104,8 @@
     <div class="review-panel">
       <div class="panel-label">After ({{ item.llm_stage.output }}) — editable</div>
       <textarea id="edit-{{ doc.id }}" name="edited_text"
-                class="panel-content" style="resize:vertical;width:100%;font-family:monospace;font-size:.82rem;">{{ item.output_text }}</textarea>
+                class="panel-content" rows="14"
+                style="resize:vertical;width:100%;font-family:monospace;font-size:.82rem;">{{ item.output_text }}</textarea>
     </div>
   </div>
 
