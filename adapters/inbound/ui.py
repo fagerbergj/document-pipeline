@@ -558,6 +558,9 @@ async def doc_token_stream(request: Request, doc_id: str):
     from adapters.outbound import streams as _streams
     db = request.app.state.db
 
+    doc = await db.get(doc_id)
+    initial_state = f"{doc.current_stage}:{doc.stage_state}" if doc else ""
+
     async def generate():
         q = _streams.get_queue(doc_id)
         last_state_check = asyncio.get_event_loop().time()
@@ -571,12 +574,13 @@ async def doc_token_stream(request: Request, doc_id: str):
                     break
                 yield f"event: token\ndata: {_json.dumps(item)}\n\n"
             except asyncio.TimeoutError:
-                # Poll doc state — handles reconnect after restart (queue is new/empty)
+                # Poll doc state every 3s — reload on any state change
                 now = asyncio.get_event_loop().time()
                 if now - last_state_check > 3.0:
                     last_state_check = now
-                    doc = await db.get(doc_id)
-                    if doc and doc.stage_state != "running":
+                    current = await db.get(doc_id)
+                    current_state = f"{current.current_stage}:{current.stage_state}" if current else ""
+                    if current_state != initial_state:
                         yield f"event: done\ndata: {{}}\n\n"
                         break
                 yield ": ping\n\n"

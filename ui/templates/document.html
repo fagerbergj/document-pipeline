@@ -218,27 +218,27 @@ function showRevTab(btn, panelId) {
   btn.classList.add('active');
 }
 
-// Live token stream
+// Live token stream + state-change watcher
 (function() {
   var logEl = document.getElementById('llm-log');
-  if (!logEl) return;
   var statusEl = document.getElementById('llm-status');
   var docId = '{{ doc.id }}';
   var es = new EventSource('/api/documents/' + docId + '/stream');
   es.addEventListener('token', function(e) {
+    if (!logEl) return;
     var data = JSON.parse(e.data);
     logEl.textContent += data.text;
     logEl.scrollTop = logEl.scrollHeight;
-    statusEl.textContent = 'streaming…';
+    if (statusEl) statusEl.textContent = 'streaming…';
   });
   es.addEventListener('done', function() {
     es.close();
-    statusEl.textContent = 'done — reloading…';
+    if (statusEl) statusEl.textContent = 'done — reloading…';
     setTimeout(function(){ window.location.reload(); }, 800);
   });
   es.onerror = function() {
-    statusEl.textContent = 'stream ended';
     es.close();
+    if (statusEl) statusEl.textContent = 'stream ended';
     setTimeout(function(){ window.location.reload(); }, 2000);
   };
 })();
