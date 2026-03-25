@@ -165,9 +165,9 @@ textarea.panel-content{resize:vertical;}
   </form>
   {% endif %}
 
-  {% if review.clarification_requests %}
   <form method="post" action="/documents/{{ doc.id }}/clarify"
         style="margin-top:.75rem;border-top:1px solid #dee2e6;padding-top:.75rem;">
+    {% if review.clarification_requests %}
     <div style="border:1px solid #dee2e6;border-radius:4px;padding:.75rem;margin-bottom:.5rem;">
       <strong style="font-size:.85rem;">Clarifications needed:</strong>
       {% for req in review.clarification_requests %}
@@ -178,19 +178,19 @@ textarea.panel-content{resize:vertical;}
       </div>
       {% endfor %}
     </div>
+    {% endif %}
     <div style="margin-bottom:.5rem;">
       <label style="display:block;font-size:.82rem;color:#6c757d;margin-bottom:.25rem;">Additional instructions (optional)</label>
       <textarea name="free_prompt" rows="3"
                 style="width:100%;padding:.4rem .5rem;border:1px solid #ced4da;border-radius:4px;font-size:.85rem;font-family:monospace;resize:vertical;"
-                placeholder="e.g. 'The third bullet is a proper noun, keep it capitalised'…"></textarea>
+                placeholder="e.g. 'focus on the meeting action items, not the discussion'…"></textarea>
     </div>
     <input type="hidden" name="document_context" id="clarify-ctx">
     <button type="submit" class="btn btn-clarify"
             onclick="document.getElementById('clarify-ctx').value=document.getElementById('ctx-text').value">
-      Re-run with clarifications
+      Re-run with instructions
     </button>
   </form>
-  {% endif %}
 </div>
 {% endif %}
 
