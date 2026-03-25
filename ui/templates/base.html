@@ -4,13 +4,37 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>document-pipeline</title>
-  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js"></script>
   <style>
-    /* Phase 2: add styles */
+    *, *::before, *::after { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; margin: 0; background: #f8f9fa; color: #212529; }
+    nav { background: #1a1a2e; padding: 0.75rem 1.5rem; display: flex; gap: 1.5rem; align-items: center; }
+    nav a { color: #e0e0e0; text-decoration: none; font-size: 0.95rem; }
+    nav a:hover, nav a.active { color: #fff; text-decoration: underline; }
+    nav .brand { color: #fff; font-weight: 600; margin-right: 1rem; }
+    main { padding: 1.5rem; max-width: 1200px; margin: 0 auto; }
+    h1 { font-size: 1.4rem; margin: 0 0 1rem; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 6px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+    th { background: #e9ecef; text-align: left; padding: 0.6rem 0.9rem; font-size: 0.85rem; font-weight: 600; color: #495057; }
+    td { padding: 0.6rem 0.9rem; font-size: 0.9rem; border-top: 1px solid #dee2e6; vertical-align: top; }
+    tr:hover td { background: #f1f3f5; cursor: pointer; }
+    .badge { display: inline-block; padding: 0.2em 0.55em; border-radius: 4px; font-size: 0.78rem; font-weight: 600; }
+    .badge-pending  { background: #fff3cd; color: #856404; }
+    .badge-running  { background: #cff4fc; color: #055160; }
+    .badge-waiting  { background: #d1ecf1; color: #0c5460; }
+    .badge-error    { background: #f8d7da; color: #721c24; }
+    .badge-done     { background: #d4edda; color: #155724; }
+    .badge-deleted  { background: #e2e3e5; color: #383d41; }
+    .counts { display: flex; gap: 1rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
+    .count-card { background: #fff; border-radius: 6px; padding: 0.6rem 1rem; box-shadow: 0 1px 3px rgba(0,0,0,.1); font-size: 0.9rem; }
+    .count-card .num { font-size: 1.5rem; font-weight: 700; display: block; }
+    .ocr-detail { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; padding: 0.75rem; white-space: pre-wrap; font-family: monospace; font-size: 0.82rem; max-height: 300px; overflow-y: auto; }
+    .detail-row td { background: #fafafa !important; }
   </style>
 </head>
 <body>
   <nav>
+    <span class="brand">document-pipeline</span>
     <a href="/">Dashboard</a>
     <a href="/review">Review</a>
     <a href="/duplicate">Duplicates</a>

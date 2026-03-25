@@ -1,0 +1,54 @@
+{% set state_labels = ["pending", "running", "waiting", "error", "done"] %}
+
+<div class="counts">
+  {% for state in state_labels %}
+    {% set n = counts.get(state, 0) %}
+    <div class="count-card">
+      <span class="num">{{ n }}</span>
+      <span class="badge badge-{{ state }}">{{ state }}</span>
+    </div>
+  {% endfor %}
+</div>
+
+<div id="doc-table-wrap">
+<table>
+  <thead>
+    <tr>
+      <th>Title</th>
+      <th>Stage</th>
+      <th>State</th>
+      <th>Received</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for doc in docs %}
+    <tr
+      hx-get="/api/documents/{{ doc.id }}/ocr"
+      hx-target="#detail-{{ doc.id }}"
+      hx-swap="innerHTML"
+      hx-trigger="click"
+      onclick="toggleDetail('{{ doc.id }}')"
+    >
+      <td>{{ doc.title or "(untitled)" }}</td>
+      <td><code>{{ doc.current_stage }}</code></td>
+      <td><span class="badge badge-{{ doc.stage_state }}">{{ doc.stage_state }}</span></td>
+      <td>{{ doc.created_at[:19].replace("T", " ") }}</td>
+    </tr>
+    <tr class="detail-row" id="row-detail-{{ doc.id }}" style="display:none">
+      <td colspan="4">
+        <div id="detail-{{ doc.id }}">Loading…</div>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" style="text-align:center; color:#6c757d; padding:2rem;">No documents yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<script>
+function toggleDetail(id) {
+  const row = document.getElementById('row-detail-' + id);
+  row.style.display = row.style.display === 'none' ? '' : 'none';
+}
+</script>

@@ -1,4 +1,13 @@
 {% extends "base.html" %}
 {% block content %}
-<!-- Phase 2: status counts + document table -->
+<h1>Dashboard</h1>
+
+<div class="counts"
+     hx-get="/api/documents"
+     hx-trigger="every 10s"
+     hx-target="#doc-table-wrap"
+     hx-swap="innerHTML">
+</div>
+
+{% include "partials/document_table.html" %}
 {% endblock %}
