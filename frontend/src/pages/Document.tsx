@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { api } from '../api'
 import StatusBadge from '../components/StatusBadge'
 import LoadingSpinner from '../components/LoadingSpinner'
@@ -130,7 +131,7 @@ function ContextSection({ doc, onRefresh }: { doc: DocumentDetail; onRefresh: ()
           placeholder="Describe this document — used by clarify, classify, and other stages that require context…" />
       ) : (
         <div className="prose prose-sm prose-gray max-w-none bg-gray-50 border border-gray-100 rounded-lg px-4 py-3 max-h-96 overflow-y-auto mb-3 cursor-text" onClick={() => setEditing(true)}>
-          <ReactMarkdown>{ctx}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{ctx}</ReactMarkdown>
         </div>
       )}
       <div className="flex gap-2">
@@ -223,7 +224,7 @@ function StageResultSection({ name, fields }: { name: string; fields: Record<str
               </div>
               {isMarkdown(value) && !raw ? (
                 <div className="prose prose-sm prose-gray max-w-none bg-gray-50 border border-gray-100 rounded-lg px-4 py-3 max-h-96 overflow-y-auto">
-                  <ReactMarkdown>{value}</ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{value}</ReactMarkdown>
                 </div>
               ) : (
                 <pre className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2 text-xs font-mono whitespace-pre-wrap max-h-96 overflow-y-auto">{value}</pre>
