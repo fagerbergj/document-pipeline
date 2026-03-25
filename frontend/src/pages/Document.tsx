@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import ReactMarkdown from 'react-markdown'
 import { api } from '../api'
 import StatusBadge from '../components/StatusBadge'
 import LoadingSpinner from '../components/LoadingSpinner'
@@ -39,28 +40,17 @@ export default function Document() {
   return (
     <div>
       {/* Header bar */}
-      <div className="sticky top-0 z-10 flex items-center gap-4 px-6 py-4 border-b border-gray-200 bg-white">
+      <div className="sticky top-0 z-10 flex items-center gap-3 px-6 py-4 border-b border-gray-200 bg-white">
         <Link to="/" className="text-gray-400 hover:text-gray-600 text-sm">←</Link>
         <h1 className="text-base font-semibold text-gray-900 flex-1 truncate">{doc.title || '(untitled)'}</h1>
         <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{doc.current_stage}</span>
         <StatusBadge state={doc.stage_state} />
-        {doc.stage_state === 'running' && (
-          <button onClick={() => api.stop(doc.id).then(refresh)}
-            className="px-3 py-1 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-300 rounded hover:bg-amber-100">
-            Stop
-          </button>
-        )}
-        {doc.stage_state === 'error' && (
-          <button onClick={() => api.retry(doc.id).then(refresh)}
-            className="px-3 py-1 text-xs font-medium bg-red-50 text-red-700 border border-red-300 rounded hover:bg-red-100">
-            Retry
-          </button>
-        )}
-        <button
-          onClick={() => { if (confirm('Delete this document? This cannot be undone.')) deleteMut.mutate() }}
-          className="px-3 py-1 text-xs font-medium text-red-500 border border-red-200 rounded hover:bg-red-50">
-          Delete
-        </button>
+        <KebabMenu
+          state={doc.stage_state}
+          onStop={() => api.stop(doc.id).then(refresh)}
+          onRetry={() => api.retry(doc.id).then(refresh)}
+          onDelete={() => { if (confirm('Delete this document? This cannot be undone.')) deleteMut.mutate() }}
+        />
       </div>
 
       {/* Content */}
@@ -145,8 +135,58 @@ function ContextSection({ doc, onRefresh }: { doc: DocumentDetail; onRefresh: ()
   )
 }
 
+function KebabMenu({ state, onStop, onRetry, onDelete }: {
+  state: string
+  onStop: () => void
+  onRetry: () => void
+  onDelete: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  return (
+    <div ref={ref} className="relative">
+      <button onClick={() => setOpen(o => !o)}
+        className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors text-lg leading-none">
+        ⋯
+      </button>
+      {open && (
+        <div className="absolute right-0 top-10 w-44 bg-white border border-gray-200 rounded-xl shadow-lg z-20 overflow-hidden">
+          {state === 'running' && (
+            <button onClick={() => { setOpen(false); onStop() }}
+              className="w-full text-left px-4 py-2.5 text-sm text-amber-700 hover:bg-amber-50">
+              Stop
+            </button>
+          )}
+          {state === 'error' && (
+            <button onClick={() => { setOpen(false); onRetry() }}
+              className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">
+              Retry
+            </button>
+          )}
+          <button onClick={() => { setOpen(false); onDelete() }}
+            className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50">
+            Delete
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function StageResultSection({ name, fields }: { name: string; fields: Record<string, string> }) {
   const [open, setOpen] = useState(true)
+  const [raw, setRaw] = useState(false)
+  const isMarkdown = (v: string) => v.includes('\n') && /[#*`\-]/.test(v)
+
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
       <button onClick={() => setOpen(o => !o)}
@@ -158,8 +198,22 @@ function StageResultSection({ name, fields }: { name: string; fields: Record<str
         <div className="px-4 pb-4 space-y-3 border-t border-gray-100">
           {Object.entries(fields).map(([field, value]) => (
             <div key={field} className="pt-3">
-              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">{field}</div>
-              <pre className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2 text-xs font-mono whitespace-pre-wrap max-h-96 overflow-y-auto">{value}</pre>
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{field}</div>
+                {isMarkdown(value) && (
+                  <button onClick={() => setRaw(r => !r)}
+                    className="text-xs text-gray-400 hover:text-gray-600">
+                    {raw ? 'Rendered' : 'Raw'}
+                  </button>
+                )}
+              </div>
+              {isMarkdown(value) && !raw ? (
+                <div className="prose prose-sm prose-gray max-w-none bg-gray-50 border border-gray-100 rounded-lg px-4 py-3">
+                  <ReactMarkdown>{value}</ReactMarkdown>
+                </div>
+              ) : (
+                <pre className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2 text-xs font-mono whitespace-pre-wrap max-h-96 overflow-y-auto">{value}</pre>
+              )}
             </div>
           ))}
         </div>
