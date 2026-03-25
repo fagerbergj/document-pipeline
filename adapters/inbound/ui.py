@@ -76,6 +76,26 @@ async def document_ocr(request: Request, doc_id: str):
     )
 
 
+@router.post("/api/documents/{doc_id}/retry", response_class=HTMLResponse)
+async def document_retry(request: Request, doc_id: str):
+    """Reset an errored document back to pending on its current stage."""
+    db = request.app.state.db
+    doc = await db.get(doc_id)
+    if doc is None:
+        return HTMLResponse("<em>Not found</em>", status_code=404)
+    now_str = datetime.now(timezone.utc).isoformat()
+    from dataclasses import replace
+    updated = replace(doc, stage_state="pending", updated_at=now_str)
+    await db.update(updated)
+    await db.append_event(doc_id, doc.current_stage, "retried", now_str)
+    docs = await db.list_documents()
+    counts = await db.status_counts()
+    return templates.TemplateResponse(
+        "partials/document_table.html",
+        {"request": request, "docs": docs, "counts": counts, "state_order": _STATE_ORDER},
+    )
+
+
 @router.get("/review", response_class=HTMLResponse)
 async def review_inbox(request: Request):
     db = request.app.state.db

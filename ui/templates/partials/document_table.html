@@ -32,7 +32,16 @@
       <td>{{ doc.title or "(untitled)" }}</td>
       <td><code>{{ doc.current_stage }}</code></td>
       <td><span class="badge badge-{{ doc.stage_state }}">{{ doc.stage_state }}</span></td>
-      <td>{{ doc.created_at[:19].replace("T", " ") }}</td>
+      <td>
+        {{ doc.created_at[:19].replace("T", " ") }}
+        {% if doc.stage_state == 'error' %}
+        <button hx-post="/api/documents/{{ doc.id }}/retry"
+                hx-target="#dashboard-content"
+                hx-swap="innerHTML"
+                onclick="event.stopPropagation()"
+                style="margin-left:.5rem;padding:.15rem .5rem;font-size:.78rem;border-radius:4px;border:1px solid #721c24;background:#f8d7da;color:#721c24;cursor:pointer">Retry</button>
+        {% endif %}
+      </td>
     </tr>
     <tr class="detail-row" id="row-detail-{{ doc.id }}" style="display:none">
       <td colspan="4">
