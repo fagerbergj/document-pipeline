@@ -18,22 +18,21 @@ from fastapi.templating import Jinja2Templates
 
 from core.services import review as review_service
 
-_CONTEXT_LIBRARY_PATH = Path("prompts/context_library.json")
+_CTX_LIB_KEY = "context_library"
 
 
-def _load_context_library() -> list[dict]:
-    if not _CONTEXT_LIBRARY_PATH.exists():
+async def _load_context_library(db) -> list[dict]:
+    raw = await db.kv_get(_CTX_LIB_KEY)
+    if not raw:
         return []
     try:
-        return json.loads(_CONTEXT_LIBRARY_PATH.read_text(encoding="utf-8"))
+        return json.loads(raw)
     except Exception:
         return []
 
 
-def _save_context_library(entries: list[dict]) -> None:
-    _CONTEXT_LIBRARY_PATH.write_text(
-        json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
+async def _save_context_library(db, entries: list[dict]) -> None:
+    await db.kv_set(_CTX_LIB_KEY, json.dumps(entries, ensure_ascii=False))
 
 router = APIRouter()
 templates = Jinja2Templates(directory="ui/templates")
@@ -214,7 +213,8 @@ async def document_retry(request: Request, doc_id: str):
 
 @router.get("/api/context-library", response_class=HTMLResponse)
 async def context_library_get(request: Request):
-    entries = _load_context_library()
+    db = request.app.state.db
+    entries = await _load_context_library(db)
     return templates.TemplateResponse(
         "partials/context_library.html", {"request": request, "entries": entries}
     )
@@ -222,27 +222,29 @@ async def context_library_get(request: Request):
 
 @router.post("/api/context-library", response_class=HTMLResponse)
 async def context_library_save(request: Request):
+    db = request.app.state.db
     form = await request.form()
     name = form.get("library_name", "").strip()
     text = form.get("library_text", "").strip()
     if name and text:
-        entries = _load_context_library()
+        entries = await _load_context_library(db)
         for e in entries:
             if e["name"] == name:
                 e["text"] = text
                 break
         else:
             entries.append({"name": name, "text": text})
-        _save_context_library(entries)
+        await _save_context_library(db, entries)
     return templates.TemplateResponse(
         "partials/context_library.html",
-        {"request": request, "entries": _load_context_library()},
+        {"request": request, "entries": await _load_context_library(db)},
     )
 
 
 @router.get("/contexts", response_class=HTMLResponse)
 async def contexts_page(request: Request):
-    entries = _load_context_library()
+    db = request.app.state.db
+    entries = await _load_context_library(db)
     return templates.TemplateResponse(
         "contexts.html", {"request": request, "entries": entries}
     )
@@ -250,42 +252,45 @@ async def contexts_page(request: Request):
 
 @router.get("/api/context-library/manage", response_class=HTMLResponse)
 async def context_library_manage_get(request: Request):
+    db = request.app.state.db
     return templates.TemplateResponse(
         "partials/context_library_manage.html",
-        {"request": request, "entries": _load_context_library()},
+        {"request": request, "entries": await _load_context_library(db)},
     )
 
 
 @router.post("/api/context-library/manage", response_class=HTMLResponse)
 async def context_library_manage_save(request: Request):
+    db = request.app.state.db
     form = await request.form()
     name = form.get("library_name", "").strip()
     text = form.get("library_text", "").strip()
     if name and text:
-        entries = _load_context_library()
+        entries = await _load_context_library(db)
         for e in entries:
             if e["name"] == name:
                 e["text"] = text
                 break
         else:
             entries.append({"name": name, "text": text})
-        _save_context_library(entries)
+        await _save_context_library(db, entries)
     return templates.TemplateResponse(
         "partials/context_library_manage.html",
-        {"request": request, "entries": _load_context_library()},
+        {"request": request, "entries": await _load_context_library(db)},
     )
 
 
 @router.post("/api/context-library/delete", response_class=HTMLResponse)
 async def context_library_delete(request: Request):
+    db = request.app.state.db
     form = await request.form()
     name = form.get("name", "").strip()
     if name:
-        entries = [e for e in _load_context_library() if e["name"] != name]
-        _save_context_library(entries)
+        entries = [e for e in await _load_context_library(db) if e["name"] != name]
+        await _save_context_library(db, entries)
     return templates.TemplateResponse(
         "partials/context_library_manage.html",
-        {"request": request, "entries": _load_context_library()},
+        {"request": request, "entries": await _load_context_library(db)},
     )
 
 

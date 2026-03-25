@@ -45,6 +45,13 @@ CREATE TABLE IF NOT EXISTS document_destinations (
 )
 """
 
+_CREATE_KEY_VALUE = """
+CREATE TABLE IF NOT EXISTS key_value (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+)
+"""
+
 _INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_documents_stage ON documents(current_stage, stage_state)",
     "CREATE INDEX IF NOT EXISTS idx_documents_hash ON documents(content_hash)",
@@ -65,6 +72,7 @@ class Database:
         await self._conn.execute(_CREATE_DOCUMENTS)
         await self._conn.execute(_CREATE_STAGE_EVENTS)
         await self._conn.execute(_CREATE_DOCUMENT_DESTINATIONS)
+        await self._conn.execute(_CREATE_KEY_VALUE)
         for idx in _INDEXES:
             await self._conn.execute(idx)
         await self._conn.commit()
@@ -202,3 +210,15 @@ class Database:
                WHERE current_stage NOT IN ('deleted') GROUP BY stage_state"""
         ) as cur:
             return {row["stage_state"]: row["cnt"] for row in await cur.fetchall()}
+
+    async def kv_get(self, key: str) -> Optional[str]:
+        async with self._conn.execute("SELECT value FROM key_value WHERE key=?", (key,)) as cur:
+            row = await cur.fetchone()
+            return row["value"] if row else None
+
+    async def kv_set(self, key: str, value: str) -> None:
+        await self._conn.execute(
+            "INSERT INTO key_value (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (key, value),
+        )
+        await self._conn.commit()
