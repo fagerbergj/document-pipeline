@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query'
+import { useState, useRef, useEffect } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
 import StatusBadge from '../components/StatusBadge'
@@ -14,6 +15,7 @@ const SORT_COLS: Record<string, { asc: SortKey; desc: SortKey }> = {
 export default function Dashboard() {
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
+  const qc = useQueryClient()
 
   const stages = searchParams.get('stages') ?? ''
   const states = searchParams.get('states') ?? ''
@@ -94,23 +96,25 @@ export default function Dashboard() {
                 <tbody className="divide-y divide-gray-50">
                   {docs.map(doc => (
                     <tr key={doc.id}
-                      onClick={() => navigate(`/documents/${doc.id}`)}
-                      className="hover:bg-gray-50 cursor-pointer transition-colors group">
+                      className="hover:bg-gray-50 transition-colors group">
                       <td className="px-4 py-3">
-                        <span className="text-sm font-medium text-gray-800 group-hover:text-blue-600 transition-colors">
-                          {doc.title || <span className="text-gray-400 italic font-normal">untitled</span>}
-                        </span>
+                        <InlineTitle
+                          docId={doc.id}
+                          title={doc.title}
+                          onNavigate={() => navigate(`/documents/${doc.id}`)}
+                          onSaved={() => qc.invalidateQueries({ queryKey: ['documents'] })}
+                        />
                         {doc.needs_context && (
                           <span className="ml-2 text-xs text-red-500 font-medium">⚠ needs context</span>
                         )}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 cursor-pointer" onClick={() => navigate(`/documents/${doc.id}`)}>
                         <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{doc.current_stage}</span>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 cursor-pointer" onClick={() => navigate(`/documents/${doc.id}`)}>
                         <StatusBadge state={doc.stage_state} />
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-400 hidden sm:table-cell">
+                      <td className="px-4 py-3 text-sm text-gray-400 hidden sm:table-cell cursor-pointer" onClick={() => navigate(`/documents/${doc.id}`)}>
                         {doc.created_at.slice(0, 16).replace('T', ' ')}
                       </td>
                     </tr>
@@ -122,5 +126,53 @@ export default function Dashboard() {
         )}
       </div>
     </div>
+  )
+}
+
+function InlineTitle({ docId, title, onNavigate, onSaved }: {
+  docId: string
+  title: string | null
+  onNavigate: () => void
+  onSaved: () => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState(title ?? '')
+  const inputRef = useRef<HTMLInputElement>(null)
+  const mut = useMutation({
+    mutationFn: (t: string) => api.updateTitle(docId, t),
+    onSuccess: () => { onSaved(); setEditing(false) },
+  })
+
+  useEffect(() => {
+    if (editing) inputRef.current?.select()
+  }, [editing])
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        onBlur={() => { mut.mutate(value) }}
+        onKeyDown={e => {
+          if (e.key === 'Enter') { e.preventDefault(); mut.mutate(value) }
+          if (e.key === 'Escape') { setValue(title ?? ''); setEditing(false) }
+        }}
+        onClick={e => e.stopPropagation()}
+        className="text-sm font-medium border-b border-blue-400 bg-transparent focus:outline-none w-full"
+        disabled={mut.isPending}
+      />
+    )
+  }
+
+  return (
+    <span
+      className="text-sm font-medium text-gray-800 group-hover:text-blue-600 transition-colors cursor-pointer"
+      onClick={onNavigate}
+      onDoubleClick={e => { e.stopPropagation(); setEditing(true) }}
+      title="Double-click to rename"
+    >
+      {title || <span className="text-gray-400 italic font-normal">untitled</span>}
+    </span>
   )
 }
