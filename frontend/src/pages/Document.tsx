@@ -432,21 +432,19 @@ function ReviewSection({ doc, review, onRefresh }: { doc: DocumentDetail; review
       </div>
 
       {review.context_updates?.trim() && (
-        <ContextUpdatesSection proposed={review.context_updates.trim()} onRefresh={onRefresh} />
+        <ContextUpdatesSection doc={doc} proposed={review.context_updates.trim()} onRefresh={onRefresh} />
       )}
     </div>
   )
 }
 
-function ContextUpdatesSection({ proposed, onRefresh }: { proposed: string; onRefresh: () => void }) {
-  const qc = useQueryClient()
-  const { data: entries } = useQuery({ queryKey: ['context-library'], queryFn: api.contextLibrary, staleTime: 0 })
-  const current = entries?.find(e => e.name === 'user_context')?.text ?? ''
+function ContextUpdatesSection({ doc, proposed, onRefresh }: { doc: DocumentDetail; proposed: string; onRefresh: () => void }) {
+  const current = doc.document_context
   const [edited, setEdited] = useState(proposed)
 
   const saveMut = useMutation({
-    mutationFn: () => api.saveContextEntry('user_context', edited),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['context-library'] }); onRefresh() },
+    mutationFn: () => api.saveContext(doc.id, edited),
+    onSuccess: onRefresh,
   })
 
   return (

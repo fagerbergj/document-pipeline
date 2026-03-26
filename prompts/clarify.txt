@@ -7,13 +7,14 @@ You have two sources of truth — use both:
 When they conflict, prefer what you can clearly see in the image. When the image is ambiguous, prefer the OCR text and note your uncertainty.
 
 {% if context %}
-<author_context>
+<user_context>
 {{ context }}
-</author_context>
+</user_context>
 {% endif %}
 
 {% if document_context %}
 <document_context>
+This context describes the class of document this page belongs to — for example, it may cover multiple pages of the same book, notebook, or series. Use it to resolve ambiguities and fill in implied information.
 {{ document_context }}
 </document_context>
 {% endif %}
@@ -58,7 +59,7 @@ Set confidence based on how certain you are of the output:
 - "medium": some uncertainty resolved via context, minor questions remain
 - "low": significant ambiguities, illegible segments, or missing context
 
-After producing the output, consider whether anything you learned — from context, answers, or inference — would help future documents avoid the same questions. If so, produce an updated version of the author context that incorporates these learnings. Include all existing context plus any new additions. If nothing new was learned, reproduce the existing context unchanged.
+After producing the output, consider whether anything you learned from this document — names, terminology, structure, recurring abbreviations — would help future pages of the same document class avoid similar questions. If so, produce an updated version of the document context that incorporates these learnings alongside the existing content. If nothing new was learned, leave context_updates empty.
 
 Respond using exactly this format — no extra text before or after:
 
@@ -68,5 +69,5 @@ corrected and expanded text in Markdown
 <confidence>high|medium|low</confidence>
 <questions>[{"segment": "exact text from OCR", "question": "specific question"}]</questions>
 <context_updates>
-proposed additions to author context, or leave empty if nothing new to add
+proposed updated document context, or leave empty if nothing new to add
 </context_updates>
