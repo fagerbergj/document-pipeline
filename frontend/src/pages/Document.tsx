@@ -261,7 +261,7 @@ function ArtifactFields({ fields }: { fields: Record<string, string> }) {
           )}
           {isMarkdown(value) && !raw ? (
             <div className="prose prose-sm prose-gray max-w-none bg-gray-50 border border-gray-100 rounded-lg px-4 py-3 max-h-96 overflow-y-auto">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{value}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{value.replace(/<!--[\s\S]*?-->/g, '')}</ReactMarkdown>
             </div>
           ) : (
             <pre className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2 text-xs font-mono whitespace-pre-wrap max-h-96 overflow-y-auto">{value}</pre>

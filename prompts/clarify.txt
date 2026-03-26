@@ -22,11 +22,12 @@ Additional instructions from the author:
 {% endif %}
 
 {% if qa_history %}
-Previous clarification rounds — incorporate all answers and avoid repeating resolved questions:
+The author has already answered clarification questions in previous rounds. You MUST treat these as resolved facts and incorporate them directly into the output. Do NOT ask about them again under any circumstances.
+
 {% for round in qa_history %}
-Round {{ loop.index }}:
-{% if round.responses %}{% for r in round.responses %}  - "{{ r.segment }}": {{ r.answer }}
-{% endfor %}{% endif %}{% if round.free_prompt %}  Additional: {{ round.free_prompt }}
+Round {{ loop.index }} answers:
+{% if round.responses %}{% for r in round.responses %}  - "{{ r.segment }}" → {{ r.answer }}
+{% endfor %}{% endif %}{% if round.free_prompt %}  Additional instruction: {{ round.free_prompt }}
 {% endif %}{% endfor %}
 {% endif %}
 
