@@ -15,7 +15,7 @@ class GenerationCancelled(Exception):
 
 async def generate_vision(base_url: str, model: str, prompt: str, image_bytes: bytes) -> str:
     image_b64 = base64.b64encode(image_bytes).decode()
-    async with httpx.AsyncClient(timeout=180.0) as client:
+    async with httpx.AsyncClient(timeout=600.0) as client:
         resp = await client.post(
             f"{base_url}/api/generate",
             json={"model": model, "prompt": prompt, "images": [image_b64], "stream": False},
