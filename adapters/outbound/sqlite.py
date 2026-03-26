@@ -226,6 +226,13 @@ class Database:
         await self._conn.execute("DELETE FROM documents WHERE id=?", (document_id,))
         await self._conn.commit()
 
+    async def clear_errors(self, document_id: str) -> None:
+        await self._conn.execute(
+            "DELETE FROM stage_events WHERE document_id=? AND event_type='failed'",
+            (document_id,),
+        )
+        await self._conn.commit()
+
     async def count_failures(self, document_id: str, stage: str) -> int:
         async with self._conn.execute(
             "SELECT COUNT(*) FROM stage_events WHERE document_id=? AND stage=? AND event_type='failed'",

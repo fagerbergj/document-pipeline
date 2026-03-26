@@ -58,11 +58,11 @@ export default function Document() {
       <div className="p-6 space-y-4">
         <TitleSection doc={doc} onRefresh={refresh} />
         <ContextSection doc={doc} onRefresh={refresh} />
-        {doc.stage_displays.map(sd => (
-          <StageResultSection key={sd.name} name={sd.name} fields={sd.fields} />
-        ))}
+        {(doc.has_image || doc.stage_displays.length > 0) && (
+          <ArtifactsSection doc={doc} />
+        )}
         {doc.stage_state === 'running' && <LiveLogSection docId={doc.id} onDone={refresh} />}
-        {errorEvents.length > 0 && <EventLogSection events={errorEvents} />}
+        {errorEvents.length > 0 && <EventLogSection events={errorEvents} docId={doc.id} onCleared={refresh} />}
         {doc.review && <ReviewSection doc={doc} review={doc.review} onRefresh={refresh} />}
         {doc.replay_stages.length > 0 && <ReplaySection doc={doc} onRefresh={refresh} />}
       </div>
@@ -197,45 +197,81 @@ function KebabMenu({ state, onStop, onRetry, onDelete }: {
   )
 }
 
-function StageResultSection({ name, fields }: { name: string; fields: Record<string, string> }) {
-  const [open, setOpen] = useState(true)
+function ArtifactsSection({ doc }: { doc: DocumentDetail }) {
+  const tabs = [
+    ...(doc.has_image ? [{ id: 'image', label: 'Image' }] : []),
+    ...doc.stage_displays.map(sd => ({ id: sd.name, label: sd.name })),
+  ]
+  const [active, setActive] = useState(tabs[0]?.id ?? 'image')
+  const activeDisplay = doc.stage_displays.find(sd => sd.name === active)
+
+  if (tabs.length === 0) return null
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="flex border-b border-gray-100 overflow-x-auto">
+        {tabs.map(tab => (
+          <button key={tab.id} onClick={() => setActive(tab.id)}
+            className={`px-4 py-2.5 text-xs font-medium whitespace-nowrap transition-colors border-b-2 -mb-px ${
+              active === tab.id
+                ? 'border-gray-900 text-gray-900'
+                : 'border-transparent text-gray-400 hover:text-gray-600'
+            }`}>
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      <div className="p-4">
+        {active === 'image' && doc.has_image && (
+          <img src={`/api/v1/documents/${doc.id}/image`} alt="Original document"
+            className="max-w-full rounded-lg border border-gray-100" />
+        )}
+        {activeDisplay && (
+          <ArtifactFields fields={activeDisplay.fields} />
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ArtifactFields({ fields }: { fields: Record<string, string> }) {
   const [raw, setRaw] = useState(false)
   const isMarkdown = (v: string) => v.includes('\n') && /[#*`\-]/.test(v)
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <button onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors">
-        <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{name}</span>
-        <span className="text-gray-300 text-sm">{open ? '▲' : '▼'}</span>
-      </button>
-      {open && (
-        <div className="px-4 pb-4 space-y-3 border-t border-gray-100">
-          {Object.entries(fields).map(([field, value]) => (
-            <div key={field} className="pt-3">
-              <div className="flex items-center justify-between mb-1">
-                <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{field}</div>
-                {isMarkdown(value) && (
-                  <button onClick={() => setRaw(r => !r)}
-                    className="text-xs text-gray-400 hover:text-gray-600">
-                    {raw ? 'Rendered' : 'Raw'}
-                  </button>
-                )}
-              </div>
-              {isMarkdown(value) && !raw ? (
-                <div className="prose prose-sm prose-gray max-w-none bg-gray-50 border border-gray-100 rounded-lg px-4 py-3 max-h-96 overflow-y-auto">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{value}</ReactMarkdown>
-                </div>
-              ) : (
-                <pre className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2 text-xs font-mono whitespace-pre-wrap max-h-96 overflow-y-auto">{value}</pre>
+    <div className="space-y-3">
+      {Object.entries(fields).map(([field, value]) => (
+        <div key={field}>
+          {Object.keys(fields).length > 1 && (
+            <div className="flex items-center justify-between mb-1">
+              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{field}</div>
+              {isMarkdown(value) && (
+                <button onClick={() => setRaw(r => !r)} className="text-xs text-gray-400 hover:text-gray-600">
+                  {raw ? 'Rendered' : 'Raw'}
+                </button>
               )}
             </div>
-          ))}
+          )}
+          {Object.keys(fields).length === 1 && isMarkdown(value) && (
+            <div className="flex justify-end mb-1">
+              <button onClick={() => setRaw(r => !r)} className="text-xs text-gray-400 hover:text-gray-600">
+                {raw ? 'Rendered' : 'Raw'}
+              </button>
+            </div>
+          )}
+          {isMarkdown(value) && !raw ? (
+            <div className="prose prose-sm prose-gray max-w-none bg-gray-50 border border-gray-100 rounded-lg px-4 py-3 max-h-96 overflow-y-auto">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{value}</ReactMarkdown>
+            </div>
+          ) : (
+            <pre className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2 text-xs font-mono whitespace-pre-wrap max-h-96 overflow-y-auto">{value}</pre>
+          )}
         </div>
-      )}
+      ))}
     </div>
   )
 }
+
 
 function LiveLogSection({ docId, onDone }: { docId: string; onDone: () => void }) {
   const logRef = useRef<HTMLPreElement>(null)
@@ -276,10 +312,18 @@ function LiveLogSection({ docId, onDone }: { docId: string; onDone: () => void }
   )
 }
 
-function EventLogSection({ events }: { events: StageEvent[] }) {
+function EventLogSection({ events, docId, onCleared }: { events: StageEvent[]; docId: string; onCleared: () => void }) {
+  const handleClear = async () => {
+    await fetch(`/api/v1/documents/${docId}/errors`, { method: 'DELETE' })
+    onCleared()
+  }
+
   return (
     <div className="bg-white rounded-xl border border-red-200 p-4">
-      <div className="text-xs font-semibold text-red-500 uppercase tracking-wide mb-3">Error log</div>
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-xs font-semibold text-red-500 uppercase tracking-wide">Error log</div>
+        <button onClick={handleClear} className="text-xs text-gray-400 hover:text-red-500 transition-colors">Clear</button>
+      </div>
       <div className="space-y-2">
         {events.map((e, i) => (
           <div key={i} className="bg-red-50 border border-red-100 rounded-lg p-3 text-xs font-mono">

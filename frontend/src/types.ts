@@ -50,6 +50,7 @@ export interface DocumentDetail {
   review: Review | null
   replay_stages: { name: string }[]
   events: StageEvent[]
+  has_image: boolean
 }
 
 export interface ContextEntry {

@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import json as _json
+import os as _os
 from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Request, Query
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from core.services import review as review_service
 
@@ -138,6 +139,7 @@ def _build_doc_detail(doc, config, events: list | None = None) -> dict:
         "replay_stages": replay_stages,
         "needs_context": needs_context,
         "events": events or [],
+        "has_image": bool(doc.png_path and _os.path.exists(doc.png_path)),
     }
 
 
@@ -203,6 +205,15 @@ async def get_document(request: Request, doc_id: str):
         return JSONResponse({"error": "not found"}, status_code=404)
     events = await db.get_events(doc_id)
     return _build_doc_detail(doc, config, events)
+
+
+@router.get("/documents/{doc_id}/image")
+async def get_document_image(request: Request, doc_id: str):
+    db = request.app.state.db
+    doc = await db.get(doc_id)
+    if doc is None or not doc.png_path or not _os.path.exists(doc.png_path):
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return FileResponse(doc.png_path, media_type="image/png")
 
 
 @router.delete("/documents/{doc_id}")
@@ -332,6 +343,18 @@ async def clarify_document(request: Request, doc_id: str):
         doc, clarification_responses, config, db, _now(), free_prompt=free_prompt
     )
     return _build_doc_detail(updated, config)
+
+
+@router.delete("/documents/{doc_id}/errors")
+async def clear_errors(request: Request, doc_id: str):
+    db = request.app.state.db
+    config = request.app.state.pipeline
+    doc = await db.get(doc_id)
+    if doc is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    await db.clear_errors(doc_id)
+    events = await db.get_events(doc_id)
+    return _build_doc_detail(doc, config, events)
 
 
 @router.post("/documents/{doc_id}/stop")
