@@ -58,12 +58,12 @@ export default function Document() {
       <div className="p-6 space-y-4">
         <TitleSection doc={doc} onRefresh={refresh} />
         <ContextSection doc={doc} onRefresh={refresh} />
+        {doc.review && <ReviewSection doc={doc} review={doc.review} onRefresh={refresh} />}
         {(doc.has_image || doc.stage_displays.length > 0) && (
           <ArtifactsSection doc={doc} />
         )}
         {doc.stage_state === 'running' && <LiveLogSection docId={doc.id} onDone={refresh} />}
         {errorEvents.length > 0 && <EventLogSection events={errorEvents} docId={doc.id} onCleared={refresh} />}
-        {doc.review && <ReviewSection doc={doc} review={doc.review} onRefresh={refresh} />}
         {doc.replay_stages.length > 0 && <ReplaySection doc={doc} onRefresh={refresh} />}
       </div>
     </div>
