@@ -173,7 +173,7 @@ async def _run_llm_text(
     async def _on_chunk(chunk: str):
         await _q.put({"type": "token", "text": chunk})
 
-    logger.debug("Prompt for stage '%s' doc %s:\n%s", stage.name, doc.id[:8], prompt_text)
+    logger.info("Prompt for stage '%s' doc %s:\n%s", stage.name, doc.id[:8], prompt_text)
     image_bytes = Path(doc.png_path).read_bytes() if stage.vision and doc.png_path else None
     raw_response = await generate_text(
         ollama_base_url,
