@@ -90,7 +90,13 @@ async def _run_ocr(
     if not doc.png_path:
         raise ValueError("No PNG path set on document")
 
-    prompt_text = Path(stage.prompt).read_text(encoding="utf-8") if stage.prompt else ""
+    if stage.prompt:
+        from jinja2 import Template
+        raw_template = Path(stage.prompt).read_text(encoding="utf-8")
+        document_context = doc.stage_data.get("_ingest", {}).get("document_context", "")
+        prompt_text = Template(raw_template).render(document_context=document_context)
+    else:
+        prompt_text = ""
     image_bytes = Path(doc.png_path).read_bytes()
 
     ocr_text = await generate_vision(

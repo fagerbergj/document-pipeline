@@ -4,6 +4,7 @@ stages:
     max_concurrent: 1
     model: ${OCR_MODEL}
     prompt: prompts/ocr.txt
+    require_context: true
     outputs:
       - field: ocr_raw
         type: text
