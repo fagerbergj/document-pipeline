@@ -183,6 +183,7 @@ async def _run_llm_text(
         await _q.put({"type": "token", "text": chunk})
 
     logger.debug("Prompt for stage '%s' doc %s:\n%s", stage.name, doc.id[:8], prompt_text)
+    logger.debug("Input for stage '%s' doc %s:\n%s", stage.name, doc.id[:8], input_text)
     image_bytes = Path(doc.png_path).read_bytes() if stage.vision and doc.png_path else None
     raw_response = await generate_text(
         ollama_base_url,
@@ -193,6 +194,8 @@ async def _run_llm_text(
         on_chunk=_on_chunk,
         image_bytes=image_bytes,
     )
+
+    logger.debug("Response for stage '%s' doc %s:\n%s", stage.name, doc.id[:8], raw_response)
 
     # Parse response — clarify uses XML tags, other stages use JSON
     if "<clarified_text>" in raw_response:

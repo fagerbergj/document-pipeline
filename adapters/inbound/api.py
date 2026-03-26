@@ -92,7 +92,7 @@ def _build_doc_detail(doc, config, events: list | None = None) -> dict:
             "confidence": sdata.get("confidence", ""),
             "qa_rounds": len(sdata.get("qa_history", [])),
             "clarification_requests": sdata.get("clarification_requests", []),
-            "context_updates": sdata.get("context_updates", ""),
+            "context_updates": _clean_context_updates(sdata.get("context_updates", "")),
         }
 
     stage_displays = []
@@ -163,6 +163,13 @@ def _doc_summary(doc, config) -> dict:
         "updated_at": doc.updated_at,
         "needs_context": needs_context,
     }
+
+
+_CTX_NULL_VALS = {"none", "null", "n/a", "nothing", "no updates", "no new information"}
+
+def _clean_context_updates(val: str) -> str:
+    v = (val or "").strip()
+    return "" if v.lower() in _CTX_NULL_VALS else v
 
 
 def _now() -> str:
