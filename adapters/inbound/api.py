@@ -334,6 +334,7 @@ async def clarify_document(request: Request, doc_id: str):
     body = await request.json()
     answers: dict = body.get("answers", {})
     free_prompt: str = body.get("free_prompt", "").strip()
+    edited_text: str = body.get("edited_text", "").strip()
     stage_name = doc.current_stage
     existing_requests = (doc.stage_data.get(stage_name) or {}).get("clarification_requests", [])
     clarification_responses = [
@@ -341,7 +342,7 @@ async def clarify_document(request: Request, doc_id: str):
         for i, req in enumerate(existing_requests)
     ]
     updated = await review_service.reject_with_clarifications(
-        doc, clarification_responses, config, db, _now(), free_prompt=free_prompt
+        doc, clarification_responses, config, db, _now(), free_prompt=free_prompt, edited_text=edited_text
     )
     return _build_doc_detail(updated, config)
 

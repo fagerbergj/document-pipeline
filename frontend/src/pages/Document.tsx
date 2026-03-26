@@ -361,7 +361,7 @@ function ReviewSection({ doc, review, onRefresh }: { doc: DocumentDetail; review
   })
   const rejectMut = useMutation({ mutationFn: () => api.reject(doc.id), onSuccess: onRefresh })
   const clarifyMut = useMutation({
-    mutationFn: () => api.clarify(doc.id, answers, freePrompt),
+    mutationFn: () => api.clarify(doc.id, answers, freePrompt, review.is_single_output ? editedText : undefined),
     onSuccess: onRefresh
   })
 
@@ -371,12 +371,13 @@ function ReviewSection({ doc, review, onRefresh }: { doc: DocumentDetail; review
     ? 'bg-blue-100 text-blue-700'
     : 'bg-red-100 text-red-700'
 
+  const busy = approveMut.isPending || rejectMut.isPending || clarifyMut.isPending
+
   return (
     <div className="space-y-4">
-      {/* Review — Clarifications */}
       <div className="bg-white rounded-xl border border-gray-200 p-4">
         <div className="flex flex-wrap items-center gap-2 mb-4">
-          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Review — Clarifications</div>
+          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Review</div>
           {review.confidence && (
             <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${confidenceColor}`}>{review.confidence} confidence</span>
           )}
@@ -392,7 +393,7 @@ function ReviewSection({ doc, review, onRefresh }: { doc: DocumentDetail; review
               <pre className="bg-gray-50 border border-gray-100 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap h-80 overflow-y-auto">{review.input_text}</pre>
             </div>
             <div>
-              <div className="text-xs font-semibold text-gray-400 mb-1">After ({review.output_field}) — editable</div>
+              <div className="text-xs font-semibold text-gray-400 mb-1">After ({review.output_field})</div>
               <textarea value={editedText} onChange={e => setEditedText(e.target.value)}
                 className="w-full bg-gray-50 border border-gray-100 rounded-lg p-3 text-xs font-mono h-80 resize-none focus:outline-none focus:ring-2 focus:ring-blue-200" />
             </div>
@@ -403,30 +404,29 @@ function ReviewSection({ doc, review, onRefresh }: { doc: DocumentDetail; review
           </div>
         )}
 
-        <div className="flex gap-2 mb-4">
-          <button onClick={() => approveMut.mutate()} disabled={approveMut.isPending}
+        {review.clarification_requests.length > 0 && (
+          <ClarificationForm requests={review.clarification_requests} answers={answers} onChange={setAnswers} />
+        )}
+
+        <div className="mb-4">
+          <label className="block text-xs font-medium text-gray-500 mb-1">Additional instructions</label>
+          <textarea value={freePrompt} onChange={e => setFreePrompt(e.target.value)} rows={2}
+            placeholder="e.g. 'focus on the meeting action items…'"
+            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-y focus:outline-none focus:ring-2 focus:ring-blue-200" />
+        </div>
+
+        <div className="flex gap-2">
+          <button onClick={() => approveMut.mutate()} disabled={busy}
             className="px-4 py-1.5 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
             Approve
           </button>
-          <button onClick={() => rejectMut.mutate()} disabled={rejectMut.isPending}
+          <button onClick={() => clarifyMut.mutate()} disabled={busy}
+            className="px-4 py-1.5 text-sm font-medium bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-50">
+            Re-run
+          </button>
+          <button onClick={() => rejectMut.mutate()} disabled={busy}
             className="px-4 py-1.5 text-sm font-medium border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50">
             Reject
-          </button>
-        </div>
-
-        <div className="border-t border-gray-100 pt-4">
-          {review.clarification_requests.length > 0 && (
-            <ClarificationForm requests={review.clarification_requests} answers={answers} onChange={setAnswers} />
-          )}
-          <div className="mb-3">
-            <label className="block text-xs font-medium text-gray-500 mb-1">Additional instructions</label>
-            <textarea value={freePrompt} onChange={e => setFreePrompt(e.target.value)} rows={2}
-              placeholder="e.g. 'focus on the meeting action items…'"
-              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-y focus:outline-none focus:ring-2 focus:ring-blue-200" />
-          </div>
-          <button onClick={() => clarifyMut.mutate()} disabled={clarifyMut.isPending}
-            className="px-4 py-1.5 text-sm font-medium bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-50">
-            Re-run with instructions
           </button>
         </div>
       </div>

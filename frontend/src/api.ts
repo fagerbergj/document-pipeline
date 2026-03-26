@@ -29,8 +29,8 @@ export const api = {
     apiFetch(`/api/v1/documents/${id}/approve`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ edited_text: editedText ?? '' }) }),
   reject: (id: string): Promise<DocumentDetail> =>
     apiFetch(`/api/v1/documents/${id}/reject`, { method: 'POST' }),
-  clarify: (id: string, answers: Record<string, string>, free_prompt: string): Promise<DocumentDetail> =>
-    apiFetch(`/api/v1/documents/${id}/clarify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ answers, free_prompt }) }),
+  clarify: (id: string, answers: Record<string, string>, free_prompt: string, edited_text?: string): Promise<DocumentDetail> =>
+    apiFetch(`/api/v1/documents/${id}/clarify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ answers, free_prompt, edited_text: edited_text ?? '' }) }),
   stop: (id: string): Promise<DocumentDetail> =>
     apiFetch(`/api/v1/documents/${id}/stop`, { method: 'POST' }),
   retry: (id: string): Promise<DocumentDetail> =>

@@ -35,11 +35,14 @@ async def reject_with_clarifications(
     db,
     now_str: str,
     free_prompt: str = "",
+    edited_text: str = "",
 ) -> Document:
     """Append a Q&A round to qa_history and reset to pending for re-run."""
     stage_name = doc.current_stage
     stage_data = dict(doc.stage_data)
     entry = dict(stage_data.get(stage_name, {}))
+    if edited_text:
+        entry["clarified_text"] = edited_text
     qa_history = list(entry.get("qa_history", []))
     round_data: dict = {"responses": clarification_responses}
     if free_prompt:
