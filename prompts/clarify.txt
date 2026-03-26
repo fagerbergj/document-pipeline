@@ -25,6 +25,13 @@ This context describes the class of document this page belongs to — for exampl
 </additional_instructions>
 {% endif %}
 
+{% if previous_output %}
+<previous_clarified_text>
+This is your previous clarified output. Refine it using the Q&A answers below rather than starting from scratch.
+{{ previous_output }}
+</previous_clarified_text>
+{% endif %}
+
 {% if qa_history %}
 <qa_history>
 The author has already answered clarification questions in previous rounds. You MUST treat these as resolved facts and incorporate them directly into the output. Do NOT ask about them again under any circumstances.

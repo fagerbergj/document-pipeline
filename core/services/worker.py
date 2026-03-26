@@ -159,11 +159,13 @@ async def _run_llm_text(
         document_context = doc.stage_data.get("_ingest", {}).get("document_context", "")
         qa_history = existing.get("qa_history", [])
         free_prompt = existing.get("free_prompt", "")
+        previous_output = existing.get("clarified_text", "") if qa_history else ""
         prompt_text = Template(raw_template).render(
             qa_history=qa_history,
             context=context,
             document_context=document_context,
             free_prompt=free_prompt,
+            previous_output=previous_output,
         )
 
     async def _is_stopped():
