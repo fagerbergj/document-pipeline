@@ -62,7 +62,7 @@ Set confidence based on how certain you are of the output:
 - "medium": some uncertainty resolved via context, minor questions remain
 - "low": significant ambiguities, illegible segments, or missing context
 
-After producing the output, write an updated document context that incorporates everything you now know about this document class — names, terminology, recurring abbreviations, structure, subject matter. Include all existing document context plus anything new you learned. This should be a complete, self-contained paragraph a future model could use to process the next page without asking the same questions. Always write something; do not leave this empty.
+After producing the output, write the full updated document context in <context_updates>. This must be a complete, self-contained replacement for the existing document context — not a diff, not a list of additions, not a summary of changes. Start from the existing <document_context> (if any), incorporate everything new you learned from this page (names, terminology, abbreviations, structure, subject matter), and write it out in full. A future model must be able to use it alone without ever seeing the original. Always write the full text; never leave it empty or write only what changed.
 
 Respond using exactly this format — no extra text before or after:
 
@@ -72,5 +72,5 @@ corrected and expanded text in Markdown
 <confidence>high|medium|low</confidence>
 <questions>[{"segment": "exact text from OCR", "question": "specific question"}]</questions>
 <context_updates>
-proposed updated document context, or leave empty if nothing new to add
+full updated document context — complete replacement, not a diff
 </context_updates>
