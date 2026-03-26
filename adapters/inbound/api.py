@@ -346,21 +346,6 @@ async def clarify_document(request: Request, doc_id: str):
     return _build_doc_detail(updated, config)
 
 
-@router.get("/user-context")
-async def get_user_context():
-    from pathlib import Path
-    context_path = Path("prompts/user_context.txt")
-    return JSONResponse({"content": context_path.read_text(encoding="utf-8") if context_path.exists() else ""})
-
-
-@router.post("/user-context")
-async def save_user_context(request: Request):
-    from pathlib import Path
-    body = await request.json()
-    content: str = body.get("content", "")
-    Path("prompts/user_context.txt").write_text(content, encoding="utf-8")
-    return JSONResponse({"ok": True})
-
 
 @router.delete("/documents/{doc_id}/errors")
 async def clear_errors(request: Request, doc_id: str):

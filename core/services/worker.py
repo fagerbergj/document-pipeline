@@ -143,13 +143,16 @@ async def _run_llm_text(
     if stage.prompt:
         raw_template = Path(stage.prompt).read_text(encoding="utf-8")
         existing = doc.stage_data.get(stage.name, {})
-        context_path = Path("prompts/user_context.txt")
         context = ""
-        if context_path.exists():
-            raw = context_path.read_text(encoding="utf-8")
-            context = "\n".join(
-                l for l in raw.splitlines() if not l.startswith("#")
-            ).strip()
+        if db is not None:
+            raw = await db.kv_get("context_library")
+            if raw:
+                import json as _json
+                entries = _json.loads(raw)
+                for e in entries:
+                    if e.get("name") == "user_context":
+                        context = e.get("text", "").strip()
+                        break
         document_context = doc.stage_data.get("_ingest", {}).get("document_context", "")
         qa_history = existing.get("qa_history", [])
         free_prompt = existing.get("free_prompt", "")

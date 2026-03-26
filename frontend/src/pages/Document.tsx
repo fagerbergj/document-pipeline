@@ -424,18 +424,19 @@ function ReviewSection({ doc, review, onRefresh }: { doc: DocumentDetail; review
 
       {/* Review — Context Updates */}
       {review.context_updates && (
-        <ContextUpdatesSection docId={doc.id} proposed={review.context_updates} onRefresh={onRefresh} />
+        <ContextUpdatesSection proposed={review.context_updates} onRefresh={onRefresh} />
       )}
     </div>
   )
 }
 
-function ContextUpdatesSection({ docId, proposed, onRefresh }: { docId: string; proposed: string; onRefresh: () => void }) {
-  const { data } = useQuery({ queryKey: ['user-context'], queryFn: api.getUserContext })
-  const current = data?.content ?? ''
+function ContextUpdatesSection({ proposed, onRefresh }: { proposed: string; onRefresh: () => void }) {
+  const qc = useQueryClient()
+  const { data: entries } = useQuery({ queryKey: ['context-library'], queryFn: api.contextLibrary })
+  const current = entries?.find(e => e.name === 'user_context')?.text ?? ''
   const saveMut = useMutation({
-    mutationFn: () => api.saveUserContext(proposed),
-    onSuccess: onRefresh,
+    mutationFn: () => api.saveContextEntry('user_context', proposed),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['context-library'] }); onRefresh() },
   })
 
   return (

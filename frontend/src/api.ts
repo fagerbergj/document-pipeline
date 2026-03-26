@@ -44,7 +44,4 @@ export const api = {
     apiFetch('/api/v1/context-library', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, text }) }),
   deleteContextEntry: (name: string): Promise<ContextEntry[]> =>
     apiFetch(`/api/v1/context-library/${encodeURIComponent(name)}`, { method: 'DELETE' }),
-  getUserContext: (): Promise<{ content: string }> => apiFetch('/api/v1/user-context'),
-  saveUserContext: (content: string): Promise<{ ok: boolean }> =>
-    apiFetch('/api/v1/user-context', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content }) }),
 }
