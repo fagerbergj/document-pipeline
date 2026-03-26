@@ -40,13 +40,8 @@ The author has already answered clarification questions in previous rounds. You 
 
 Rules:
 - Fix OCR errors: misread characters, broken ligatures, garbled words.
-- Expand abbreviations, shorthand, and terse notes into full sentences where you understand the intent. Place a Markdown comment on its own separate line immediately after the line containing the expansion, e.g.:
-  `The meeting was postponed.`
-  `<!-- expanded: "mtg postponed" → "The meeting was postponed" -->`
-- Where context makes the meaning clear, fill in implied information. Place a Markdown comment on its own line immediately after, e.g.:
-  `The Tuesday standup was cancelled.`
-  `<!-- inferred: "standup" refers to the Tuesday standup based on context -->`
-- Comments must always be on their own line — never inline within a sentence. Do NOT use [added: …] markers.
+- Expand abbreviations, shorthand, and terse notes into full sentences where you understand the intent.
+- Where context makes the meaning clear, fill in implied information.
 - Improve readability: fix punctuation, capitalisation, and structure where it helps.
 - Output as Markdown. Actively use Markdown features where they improve clarity: headings (`#`, `##`) for sections or topics, bullet or numbered lists for enumerations or steps, tables for comparisons or structured data, bold for key terms or action items. Use the format that best matches the content — don't force structure where none exists, but don't leave structure implicit when Markdown can make it explicit.
 - For any diagrams, drawings, or sketches visible in the image: reconstruct them using the most appropriate format — mermaid code block for flow or process diagrams, markdown table for structured comparisons, ASCII art for spatial layouts or anything else. Do not leave diagrams as text descriptions if you can reconstruct them from the image.

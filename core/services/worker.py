@@ -196,8 +196,9 @@ async def _run_llm_text(
         def _extract(tag: str) -> str:
             m = re.search(rf"<{tag}>(.*?)</{tag}>", raw_response, re.DOTALL)
             return m.group(1).strip() if m else ""
+        clarified = re.sub(r"<!--.*?-->", "", _extract("clarified_text"), flags=re.DOTALL).strip()
         parsed = {
-            "clarified_text": _extract("clarified_text"),
+            "clarified_text": clarified,
             "confidence": _extract("confidence") or "medium",
             "clarification_requests": json.loads(_extract("questions") or "[]"),
             "context_updates": _extract("context_updates"),
