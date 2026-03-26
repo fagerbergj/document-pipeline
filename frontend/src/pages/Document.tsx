@@ -223,8 +223,14 @@ function ArtifactsSection({ doc }: { doc: DocumentDetail }) {
       </div>
       <div className="p-4">
         {active === 'image' && doc.has_image && (
-          <img src={`/api/v1/documents/${doc.id}/image`} alt="Original document"
-            className="max-w-full rounded-lg border border-gray-100" />
+          <div>
+            <div className="flex justify-end mb-2">
+              <a href={`/api/v1/documents/${doc.id}/image`} target="_blank" rel="noreferrer"
+                className="text-xs text-gray-400 hover:text-gray-600">Open in new tab ↗</a>
+            </div>
+            <img src={`/api/v1/documents/${doc.id}/image`} alt="Original document"
+              className="max-w-full rounded-lg border border-gray-100" />
+          </div>
         )}
         {activeDisplay && (
           <ArtifactFields fields={activeDisplay.fields} />
@@ -242,23 +248,22 @@ function ArtifactFields({ fields }: { fields: Record<string, string> }) {
     <div className="space-y-3">
       {Object.entries(fields).map(([field, value]) => (
         <div key={field}>
-          {Object.keys(fields).length > 1 && (
-            <div className="flex items-center justify-between mb-1">
-              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{field}</div>
+          <div className="flex items-center justify-between mb-1">
+            {Object.keys(fields).length > 1
+              ? <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{field}</div>
+              : <div />}
+            <div className="flex items-center gap-3">
               {isMarkdown(value) && (
                 <button onClick={() => setRaw(r => !r)} className="text-xs text-gray-400 hover:text-gray-600">
                   {raw ? 'Rendered' : 'Raw'}
                 </button>
               )}
+              <button onClick={() => {
+                const blob = new Blob([value], { type: 'text/plain' })
+                window.open(URL.createObjectURL(blob), '_blank')
+              }} className="text-xs text-gray-400 hover:text-gray-600">Open in new tab ↗</button>
             </div>
-          )}
-          {Object.keys(fields).length === 1 && isMarkdown(value) && (
-            <div className="flex justify-end mb-1">
-              <button onClick={() => setRaw(r => !r)} className="text-xs text-gray-400 hover:text-gray-600">
-                {raw ? 'Rendered' : 'Raw'}
-              </button>
-            </div>
-          )}
+          </div>
           {isMarkdown(value) && !raw ? (
             <div className="prose prose-sm prose-gray max-w-none bg-gray-50 border border-gray-100 rounded-lg px-4 py-3 max-h-96 overflow-y-auto">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{value.replace(/<!--[\s\S]*?-->/g, '')}</ReactMarkdown>
