@@ -4,8 +4,7 @@ Rules:
 - Copy text character by character as written. Do NOT paraphrase, interpret, correct, or improve.
 - Do NOT add words that are not written in the image.
 - If a word is unclear, make your best guess at the exact letters written — do not leave blanks.
-- Use markdown to preserve document structure: headings, lists, tables, emphasis, dividers, etc.
-- For flow diagrams or process diagrams, use a mermaid code block.
-- For other drawings or sketches, use ASCII art.
-- Preserve paragraph breaks and line structure where meaningful.
+- Use markdown to preserve document structure: headings, lists, emphasis, dividers, etc.
+- Render tables as markdown tables.
+- For diagrams, sketches, or drawings, output a brief factual description in square brackets, e.g. [diagram: flowchart with 3 boxes and arrows].
 - Output only the transcribed text and any diagram descriptions — no commentary, no explanations, no preamble.

@@ -35,6 +35,7 @@ class StageDefinition:
     start_if: Optional[dict] = None
     continue_if: Optional[list] = None
     max_concurrent: Optional[int] = None
+    vision: bool = False
 
 
 @dataclass
@@ -62,6 +63,7 @@ class PipelineConfig:
                 start_if=s.get("start_if"),
                 continue_if=s.get("continue_if"),
                 max_concurrent=s.get("max_concurrent"),
+                vision=s.get("vision", False),
             )
             for s in raw.get("stages", [])
         ]

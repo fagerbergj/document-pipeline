@@ -33,13 +33,17 @@ async def generate_text(
     input_text: str,
     is_stopped=None,
     on_chunk=None,
+    image_bytes: bytes | None = None,
 ) -> str:
     """Stream a text generation from Ollama.
 
     is_stopped: optional async callable () -> bool.  Checked every 20 chunks.
     Raises GenerationCancelled if the caller signals a stop mid-stream.
     """
-    full_prompt = f"{prompt}\n\nInput:\n{input_text}"
+    full_prompt = f"{prompt}\n\nInput:\n{input_text}" if input_text else prompt
+    payload: dict = {"model": model, "prompt": full_prompt, "stream": True}
+    if image_bytes:
+        payload["images"] = [base64.b64encode(image_bytes).decode()]
     chunks: list[str] = []
     check_interval = 20
     # connect timeout 30s, read timeout 600s — tokens keep the read alive
@@ -47,7 +51,7 @@ async def generate_text(
         async with client.stream(
             "POST",
             f"{base_url}/api/generate",
-            json={"model": model, "prompt": full_prompt, "stream": True},
+            json=payload,
         ) as resp:
             if resp.is_error:
                 await resp.aread()

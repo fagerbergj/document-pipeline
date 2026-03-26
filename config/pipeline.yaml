@@ -1,8 +1,7 @@
-max_concurrent: 1
-
 stages:
   - name: ocr
     type: computer_vision
+    max_concurrent: 1
     model: ${OCR_MODEL}
     prompt: prompts/ocr.txt
     outputs:
@@ -11,6 +10,8 @@ stages:
 
   - name: clarify
     type: llm_text
+    vision: true
+    max_concurrent: 1
     model: ${CLARIFY_MODEL}
     prompt: prompts/clarify.txt
     input: ocr_raw
@@ -22,6 +23,7 @@ stages:
 
   - name: classify
     type: llm_text
+    max_concurrent: 1
     model: ${CLASSIFY_MODEL}
     prompt: prompts/classify.txt
     input: clarified_text
@@ -37,6 +39,7 @@ stages:
 
   - name: embed
     type: embed
+    max_concurrent: 1
     model: ${EMBED_MODEL}
     input: clarified_text
     metadata_fields: [title, tags, summary, date_month]

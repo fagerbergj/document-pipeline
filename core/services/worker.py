@@ -173,6 +173,7 @@ async def _run_llm_text(
     async def _on_chunk(chunk: str):
         await _q.put({"type": "token", "text": chunk})
 
+    image_bytes = Path(doc.png_path).read_bytes() if stage.vision and doc.png_path else None
     raw_response = await generate_text(
         ollama_base_url,
         stage.model,
@@ -180,6 +181,7 @@ async def _run_llm_text(
         input_text,
         is_stopped=_is_stopped,
         on_chunk=_on_chunk,
+        image_bytes=image_bytes,
     )
 
     # Strip markdown fences and parse JSON
@@ -420,8 +422,7 @@ async def run_worker(config: PipelineConfig, db, vault_path: str, ollama_base_ur
     from adapters.outbound import filesystem
     from adapters.outbound.ollama import unload_model
 
-    worker_sem = asyncio.Semaphore(config.max_concurrent)
-    logger.info("Worker started (max_concurrent=%d)", config.max_concurrent)
+    logger.info("Worker started")
 
     while True:
         try:
@@ -442,12 +443,15 @@ async def run_worker(config: PipelineConfig, db, vault_path: str, ollama_base_ur
                     if stage.max_concurrent is not None
                     else config.max_concurrent
                 )
-                stage_sem = asyncio.Semaphore(stage_max_concurrent)
-                for doc in docs:
-                    async with stage_sem:
+                sem = asyncio.Semaphore(stage_max_concurrent)
+
+                async def _run(doc, _sem=sem):
+                    async with _sem:
                         await _process_document(
                             doc, stage, db, filesystem, ollama_base_url, config
                         )
+
+                await asyncio.gather(*(_run(doc) for doc in docs))
 
                 if stage.model:
                     await unload_model(ollama_base_url, stage.model)
