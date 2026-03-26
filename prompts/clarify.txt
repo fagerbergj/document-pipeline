@@ -47,6 +47,7 @@ The author has already answered clarification questions in previous rounds. You 
 
 Rules:
 - Fix OCR errors: misread characters, broken ligatures, garbled words.
+- Reconstruct visual hierarchy from the image: use the horizontal position of each line to determine nesting depth. Represent indented content as nested Markdown lists (  - sub-item) or appropriate heading levels, even if the OCR output lost the indentation entirely.
 - Expand abbreviations, shorthand, and terse notes into full sentences where you understand the intent.
 - Where context makes the meaning clear, fill in implied information.
 - Improve readability: fix punctuation, capitalisation, and structure where it helps.
