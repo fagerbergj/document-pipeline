@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import traceback
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -199,15 +200,24 @@ async def _run_llm_text(
             m = re.search(rf"<{tag}>(.*?)</{tag}>", raw_response, re.DOTALL)
             return m.group(1).strip() if m else ""
         clarified = re.sub(r"<!--.*?-->", "", _extract("clarified_text"), flags=re.DOTALL).strip()
+        def _parse_questions(raw: str) -> list:
+            try:
+                result = json.loads(raw or "[]")
+                return result if isinstance(result, list) else []
+            except json.JSONDecodeError:
+                return []
         parsed = {
             "clarified_text": clarified,
             "confidence": _extract("confidence") or "medium",
-            "clarification_requests": json.loads(_extract("questions") or "[]"),
+            "clarification_requests": _parse_questions(_extract("questions")),
             "context_updates": _extract("context_updates"),
         }
     else:
         cleaned = re.sub(r"^```(?:json)?\s*", "", raw_response.strip())
         cleaned = re.sub(r"\s*```$", "", cleaned)
+        if not cleaned:
+            logger.error("Empty response for stage '%s' doc %s", stage.name, doc.id[:8])
+            raise ValueError(f"Empty LLM response for stage '{stage.name}'")
         try:
             parsed = json.loads(cleaned)
         except json.JSONDecodeError:
@@ -233,8 +243,12 @@ async def _run_llm_text(
         new_entry["clarification_requests"] = parsed["clarification_requests"]
     if "confidence" in parsed:
         new_entry["confidence"] = parsed["confidence"]
-    if parsed.get("context_updates"):
-        new_entry["context_updates"] = parsed["context_updates"]
+    ctx_updates = parsed.get("context_updates", "")
+    if isinstance(ctx_updates, str):
+        ctx_updates = ctx_updates.strip()
+    _NULL_VALS = {"none", "null", "n/a", "nothing", "no updates", "no new information", ""}
+    if ctx_updates and ctx_updates.lower() not in _NULL_VALS:
+        new_entry["context_updates"] = ctx_updates
 
     stage_data = dict(doc.stage_data)
     stage_data[stage.name] = new_entry
@@ -425,7 +439,7 @@ async def _process_document(
         )
         now_str = datetime.now(timezone.utc).isoformat()
         await db.append_event(
-            doc.id, stage.name, "failed", now_str, {"error": str(exc)}
+            doc.id, stage.name, "failed", now_str, {"error": traceback.format_exc()}
         )
 
         failures = await db.count_failures(doc.id, stage.name)
