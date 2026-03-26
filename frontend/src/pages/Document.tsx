@@ -6,6 +6,7 @@ import remarkGfm from 'remark-gfm'
 import { api } from '../api'
 import StatusBadge from '../components/StatusBadge'
 import LoadingSpinner from '../components/LoadingSpinner'
+import DocKebabMenu from '../components/DocKebabMenu'
 import type { DocumentDetail, ClarificationRequest, StageEvent } from '../types'
 
 export default function Document() {
@@ -20,10 +21,7 @@ export default function Document() {
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['document', id] })
 
-  const deleteMut = useMutation({
-    mutationFn: () => api.deleteDocument(id!),
-    onSuccess: () => navigate('/'),
-  })
+  const handleDelete = () => navigate('/')
 
   if (isLoading) return (
     <div className="flex items-center justify-center h-full py-24">
@@ -46,11 +44,12 @@ export default function Document() {
         <h1 className="text-base font-semibold text-gray-900 flex-1 truncate">{doc.title || '(untitled)'}</h1>
         <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{doc.current_stage}</span>
         <StatusBadge state={doc.stage_state} />
-        <KebabMenu
+        <DocKebabMenu
+          docId={doc.id}
           state={doc.stage_state}
-          onStop={() => api.stop(doc.id).then(refresh)}
-          onRetry={() => api.retry(doc.id).then(refresh)}
-          onDelete={() => { if (confirm('Delete this document? This cannot be undone.')) deleteMut.mutate() }}
+          replayStages={doc.replay_stages}
+          onDelete={handleDelete}
+          onSuccess={refresh}
         />
       </div>
 
@@ -159,52 +158,6 @@ function ContextSection({ doc, onRefresh }: { doc: DocumentDetail; onRefresh: ()
   )
 }
 
-function KebabMenu({ state, onStop, onRetry, onDelete }: {
-  state: string
-  onStop: () => void
-  onRetry: () => void
-  onDelete: () => void
-}) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    function handler(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [])
-
-  return (
-    <div ref={ref} className="relative">
-      <button onClick={() => setOpen(o => !o)}
-        className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors text-lg leading-none">
-        ⋯
-      </button>
-      {open && (
-        <div className="absolute right-0 top-10 w-44 bg-white border border-gray-200 rounded-xl shadow-lg z-20 overflow-hidden">
-          {state === 'running' && (
-            <button onClick={() => { setOpen(false); onStop() }}
-              className="w-full text-left px-4 py-2.5 text-sm text-amber-700 hover:bg-amber-50">
-              Stop
-            </button>
-          )}
-          {state === 'error' && (
-            <button onClick={() => { setOpen(false); onRetry() }}
-              className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">
-              Retry
-            </button>
-          )}
-          <button onClick={() => { setOpen(false); onDelete() }}
-            className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50">
-            Delete
-          </button>
-        </div>
-      )}
-    </div>
-  )
-}
 
 function ArtifactsSection({ doc }: { doc: DocumentDetail }) {
   const tabs = [

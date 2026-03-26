@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
 import StatusBadge from '../components/StatusBadge'
 import LoadingSpinner from '../components/LoadingSpinner'
+import DocKebabMenu from '../components/DocKebabMenu'
 import type { DocumentSummary } from '../types'
 
 type SortKey = 'pipeline' | 'title_asc' | 'title_desc' | 'created_asc' | 'created_desc'
@@ -120,7 +121,13 @@ export default function Dashboard() {
                         {doc.created_at.slice(0, 16).replace('T', ' ')}
                       </td>
                       <td className="px-2 py-3 text-right" onClick={e => e.stopPropagation()}>
-                        <RowKebabMenu doc={doc} onRefresh={() => qc.invalidateQueries({ queryKey: ['documents'] })} />
+                        <DocKebabMenu
+                          docId={doc.id}
+                          state={doc.stage_state}
+                          onDelete={() => qc.invalidateQueries({ queryKey: ['documents'] })}
+                          onSuccess={() => qc.invalidateQueries({ queryKey: ['documents'] })}
+                          buttonClassName="w-7 h-7 flex items-center justify-center rounded text-gray-300 hover:text-gray-600 hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-all text-base leading-none"
+                        />
                       </td>
                     </tr>
                   ))}
@@ -134,69 +141,6 @@ export default function Dashboard() {
   )
 }
 
-function RowKebabMenu({ doc, onRefresh }: { doc: DocumentSummary; onRefresh: () => void }) {
-  const [open, setOpen] = useState(false)
-  const [replayStages, setReplayStages] = useState<{ name: string }[]>([])
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    api.document(doc.id).then(d => setReplayStages(d.replay_stages)).catch(() => {})
-  }, [open, doc.id])
-
-  useEffect(() => {
-    function handler(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [])
-
-  const deleteMut = useMutation({
-    mutationFn: () => api.deleteDocument(doc.id),
-    onSuccess: () => { setOpen(false); onRefresh() },
-  })
-
-  const replayMut = useMutation({
-    mutationFn: (stage: string) => api.replay(doc.id, stage),
-    onSuccess: () => { setOpen(false); onRefresh() },
-  })
-
-  return (
-    <div ref={ref} className="relative flex justify-end">
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="w-7 h-7 flex items-center justify-center rounded text-gray-300 hover:text-gray-600 hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-all text-base leading-none">
-        ⋯
-      </button>
-      {open && (
-        <div className="absolute right-0 top-8 w-48 bg-white border border-gray-200 rounded-xl shadow-lg z-20 overflow-hidden">
-          {replayStages.length > 0 && (
-            <>
-              <div className="px-3 py-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wide border-b border-gray-100">Replay from</div>
-              {replayStages.map(s => (
-                <button key={s.name} onClick={() => {
-                  if (confirm(`Replay from ${s.name}? This will clear downstream stage data.`))
-                    replayMut.mutate(s.name)
-                }}
-                  className="w-full text-left px-4 py-2 text-sm font-mono text-gray-700 hover:bg-gray-50">
-                  {s.name}
-                </button>
-              ))}
-              <div className="border-t border-gray-100" />
-            </>
-          )}
-          <button onClick={() => {
-            if (confirm('Delete this document? This cannot be undone.')) deleteMut.mutate()
-          }}
-            className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50">
-            Delete
-          </button>
-        </div>
-      )}
-    </div>
-  )
-}
 
 function InlineTitle({ docId, title, onSaved }: {
   docId: string
