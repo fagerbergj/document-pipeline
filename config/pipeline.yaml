@@ -3,7 +3,7 @@ max_concurrent: 1
 stages:
   - name: ocr
     type: computer_vision
-    model: ${OCR_MODEL}
+    max_concurrent: 5
     prompt: prompts/ocr.txt
     outputs:
       - field: ocr_raw

@@ -75,6 +75,11 @@ class Database:
         await self._conn.execute(_CREATE_KEY_VALUE)
         for idx in _INDEXES:
             await self._conn.execute(idx)
+        # Additive migrations — safe to run on existing DBs
+        try:
+            await self._conn.execute("ALTER TABLE documents ADD COLUMN page_images TEXT")
+        except Exception:
+            pass  # Column already exists
         await self._conn.commit()
 
     async def close(self):
@@ -94,6 +99,7 @@ class Database:
             png_path=row["png_path"],
             duplicate_of=row["duplicate_of"],
             stage_data=json.loads(row["stage_data"] or "{}"),
+            page_images=json.loads(row["page_images"] or "[]"),
         )
 
     async def get_by_hash(self, content_hash: str) -> Optional[Document]:
@@ -107,12 +113,13 @@ class Database:
         await self._conn.execute(
             """INSERT INTO documents
                (id, content_hash, created_at, updated_at, current_stage, stage_state,
-                title, date_month, png_path, duplicate_of, stage_data)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                title, date_month, png_path, duplicate_of, stage_data, page_images)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 doc.id, doc.content_hash, doc.created_at, doc.updated_at,
                 doc.current_stage, doc.stage_state, doc.title, doc.date_month,
                 doc.png_path, doc.duplicate_of, json.dumps(doc.stage_data),
+                json.dumps(doc.page_images),
             ),
         )
         await self._conn.commit()
@@ -121,12 +128,12 @@ class Database:
         await self._conn.execute(
             """UPDATE documents SET
                updated_at=?, current_stage=?, stage_state=?,
-               title=?, date_month=?, png_path=?, duplicate_of=?, stage_data=?
+               title=?, date_month=?, png_path=?, duplicate_of=?, stage_data=?, page_images=?
                WHERE id=?""",
             (
                 doc.updated_at, doc.current_stage, doc.stage_state,
                 doc.title, doc.date_month, doc.png_path, doc.duplicate_of,
-                json.dumps(doc.stage_data), doc.id,
+                json.dumps(doc.stage_data), json.dumps(doc.page_images), doc.id,
             ),
         )
         await self._conn.commit()

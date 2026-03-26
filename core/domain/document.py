@@ -17,6 +17,7 @@ class Document:
     png_path: Optional[str] = None
     duplicate_of: Optional[str] = None
     stage_data: dict = field(default_factory=dict)
+    page_images: list = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -31,6 +32,7 @@ class Document:
             "png_path": self.png_path,
             "duplicate_of": self.duplicate_of,
             "stage_data": self.stage_data,
+            "page_images": self.page_images,
         }
 
 

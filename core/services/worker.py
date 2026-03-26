@@ -81,20 +81,17 @@ def _extract_title(ingest_meta: dict, ocr_text: str) -> str:
 
 
 async def _run_ocr(
-    doc: Document, stage: StageDefinition, filesystem, ollama_base_url: str
+    doc: Document, stage: StageDefinition, filesystem
 ) -> tuple[dict, str, str]:
     """Returns (updated_stage_data, title, new_png_path)."""
-    from adapters.outbound.ollama import generate_vision
+    from adapters.outbound.paddleocr import generate_vision
 
-    if not doc.png_path:
-        raise ValueError("No PNG path set on document")
+    pages = doc.page_images if doc.page_images else ([doc.png_path] if doc.png_path else [])
+    if not pages:
+        raise ValueError("No images set on document")
 
-    prompt_text = Path(stage.prompt).read_text(encoding="utf-8") if stage.prompt else ""
-    image_bytes = Path(doc.png_path).read_bytes()
-
-    ocr_text = await generate_vision(
-        ollama_base_url, stage.model, prompt_text, image_bytes
-    )
+    page_texts = [await generate_vision(p) for p in pages]
+    ocr_text = "\n\n".join(t for t in page_texts if t and t != "(no text recognised)")
     if not ocr_text:
         ocr_text = "(no text recognised)"
     logger.info("OCR for %s: %d chars", doc.id[:8], len(ocr_text))
@@ -314,9 +311,7 @@ async def _process_document(
 
     try:
         if stage.type == "computer_vision":
-            stage_data, title, png_path = await _run_ocr(
-                doc, stage, filesystem, ollama_base_url
-            )
+            stage_data, title, png_path = await _run_ocr(doc, stage, filesystem)
             if await _was_stopped(doc.id, db):
                 return
             now_str = datetime.now(timezone.utc).isoformat()
@@ -449,7 +444,7 @@ async def run_worker(config: PipelineConfig, db, vault_path: str, ollama_base_ur
                             doc, stage, db, filesystem, ollama_base_url, config
                         )
 
-                if stage.model:
+                if stage.type != "computer_vision" and stage.model:
                     await unload_model(ollama_base_url, stage.model)
 
                 processed_any = True
