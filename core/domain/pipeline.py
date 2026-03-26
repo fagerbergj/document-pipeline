@@ -10,7 +10,9 @@ import yaml
 
 def _expand(value):
     if isinstance(value, str):
-        return re.sub(r"\$\{(\w+)\}", lambda m: os.environ.get(m.group(1), m.group(0)), value)
+        return re.sub(
+            r"\$\{(\w+)\}", lambda m: os.environ.get(m.group(1), m.group(0)), value
+        )
     if isinstance(value, dict):
         return {k: _expand(v) for k, v in value.items()}
     if isinstance(value, list):
@@ -32,6 +34,7 @@ class StageDefinition:
     metadata_fields: Optional[list] = None
     start_if: Optional[dict] = None
     continue_if: Optional[list] = None
+    max_concurrent: Optional[int] = None
 
 
 @dataclass
@@ -58,6 +61,7 @@ class PipelineConfig:
                 metadata_fields=s.get("metadata_fields"),
                 start_if=s.get("start_if"),
                 continue_if=s.get("continue_if"),
+                max_concurrent=s.get("max_concurrent"),
             )
             for s in raw.get("stages", [])
         ]
