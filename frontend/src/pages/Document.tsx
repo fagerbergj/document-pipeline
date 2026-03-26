@@ -342,9 +342,16 @@ function EventLogSection({ events, docId, onCleared }: { events: StageEvent[]; d
 }
 
 function ReviewSection({ doc, review, onRefresh }: { doc: DocumentDetail; review: NonNullable<DocumentDetail['review']>; onRefresh: () => void }) {
+  const navigate = useNavigate()
+  const qc = useQueryClient()
   const [editedText, setEditedText] = useState(review.output_text)
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [freePrompt, setFreePrompt] = useState('')
+
+  const applyContextMut = useMutation({
+    mutationFn: () => api.saveContextEntry('user_context', review.context_updates),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['context-library'] }); navigate('/contexts') },
+  })
 
   const approveMut = useMutation({
     mutationFn: () => api.approve(doc.id, review.is_single_output ? editedText : undefined),
@@ -373,6 +380,12 @@ function ReviewSection({ doc, review, onRefresh }: { doc: DocumentDetail; review
           )}
           {review.qa_rounds > 0 && (
             <span className="text-xs text-gray-400">{review.qa_rounds} Q&A round{review.qa_rounds !== 1 ? 's' : ''}</span>
+          )}
+          {review.context_updates && (
+            <button onClick={() => applyContextMut.mutate()} disabled={applyContextMut.isPending}
+              className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 hover:bg-blue-200 disabled:opacity-50">
+              context updates suggested →
+            </button>
           )}
         </div>
 
@@ -422,42 +435,6 @@ function ReviewSection({ doc, review, onRefresh }: { doc: DocumentDetail; review
         </div>
       </div>
 
-      {/* Review — Context Updates */}
-      {review.context_updates && (
-        <ContextUpdatesSection proposed={review.context_updates} onRefresh={onRefresh} />
-      )}
-    </div>
-  )
-}
-
-function ContextUpdatesSection({ proposed, onRefresh }: { proposed: string; onRefresh: () => void }) {
-  const qc = useQueryClient()
-  const { data: entries } = useQuery({ queryKey: ['context-library'], queryFn: api.contextLibrary })
-  const current = entries?.find(e => e.name === 'user_context')?.text ?? ''
-  const saveMut = useMutation({
-    mutationFn: () => api.saveContextEntry('user_context', proposed),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['context-library'] }); onRefresh() },
-  })
-
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-        <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Review — Context Updates</div>
-        <button onClick={() => saveMut.mutate()} disabled={saveMut.isPending}
-          className="px-4 py-1.5 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
-          Apply
-        </button>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div>
-          <div className="text-xs font-semibold text-gray-400 mb-1">Current</div>
-          <pre className="bg-gray-50 border border-gray-100 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap h-80 overflow-y-auto">{current || '(empty)'}</pre>
-        </div>
-        <div>
-          <div className="text-xs font-semibold text-gray-400 mb-1">Proposed</div>
-          <pre className="bg-gray-50 border border-gray-100 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap h-80 overflow-y-auto">{proposed}</pre>
-        </div>
-      </div>
     </div>
   )
 }
