@@ -431,8 +431,8 @@ function ReviewSection({ doc, review, onRefresh }: { doc: DocumentDetail; review
         </div>
       </div>
 
-      {review.context_updates && (
-        <ContextUpdatesSection proposed={review.context_updates} onRefresh={onRefresh} />
+      {review.context_updates?.trim() && (
+        <ContextUpdatesSection proposed={review.context_updates.trim()} onRefresh={onRefresh} />
       )}
     </div>
   )
@@ -440,7 +440,7 @@ function ReviewSection({ doc, review, onRefresh }: { doc: DocumentDetail; review
 
 function ContextUpdatesSection({ proposed, onRefresh }: { proposed: string; onRefresh: () => void }) {
   const qc = useQueryClient()
-  const { data: entries } = useQuery({ queryKey: ['context-library'], queryFn: api.contextLibrary })
+  const { data: entries } = useQuery({ queryKey: ['context-library'], queryFn: api.contextLibrary, staleTime: 0 })
   const current = entries?.find(e => e.name === 'user_context')?.text ?? ''
   const [edited, setEdited] = useState(proposed)
 
