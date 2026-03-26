@@ -52,6 +52,8 @@ Set confidence based on how certain you are of the output:
 - "medium": some uncertainty resolved via context, minor questions remain
 - "low": significant ambiguities, illegible segments, or missing context
 
+After producing the output, consider whether anything you learned — from context, answers, or inference — would help future documents avoid the same questions. If so, produce an updated version of the background context that incorporates these learnings. Include all existing context plus any new additions. If nothing new was learned, reproduce the existing context unchanged.
+
 Respond using exactly this format — no extra text before or after:
 
 <clarified_text>
@@ -59,3 +61,6 @@ corrected and expanded text in Markdown
 </clarified_text>
 <confidence>high|medium|low</confidence>
 <questions>[{"segment": "exact text from OCR", "question": "specific question"}]</questions>
+<context_updates>
+proposed additions to background context, or leave empty if nothing new to add
+</context_updates>

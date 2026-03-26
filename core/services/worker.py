@@ -173,7 +173,7 @@ async def _run_llm_text(
     async def _on_chunk(chunk: str):
         await _q.put({"type": "token", "text": chunk})
 
-    logger.info("Prompt for stage '%s' doc %s:\n%s", stage.name, doc.id[:8], prompt_text)
+    logger.debug("Prompt for stage '%s' doc %s:\n%s", stage.name, doc.id[:8], prompt_text)
     image_bytes = Path(doc.png_path).read_bytes() if stage.vision and doc.png_path else None
     raw_response = await generate_text(
         ollama_base_url,
@@ -194,6 +194,7 @@ async def _run_llm_text(
             "clarified_text": _extract("clarified_text"),
             "confidence": _extract("confidence") or "medium",
             "clarification_requests": json.loads(_extract("questions") or "[]"),
+            "context_updates": _extract("context_updates"),
         }
     else:
         cleaned = re.sub(r"^```(?:json)?\s*", "", raw_response.strip())
@@ -223,6 +224,8 @@ async def _run_llm_text(
         new_entry["clarification_requests"] = parsed["clarification_requests"]
     if "confidence" in parsed:
         new_entry["confidence"] = parsed["confidence"]
+    if parsed.get("context_updates"):
+        new_entry["context_updates"] = parsed["context_updates"]
 
     stage_data = dict(doc.stage_data)
     stage_data[stage.name] = new_entry

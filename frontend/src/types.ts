@@ -23,6 +23,7 @@ export interface Review {
   confidence: string
   qa_rounds: number
   clarification_requests: ClarificationRequest[]
+  context_updates: string
 }
 
 export interface StageDisplay {

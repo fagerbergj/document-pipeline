@@ -58,11 +58,11 @@ export default function Document() {
       <div className="p-6 space-y-4">
         <TitleSection doc={doc} onRefresh={refresh} />
         <ContextSection doc={doc} onRefresh={refresh} />
+        {doc.stage_state === 'running' && <LiveLogSection docId={doc.id} onDone={refresh} />}
         {doc.review && <ReviewSection doc={doc} review={doc.review} onRefresh={refresh} />}
         {(doc.has_image || doc.stage_displays.length > 0) && (
           <ArtifactsSection doc={doc} />
         )}
-        {doc.stage_state === 'running' && <LiveLogSection docId={doc.id} onDone={refresh} />}
         {errorEvents.length > 0 && <EventLogSection events={errorEvents} docId={doc.id} onCleared={refresh} />}
         {doc.replay_stages.length > 0 && <ReplaySection doc={doc} onRefresh={refresh} />}
       </div>
@@ -345,7 +345,6 @@ function ReviewSection({ doc, review, onRefresh }: { doc: DocumentDetail; review
   const [editedText, setEditedText] = useState(review.output_text)
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [freePrompt, setFreePrompt] = useState('')
-  const [activeTab, setActiveTab] = useState<'side' | 'diff'>('side')
 
   const approveMut = useMutation({
     mutationFn: () => api.approve(doc.id, review.is_single_output ? editedText : undefined),
@@ -364,77 +363,99 @@ function ReviewSection({ doc, review, onRefresh }: { doc: DocumentDetail; review
     : 'bg-red-100 text-red-700'
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4">
-      <div className="flex flex-wrap items-center gap-2 mb-4">
-        <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Review — {review.stage_name}</div>
-        {review.confidence && (
-          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${confidenceColor}`}>{review.confidence} confidence</span>
-        )}
-        {review.qa_rounds > 0 && (
-          <span className="text-xs text-gray-400">{review.qa_rounds} Q&A round{review.qa_rounds !== 1 ? 's' : ''}</span>
-        )}
-      </div>
-
-      {review.is_single_output ? (
-        <>
-          <div className="flex gap-1 mb-3">
-            {(['side', 'diff'] as const).map(tab => (
-              <button key={tab} onClick={() => setActiveTab(tab)}
-                className={`px-3 py-1 text-xs font-medium rounded-lg border transition-colors ${activeTab === tab ? 'bg-gray-900 text-white border-gray-900' : 'text-gray-500 border-gray-200 hover:bg-gray-50'}`}>
-                {tab === 'side' ? 'Side by side' : 'Diff'}
-              </button>
-            ))}
-          </div>
-          {activeTab === 'side' ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-              <div>
-                <div className="text-xs font-semibold text-gray-400 mb-1">Before ({review.input_field})</div>
-                <pre className="bg-gray-50 border border-gray-100 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap h-80 overflow-y-auto">{review.input_text}</pre>
-              </div>
-              <div>
-                <div className="text-xs font-semibold text-gray-400 mb-1">After ({review.output_field}) — editable</div>
-                <textarea value={editedText} onChange={e => setEditedText(e.target.value)}
-                  className="w-full bg-gray-50 border border-gray-100 rounded-lg p-3 text-xs font-mono h-80 resize-none focus:outline-none focus:ring-2 focus:ring-blue-200" />
-              </div>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-              <pre className="bg-gray-50 border border-gray-100 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap h-80 overflow-y-auto">{review.input_text}</pre>
-              <pre className="bg-gray-50 border border-gray-100 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap h-80 overflow-y-auto">{editedText}</pre>
-            </div>
+    <div className="space-y-4">
+      {/* Review — Clarifications */}
+      <div className="bg-white rounded-xl border border-gray-200 p-4">
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Review — Clarifications</div>
+          {review.confidence && (
+            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${confidenceColor}`}>{review.confidence} confidence</span>
           )}
-        </>
-      ) : (
-        <div className="mb-4">
-          <pre className="bg-gray-50 border border-gray-100 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap max-h-80 overflow-y-auto">{review.output_text}</pre>
+          {review.qa_rounds > 0 && (
+            <span className="text-xs text-gray-400">{review.qa_rounds} Q&A round{review.qa_rounds !== 1 ? 's' : ''}</span>
+          )}
         </div>
-      )}
 
-      <div className="flex gap-2 mb-4">
-        <button onClick={() => approveMut.mutate()} disabled={approveMut.isPending}
-          className="px-4 py-1.5 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
-          Approve
-        </button>
-        <button onClick={() => rejectMut.mutate()} disabled={rejectMut.isPending}
-          className="px-4 py-1.5 text-sm font-medium border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50">
-          Reject
-        </button>
+        {review.is_single_output ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+            <div>
+              <div className="text-xs font-semibold text-gray-400 mb-1">Before ({review.input_field})</div>
+              <pre className="bg-gray-50 border border-gray-100 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap h-80 overflow-y-auto">{review.input_text}</pre>
+            </div>
+            <div>
+              <div className="text-xs font-semibold text-gray-400 mb-1">After ({review.output_field}) — editable</div>
+              <textarea value={editedText} onChange={e => setEditedText(e.target.value)}
+                className="w-full bg-gray-50 border border-gray-100 rounded-lg p-3 text-xs font-mono h-80 resize-none focus:outline-none focus:ring-2 focus:ring-blue-200" />
+            </div>
+          </div>
+        ) : (
+          <div className="mb-4">
+            <pre className="bg-gray-50 border border-gray-100 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap max-h-80 overflow-y-auto">{review.output_text}</pre>
+          </div>
+        )}
+
+        <div className="flex gap-2 mb-4">
+          <button onClick={() => approveMut.mutate()} disabled={approveMut.isPending}
+            className="px-4 py-1.5 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
+            Approve
+          </button>
+          <button onClick={() => rejectMut.mutate()} disabled={rejectMut.isPending}
+            className="px-4 py-1.5 text-sm font-medium border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50">
+            Reject
+          </button>
+        </div>
+
+        <div className="border-t border-gray-100 pt-4">
+          {review.clarification_requests.length > 0 && (
+            <ClarificationForm requests={review.clarification_requests} answers={answers} onChange={setAnswers} />
+          )}
+          <div className="mb-3">
+            <label className="block text-xs font-medium text-gray-500 mb-1">Additional instructions</label>
+            <textarea value={freePrompt} onChange={e => setFreePrompt(e.target.value)} rows={2}
+              placeholder="e.g. 'focus on the meeting action items…'"
+              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-y focus:outline-none focus:ring-2 focus:ring-blue-200" />
+          </div>
+          <button onClick={() => clarifyMut.mutate()} disabled={clarifyMut.isPending}
+            className="px-4 py-1.5 text-sm font-medium bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-50">
+            Re-run with instructions
+          </button>
+        </div>
       </div>
 
-      <div className="border-t border-gray-100 pt-4">
-        {review.clarification_requests.length > 0 && (
-          <ClarificationForm requests={review.clarification_requests} answers={answers} onChange={setAnswers} />
-        )}
-        <div className="mb-3">
-          <label className="block text-xs font-medium text-gray-500 mb-1">Additional instructions</label>
-          <textarea value={freePrompt} onChange={e => setFreePrompt(e.target.value)} rows={2}
-            placeholder="e.g. 'focus on the meeting action items…'"
-            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-y focus:outline-none focus:ring-2 focus:ring-blue-200" />
-        </div>
-        <button onClick={() => clarifyMut.mutate()} disabled={clarifyMut.isPending}
-          className="px-4 py-1.5 text-sm font-medium bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-50">
-          Re-run with instructions
+      {/* Review — Context Updates */}
+      {review.context_updates && (
+        <ContextUpdatesSection docId={doc.id} proposed={review.context_updates} onRefresh={onRefresh} />
+      )}
+    </div>
+  )
+}
+
+function ContextUpdatesSection({ docId, proposed, onRefresh }: { docId: string; proposed: string; onRefresh: () => void }) {
+  const { data } = useQuery({ queryKey: ['user-context'], queryFn: api.getUserContext })
+  const current = data?.content ?? ''
+  const saveMut = useMutation({
+    mutationFn: () => api.saveUserContext(proposed),
+    onSuccess: onRefresh,
+  })
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Review — Context Updates</div>
+        <button onClick={() => saveMut.mutate()} disabled={saveMut.isPending}
+          className="px-4 py-1.5 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
+          Apply
         </button>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+          <div className="text-xs font-semibold text-gray-400 mb-1">Current</div>
+          <pre className="bg-gray-50 border border-gray-100 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap h-80 overflow-y-auto">{current || '(empty)'}</pre>
+        </div>
+        <div>
+          <div className="text-xs font-semibold text-gray-400 mb-1">Proposed</div>
+          <pre className="bg-gray-50 border border-gray-100 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap h-80 overflow-y-auto">{proposed}</pre>
+        </div>
       </div>
     </div>
   )
