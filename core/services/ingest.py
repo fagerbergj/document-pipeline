@@ -46,16 +46,8 @@ async def ingest(
     date_month = now.strftime("%Y-%m")
     hash_prefix = content_hash[:8]
 
-    if image_bytes[:4] == b"%PDF":
-        filesystem.save_pdf(vault_path, date_month, hash_prefix, image_bytes)
-        pdf_path = str(Path(vault_path) / date_month / f"{hash_prefix}.pdf")
-        page_images = filesystem.pdf_to_page_images(pdf_path, vault_path, date_month, hash_prefix)
-        png_path = page_images[0] if page_images else None
-        logger.info("Saved PDF and %d page image(s): %s", len(page_images), pdf_path)
-    else:
-        png_path = filesystem.save_png(vault_path, date_month, hash_prefix, image_bytes)
-        page_images = [png_path]
-        logger.info("Saved PNG: %s", png_path)
+    png_path = filesystem.save_png(vault_path, date_month, hash_prefix, image_bytes)
+    logger.info("Saved PNG: %s", png_path)
 
     doc = Document(
         id=str(uuid.uuid4()),
@@ -67,7 +59,6 @@ async def ingest(
         title=_title_from_meta(meta_json, attachment_filename),
         date_month=date_month,
         png_path=png_path,
-        page_images=page_images,
         stage_data={"_ingest": {"meta": meta_json, "attachment_filename": attachment_filename}},
     )
 
