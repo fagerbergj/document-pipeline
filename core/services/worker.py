@@ -482,6 +482,7 @@ async def run_worker(config: PipelineConfig, db, vault_path: str, ollama_base_ur
                     await unload_model(ollama_base_url, stage.model)
 
                 processed_any = True
+                break  # restart from earliest stage so OCR always takes priority
 
             if not processed_any:
                 await asyncio.sleep(5)
