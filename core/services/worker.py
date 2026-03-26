@@ -185,10 +185,24 @@ async def _run_llm_text(
         image_bytes=image_bytes,
     )
 
-    # Strip markdown fences and parse JSON
-    cleaned = re.sub(r"^```(?:json)?\s*", "", raw_response.strip())
-    cleaned = re.sub(r"\s*```$", "", cleaned)
-    parsed = json.loads(cleaned)
+    # Parse response — clarify uses XML tags, other stages use JSON
+    if "<clarified_text>" in raw_response:
+        def _extract(tag: str) -> str:
+            m = re.search(rf"<{tag}>(.*?)</{tag}>", raw_response, re.DOTALL)
+            return m.group(1).strip() if m else ""
+        parsed = {
+            "clarified_text": _extract("clarified_text"),
+            "confidence": _extract("confidence") or "medium",
+            "clarification_requests": json.loads(_extract("questions") or "[]"),
+        }
+    else:
+        cleaned = re.sub(r"^```(?:json)?\s*", "", raw_response.strip())
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+        try:
+            parsed = json.loads(cleaned)
+        except json.JSONDecodeError:
+            logger.error("Failed to parse response for stage '%s':\n%s", stage.name, cleaned[:500])
+            raise
 
     # Build new stage entry, preserving user inputs across re-runs
     existing = doc.stage_data.get(stage.name, {})

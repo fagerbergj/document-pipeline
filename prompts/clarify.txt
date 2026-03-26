@@ -52,11 +52,10 @@ Set confidence based on how certain you are of the output:
 - "medium": some uncertainty resolved via context, minor questions remain
 - "low": significant ambiguities, illegible segments, or missing context
 
-Respond with valid JSON only:
-{
-  "clarified_text": "<corrected and expanded text in Markdown>",
-  "clarification_requests": [
-    {"segment": "<exact text from OCR>", "question": "<specific question>"}
-  ],
-  "confidence": "high|medium|low"
-}
+Respond using exactly this format — no extra text before or after:
+
+<clarified_text>
+corrected and expanded text in Markdown
+</clarified_text>
+<confidence>high|medium|low</confidence>
+<questions>[{"segment": "exact text from OCR", "question": "specific question"}]</questions>
