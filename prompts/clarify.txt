@@ -54,7 +54,7 @@ Set confidence based on how certain you are of the output:
 - "medium": some uncertainty resolved via context, minor questions remain
 - "low": significant ambiguities, illegible segments, or missing context
 
-After producing the output, consider whether anything you learned from this document — names, terminology, structure, recurring abbreviations — would help future pages of the same document class avoid similar questions. If so, produce an updated version of the document context that incorporates these learnings alongside the existing content. If nothing new was learned, leave context_updates empty.
+After producing the output, write an updated document context that incorporates everything you now know about this document class — names, terminology, recurring abbreviations, structure, subject matter. Include all existing document context plus anything new you learned. This should be a complete, self-contained paragraph a future model could use to process the next page without asking the same questions. Always write something; do not leave this empty.
 
 Respond using exactly this format — no extra text before or after:
 
