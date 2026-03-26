@@ -40,7 +40,7 @@ async def generate_text(
     is_stopped: optional async callable () -> bool.  Checked every 20 chunks.
     Raises GenerationCancelled if the caller signals a stop mid-stream.
     """
-    full_prompt = f"{prompt}\n\nInput:\n{input_text}" if input_text else prompt
+    full_prompt = f"{prompt}\n\n<ocr_text>\n{input_text}\n</ocr_text>" if input_text else prompt
     payload: dict = {"model": model, "prompt": full_prompt, "stream": True}
     if image_bytes:
         payload["images"] = [base64.b64encode(image_bytes).decode()]

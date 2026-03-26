@@ -7,28 +7,34 @@ You have two sources of truth — use both:
 When they conflict, prefer what you can clearly see in the image. When the image is ambiguous, prefer the OCR text and note your uncertainty.
 
 {% if context %}
-Background context about the author and their notes:
+<author_context>
 {{ context }}
+</author_context>
 {% endif %}
 
 {% if document_context %}
-Context for this specific document:
+<document_context>
 {{ document_context }}
+</document_context>
 {% endif %}
 
 {% if free_prompt %}
-Additional instructions from the author:
+<additional_instructions>
 {{ free_prompt }}
+</additional_instructions>
 {% endif %}
 
 {% if qa_history %}
+<qa_history>
 The author has already answered clarification questions in previous rounds. You MUST treat these as resolved facts and incorporate them directly into the output. Do NOT ask about them again under any circumstances.
 
 {% for round in qa_history %}
-Round {{ loop.index }} answers:
+<round number="{{ loop.index }}">
 {% if round.responses %}{% for r in round.responses %}  - "{{ r.segment }}" → {{ r.answer }}
 {% endfor %}{% endif %}{% if round.free_prompt %}  Additional instruction: {{ round.free_prompt }}
-{% endif %}{% endfor %}
+{% endif %}</round>
+{% endfor %}
+</qa_history>
 {% endif %}
 
 Rules:
@@ -52,7 +58,7 @@ Set confidence based on how certain you are of the output:
 - "medium": some uncertainty resolved via context, minor questions remain
 - "low": significant ambiguities, illegible segments, or missing context
 
-After producing the output, consider whether anything you learned — from context, answers, or inference — would help future documents avoid the same questions. If so, produce an updated version of the background context that incorporates these learnings. Include all existing context plus any new additions. If nothing new was learned, reproduce the existing context unchanged.
+After producing the output, consider whether anything you learned — from context, answers, or inference — would help future documents avoid the same questions. If so, produce an updated version of the author context that incorporates these learnings. Include all existing context plus any new additions. If nothing new was learned, reproduce the existing context unchanged.
 
 Respond using exactly this format — no extra text before or after:
 
@@ -62,5 +68,5 @@ corrected and expanded text in Markdown
 <confidence>high|medium|low</confidence>
 <questions>[{"segment": "exact text from OCR", "question": "specific question"}]</questions>
 <context_updates>
-proposed additions to background context, or leave empty if nothing new to add
+proposed additions to author context, or leave empty if nothing new to add
 </context_updates>
