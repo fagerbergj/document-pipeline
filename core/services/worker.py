@@ -109,6 +109,9 @@ async def _run_ocr(
     stage_data = dict(doc.stage_data)
     stage_data[stage.name] = {output_field: ocr_text}
 
+    if doc.title:
+        return stage_data, doc.title, doc.png_path
+
     title = _extract_title(stage_data.get("_ingest", {}), ocr_text)
     safe_title = _sanitize(title)
 
