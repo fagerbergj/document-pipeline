@@ -29,6 +29,7 @@ export default function DocKebabMenu({
   const [fetchedStages, setFetchedStages] = useState<{ name: string }[] | null>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
 
   const replayStages = providedStages ?? fetchedStages ?? []
 
@@ -47,7 +48,10 @@ export default function DocKebabMenu({
 
   useEffect(() => {
     function handler(e: MouseEvent) {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false)
+      if (
+        wrapRef.current && !wrapRef.current.contains(e.target as Node) &&
+        dropdownRef.current && !dropdownRef.current.contains(e.target as Node)
+      ) setOpen(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
@@ -72,6 +76,7 @@ export default function DocKebabMenu({
 
       {open && createPortal(
         <div
+          ref={dropdownRef}
           style={{ position: 'fixed', top: menuPos.top, right: menuPos.right, zIndex: 9999 }}
           className="w-48 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden"
         >
