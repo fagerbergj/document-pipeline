@@ -72,6 +72,9 @@ export default function Sidebar() {
         <Link to="/contexts" className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${pathname === '/contexts' ? 'bg-gray-800 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800/50'}`}>
           <span>Contexts</span>
         </Link>
+        <Link to="/query" className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${pathname === '/query' ? 'bg-gray-800 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800/50'}`}>
+          <span>Query</span>
+        </Link>
       </nav>
 
       {/* Filters — only on dashboard */}

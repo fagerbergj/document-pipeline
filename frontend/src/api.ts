@@ -44,4 +44,10 @@ export const api = {
     apiFetch('/api/v1/context-library', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, text }) }),
   deleteContextEntry: (name: string): Promise<ContextEntry[]> =>
     apiFetch(`/api/v1/context-library/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+  queryStream: (query: string, context: string, topK: number): Promise<Response> =>
+    fetch('/api/v1/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, context, top_k: topK }),
+    }),
 }

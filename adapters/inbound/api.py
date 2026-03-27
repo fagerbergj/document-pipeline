@@ -449,6 +449,141 @@ async def delete_context_entry(request: Request, name: str):
     return entries
 
 
+@router.post("/query")
+async def query_knowledge_base(request: Request):
+    """RAG query: embed → search Qdrant → stream LLM answer as SSE."""
+    from adapters.outbound import ollama as _ollama
+    from adapters.outbound import qdrant as _qdrant
+
+    body = await request.json()
+    query: str = (body.get("query") or "").strip()
+    context: str = (body.get("context") or "").strip()
+    top_k: int = int(body.get("top_k") or 5)
+
+    if not query:
+        return JSONResponse({"error": "query is required"}, status_code=400)
+
+    ollama_base_url: str = request.app.state.ollama_base_url
+    config = request.app.state.pipeline
+
+    # Resolve embed + query models from config/env
+    embed_stage = next((s for s in config.stages if s.type == "embed"), None)
+    embed_model: str = (embed_stage.model if embed_stage else None) or _os.environ.get("EMBED_MODEL", "nomic-embed-text:v1.5")
+    query_model: str = _os.environ.get("QUERY_MODEL") or _os.environ.get("CLARIFY_MODEL", "qwen3:4b")
+
+    # Resolve Qdrant config from first embed destination
+    qdrant_url: str = ""
+    qdrant_collection: str = "remarkable"
+    qdrant_api_key: str | None = None
+    if embed_stage:
+        for dest in (embed_stage.destinations or []):
+            if dest.get("type") == "qdrant":
+                qdrant_url = dest.get("url", "")
+                qdrant_collection = dest.get("collection", "remarkable")
+                qdrant_api_key = dest.get("api_key") or None
+                break
+
+    async def generate():
+        # 1. Embed the query
+        try:
+            query_vector = await _ollama.generate_embed(ollama_base_url, embed_model, query)
+        except Exception as exc:
+            yield f"event: error\ndata: {_json.dumps({'error': str(exc)})}\n\n"
+            return
+
+        # 2. Search Qdrant
+        sources: list[dict] = []
+        if qdrant_url:
+            try:
+                sources = await _qdrant.search(qdrant_url, qdrant_collection, query_vector, top_k, qdrant_api_key)
+            except Exception as exc:
+                logger.warning("Qdrant search failed: %s", exc)
+
+        # 3. Emit sources event
+        source_summaries = [
+            {
+                "doc_id": s.get("doc_id", ""),
+                "title": s.get("title") or "Untitled",
+                "summary": s.get("summary", ""),
+                "date_month": s.get("date_month", ""),
+                "score": round(s.get("score", 0.0), 3),
+            }
+            for s in sources
+        ]
+        yield f"event: sources\ndata: {_json.dumps(source_summaries)}\n\n"
+
+        # 4. Build RAG prompt
+        notes_block = ""
+        for s in sources:
+            title = s.get("title") or "Untitled"
+            date = s.get("date_month", "")
+            text = s.get("text", s.get("summary", ""))
+            header = f"Title: {title}" + (f" ({date})" if date else "")
+            notes_block += f"---\n{header}\n{text}\n\n"
+
+        ctx_block = f"\nAdditional context provided by the user:\n{context}\n" if context else ""
+        notes_section = f"\nRetrieved notes:\n{notes_block}" if notes_block else "\n(No notes were found in the knowledge base.)\n"
+        prompt = (
+            "You are a helpful assistant with access to a personal notes knowledge base.\n"
+            "Answer the question based on the retrieved notes below. "
+            "If the notes don't contain enough information to answer, say so.\n"
+            f"{ctx_block}"
+            f"{notes_section}"
+            f"\nQuestion: {query}\n"
+        )
+
+        # 5. Stream LLM response
+        state = {"stopped": False}
+        token_queue: asyncio.Queue = asyncio.Queue()
+
+        async def on_chunk(token: str):
+            await token_queue.put(token)
+
+        async def is_stopped_fn():
+            return state["stopped"]
+
+        async def run_llm():
+            try:
+                await _ollama.generate_text(
+                    ollama_base_url, query_model, prompt, "",
+                    is_stopped=is_stopped_fn,
+                    on_chunk=on_chunk,
+                )
+            except Exception as exc:
+                await token_queue.put(("__error__", str(exc)))
+            finally:
+                await token_queue.put(None)
+
+        llm_task = asyncio.create_task(run_llm())
+        try:
+            while True:
+                if await request.is_disconnected():
+                    state["stopped"] = True
+                    break
+                try:
+                    item = await asyncio.wait_for(token_queue.get(), timeout=30.0)
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
+                    continue
+                if item is None:
+                    break
+                if isinstance(item, tuple) and item[0] == "__error__":
+                    yield f"event: error\ndata: {_json.dumps({'error': item[1]})}\n\n"
+                    break
+                yield f"event: token\ndata: {_json.dumps({'text': item})}\n\n"
+        finally:
+            state["stopped"] = True
+            llm_task.cancel()
+
+        yield f"event: done\ndata: {{}}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @router.get("/documents/{doc_id}/stream")
 async def doc_token_stream(request: Request, doc_id: str):
     """SSE endpoint: streams LLM tokens while the document is running, then sends 'done'."""

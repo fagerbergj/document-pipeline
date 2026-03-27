@@ -63,6 +63,38 @@ async def delete(
         logger.info("Qdrant delete ok for %s", doc_id[:8])
 
 
+async def search(
+    base_url: str,
+    collection: str,
+    vector: list[float],
+    top_k: int = 5,
+    api_key: Optional[str] = None,
+) -> list[dict]:
+    """Return top-k results from Qdrant as list of payload dicts with added 'score' key."""
+    headers = {"api-key": api_key} if api_key else {}
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        col_resp = await client.get(
+            f"{base_url}/collections/{collection}", headers=headers
+        )
+        if col_resp.status_code == 404:
+            return []
+        resp = await client.post(
+            f"{base_url}/collections/{collection}/points/search",
+            headers=headers,
+            json={"vector": vector, "limit": top_k, "with_payload": True},
+        )
+        if resp.is_error:
+            logger.error("Qdrant search error: %s", resp.text[:200])
+            return []
+        hits = resp.json().get("result", [])
+        results = []
+        for h in hits:
+            entry = dict(h.get("payload") or {})
+            entry["score"] = h.get("score", 0.0)
+            results.append(entry)
+        return results
+
+
 def _id_from_uuid(doc_id: str) -> int:
     """Convert UUID string to a stable uint64 for Qdrant point ID."""
     return int(doc_id.replace("-", ""), 16) % (2**63)

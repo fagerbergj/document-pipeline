@@ -3,6 +3,7 @@ import Sidebar from './components/Sidebar'
 import Dashboard from './pages/Dashboard'
 import Document from './pages/Document'
 import Contexts from './pages/Contexts'
+import Query from './pages/Query'
 
 export default function App() {
   const { pathname } = useLocation()
@@ -16,6 +17,7 @@ export default function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/documents/:id" element={<Document />} />
           <Route path="/contexts" element={<Contexts />} />
+          <Route path="/query" element={<Query />} />
         </Routes>
       </div>
     </div>
