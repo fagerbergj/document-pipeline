@@ -22,6 +22,7 @@ export default function Query() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [phase, setPhase] = useState<'idle' | 'searching' | 'answering' | 'done'>('idle')
+  const [sourcesOpen, setSourcesOpen] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
 
   const { data: contextLibrary } = useQuery<ContextEntry[]>({
@@ -46,6 +47,7 @@ export default function Query() {
     setError('')
     setAnswer('')
     setSources([])
+    setSourcesOpen(false)
     setPhase('searching')
 
     try {
@@ -205,25 +207,6 @@ export default function Query() {
         </div>
       )}
 
-      {/* Sources */}
-      {sources.length > 0 && (
-        <div>
-          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Sources</h2>
-          <div className="space-y-2">
-            {sources.map((s, i) => (
-              <div key={i} className="rounded-md border border-gray-200 bg-white px-4 py-3">
-                <div className="flex items-start justify-between gap-2">
-                  <span className="text-sm font-medium text-gray-800">{s.title}</span>
-                  <span className="text-xs text-gray-400 whitespace-nowrap">score {s.score.toFixed(3)}</span>
-                </div>
-                {s.date_month && <div className="text-xs text-gray-400 mt-0.5">{s.date_month}</div>}
-                {s.summary && <div className="text-xs text-gray-600 mt-1 line-clamp-2">{s.summary}</div>}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* Answer */}
       {(answer || (loading && phase === 'answering')) && (
         <div>
@@ -234,6 +217,33 @@ export default function Query() {
               <span className="inline-block w-1.5 h-4 bg-gray-400 animate-pulse ml-0.5 align-middle" />
             )}
           </div>
+        </div>
+      )}
+
+      {/* Sources (collapsible, shown after answer) */}
+      {sources.length > 0 && (
+        <div>
+          <button
+            onClick={() => setSourcesOpen(o => !o)}
+            className="flex items-center gap-1.5 text-sm font-semibold text-gray-500 uppercase tracking-wide hover:text-gray-700 transition-colors"
+          >
+            <span>{sourcesOpen ? '▾' : '▸'}</span>
+            <span>Sources ({sources.length})</span>
+          </button>
+          {sourcesOpen && (
+            <div className="mt-2 space-y-2">
+              {sources.map((s, i) => (
+                <div key={i} className="rounded-md border border-gray-200 bg-white px-4 py-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-sm font-medium text-gray-800">{s.title}</span>
+                    <span className="text-xs text-gray-400 whitespace-nowrap">score {s.score.toFixed(3)}</span>
+                  </div>
+                  {s.date_month && <div className="text-xs text-gray-400 mt-0.5">{s.date_month}</div>}
+                  {s.summary && <div className="text-xs text-gray-600 mt-1 line-clamp-2">{s.summary}</div>}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
