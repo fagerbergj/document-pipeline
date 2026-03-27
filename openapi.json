@@ -22,20 +22,37 @@
         }
       }
     },
-    "/api/v1/pipeline/stages": {
+    "/api/v1/remarkable/webhook": {
+      "post": {
+        "summary": "Webhook",
+        "description": "Receives a document send from the reMarkable tablet via rmfakecloud.\nmultipart/form-data with:\n  - data:       JSON string with document metadata\n  - attachment: rendered PNG of the current sheet\nReturns immediately; OCR runs asynchronously.",
+        "operationId": "webhook_api_v1_remarkable_webhook_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/pipelines": {
       "get": {
         "tags": [
-          "pipeline"
+          "Pipelines"
         ],
-        "summary": "Get Stages",
-        "operationId": "get_stages_api_v1_pipeline_stages_get",
+        "summary": "List Pipelines",
+        "operationId": "list_pipelines_api_v1_pipelines_get",
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/StagesResponse"
+                  "$ref": "#/components/schemas/PaginatedPipelines"
                 }
               }
             }
@@ -43,20 +60,41 @@
         }
       }
     },
-    "/api/v1/counts": {
+    "/api/v1/pipelines/{pipeline_id}": {
       "get": {
         "tags": [
-          "pipeline"
+          "Pipelines"
         ],
-        "summary": "Get Counts",
-        "operationId": "get_counts_api_v1_counts_get",
+        "summary": "Get Pipeline",
+        "operationId": "get_pipeline_api_v1_pipelines__pipeline_id__get",
+        "parameters": [
+          {
+            "name": "pipeline_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pipeline Id"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Counts"
+                  "$ref": "#/components/schemas/PipelineDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -67,7 +105,7 @@
     "/api/v1/documents": {
       "get": {
         "tags": [
-          "documents"
+          "Documents"
         ],
         "summary": "List Documents",
         "operationId": "list_documents_api_v1_documents_get",
@@ -113,6 +151,34 @@
               "default": "pipeline",
               "title": "Sort"
             }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Pagesize"
+            }
+          },
+          {
+            "name": "pageToken",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pagetoken"
+            }
           }
         ],
         "responses": {
@@ -121,11 +187,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/DocumentSummary"
-                  },
-                  "title": "Response List Documents Api V1 Documents Get"
+                  "$ref": "#/components/schemas/PaginatedDocuments"
                 }
               }
             }
@@ -146,7 +208,7 @@
     "/api/v1/documents/{doc_id}": {
       "get": {
         "tags": [
-          "documents"
+          "Documents"
         ],
         "summary": "Get Document",
         "operationId": "get_document_api_v1_documents__doc_id__get",
@@ -184,9 +246,59 @@
           }
         }
       },
+      "patch": {
+        "tags": [
+          "Documents"
+        ],
+        "summary": "Patch Document",
+        "operationId": "patch_document_api_v1_documents__doc_id__patch",
+        "parameters": [
+          {
+            "name": "doc_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Doc Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchDocumentBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "delete": {
         "tags": [
-          "documents"
+          "Documents"
         ],
         "summary": "Delete Document",
         "operationId": "delete_document_api_v1_documents__doc_id__delete",
@@ -228,7 +340,7 @@
     "/api/v1/documents/{doc_id}/image": {
       "get": {
         "tags": [
-          "documents"
+          "Documents"
         ],
         "summary": "Get Document Image",
         "operationId": "get_document_image_api_v1_documents__doc_id__image_get",
@@ -265,536 +377,92 @@
         }
       }
     },
-    "/api/v1/documents/{doc_id}/title": {
-      "post": {
-        "tags": [
-          "documents"
-        ],
-        "summary": "Update Title",
-        "operationId": "update_title_api_v1_documents__doc_id__title_post",
-        "parameters": [
-          {
-            "name": "doc_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Doc Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateTitleBody"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DocumentDetail"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/documents/{doc_id}/context": {
-      "post": {
-        "tags": [
-          "documents"
-        ],
-        "summary": "Save Context",
-        "operationId": "save_context_api_v1_documents__doc_id__context_post",
-        "parameters": [
-          {
-            "name": "doc_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Doc Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SaveContextBody"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DocumentDetail"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/documents/{doc_id}/set-context": {
-      "post": {
-        "tags": [
-          "documents"
-        ],
-        "summary": "Set Context And Run",
-        "operationId": "set_context_and_run_api_v1_documents__doc_id__set_context_post",
-        "parameters": [
-          {
-            "name": "doc_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Doc Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SaveContextBody"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DocumentDetail"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/documents/{doc_id}/approve": {
-      "post": {
-        "tags": [
-          "documents"
-        ],
-        "summary": "Approve Document",
-        "operationId": "approve_document_api_v1_documents__doc_id__approve_post",
-        "parameters": [
-          {
-            "name": "doc_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Doc Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ApproveBody"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DocumentDetail"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/documents/{doc_id}/reject": {
-      "post": {
-        "tags": [
-          "documents"
-        ],
-        "summary": "Reject Document",
-        "operationId": "reject_document_api_v1_documents__doc_id__reject_post",
-        "parameters": [
-          {
-            "name": "doc_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Doc Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DocumentDetail"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/documents/{doc_id}/clarify": {
-      "post": {
-        "tags": [
-          "documents"
-        ],
-        "summary": "Clarify Document",
-        "operationId": "clarify_document_api_v1_documents__doc_id__clarify_post",
-        "parameters": [
-          {
-            "name": "doc_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Doc Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ClarifyBody"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DocumentDetail"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/documents/{doc_id}/errors": {
-      "delete": {
-        "tags": [
-          "documents"
-        ],
-        "summary": "Clear Errors",
-        "operationId": "clear_errors_api_v1_documents__doc_id__errors_delete",
-        "parameters": [
-          {
-            "name": "doc_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Doc Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DocumentDetail"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/documents/{doc_id}/stop": {
-      "post": {
-        "tags": [
-          "documents"
-        ],
-        "summary": "Stop Document",
-        "operationId": "stop_document_api_v1_documents__doc_id__stop_post",
-        "parameters": [
-          {
-            "name": "doc_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Doc Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DocumentDetail"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/documents/{doc_id}/retry": {
-      "post": {
-        "tags": [
-          "documents"
-        ],
-        "summary": "Retry Document",
-        "operationId": "retry_document_api_v1_documents__doc_id__retry_post",
-        "parameters": [
-          {
-            "name": "doc_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Doc Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DocumentDetail"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/documents/{doc_id}/replay/{stage_name}": {
-      "post": {
-        "tags": [
-          "documents"
-        ],
-        "summary": "Replay Document",
-        "operationId": "replay_document_api_v1_documents__doc_id__replay__stage_name__post",
-        "parameters": [
-          {
-            "name": "doc_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Doc Id"
-            }
-          },
-          {
-            "name": "stage_name",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Stage Name"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DocumentDetail"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/context-library": {
+    "/api/v1/jobs": {
       "get": {
         "tags": [
-          "context"
+          "Jobs"
         ],
-        "summary": "Get Context Library",
-        "operationId": "get_context_library_api_v1_context_library_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/ContextEntry"
-                  },
-                  "type": "array",
-                  "title": "Response Get Context Library Api V1 Context Library Get"
+        "summary": "List Jobs",
+        "operationId": "list_jobs_api_v1_jobs_get",
+        "parameters": [
+          {
+            "name": "stages",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
                 }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "context"
-        ],
-        "summary": "Save Context Entry",
-        "operationId": "save_context_entry_api_v1_context_library_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SaveContextEntryBody"
-              }
+              ],
+              "title": "Stages"
             }
           },
-          "required": true
-        },
+          {
+            "name": "states",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "States"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "pipeline",
+              "title": "Sort"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Pagesize"
+            }
+          },
+          {
+            "name": "pageToken",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pagetoken"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/ContextEntry"
-                  },
-                  "type": "array",
-                  "title": "Response Save Context Entry Api V1 Context Library Post"
+                  "$ref": "#/components/schemas/PaginatedJobs"
                 }
               }
             }
@@ -812,21 +480,21 @@
         }
       }
     },
-    "/api/v1/context-library/{name}": {
-      "delete": {
+    "/api/v1/documents/{doc_id}/jobs": {
+      "get": {
         "tags": [
-          "context"
+          "Jobs"
         ],
-        "summary": "Delete Context Entry",
-        "operationId": "delete_context_entry_api_v1_context_library__name__delete",
+        "summary": "Get Job",
+        "operationId": "get_job_api_v1_documents__doc_id__jobs_get",
         "parameters": [
           {
-            "name": "name",
+            "name": "doc_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Name"
+              "title": "Doc Id"
             }
           }
         ],
@@ -836,11 +504,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/ContextEntry"
-                  },
-                  "title": "Response Delete Context Entry Api V1 Context Library  Name  Delete"
+                  "$ref": "#/components/schemas/JobDetail"
                 }
               }
             }
@@ -858,14 +522,25 @@
         }
       }
     },
-    "/api/v1/query": {
-      "post": {
+    "/api/v1/documents/{doc_id}/jobs/stream": {
+      "get": {
         "tags": [
-          "query"
+          "Jobs"
         ],
-        "summary": "Query Knowledge Base",
-        "description": "RAG chat: embed latest user message \u2192 search Qdrant \u2192 stream LLM reply as SSE.",
-        "operationId": "query_knowledge_base_api_v1_query_post",
+        "summary": "Job Token Stream",
+        "description": "SSE stream of LLM tokens while the document's job is running.",
+        "operationId": "job_token_stream_api_v1_documents__doc_id__jobs_stream_get",
+        "parameters": [
+          {
+            "name": "doc_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Doc Id"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -874,18 +549,95 @@
                 "schema": {}
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
           }
         }
       }
     },
-    "/api/v1/documents/{doc_id}/stream": {
+    "/api/v1/documents/{doc_id}/jobs/events": {
       "get": {
         "tags": [
-          "documents"
+          "Jobs"
         ],
-        "summary": "Doc Token Stream",
-        "description": "SSE endpoint: streams LLM tokens while the document is running, then sends 'done'.",
-        "operationId": "doc_token_stream_api_v1_documents__doc_id__stream_get",
+        "summary": "List Job Events",
+        "operationId": "list_job_events_api_v1_documents__doc_id__jobs_events_get",
+        "parameters": [
+          {
+            "name": "doc_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Doc Id"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Pagesize"
+            }
+          },
+          {
+            "name": "pageToken",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pagetoken"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedJobEvents"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "Post Job Event",
+        "operationId": "post_job_event_api_v1_documents__doc_id__jobs_events_post",
         "parameters": [
           {
             "name": "doc_id",
@@ -897,6 +649,289 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/ApproveEvent"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RejectEvent"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ClarifyEvent"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RetryEvent"
+                  },
+                  {
+                    "$ref": "#/components/schemas/StopEvent"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ReplayEvent"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ProvideContextEvent"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ClearErrorsEvent"
+                  }
+                ],
+                "discriminator": {
+                  "propertyName": "type",
+                  "mapping": {
+                    "approve": "#/components/schemas/ApproveEvent",
+                    "reject": "#/components/schemas/RejectEvent",
+                    "clarify": "#/components/schemas/ClarifyEvent",
+                    "retry": "#/components/schemas/RetryEvent",
+                    "stop": "#/components/schemas/StopEvent",
+                    "replay": "#/components/schemas/ReplayEvent",
+                    "provide_context": "#/components/schemas/ProvideContextEvent",
+                    "clear_errors": "#/components/schemas/ClearErrorsEvent"
+                  }
+                },
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/contexts": {
+      "get": {
+        "tags": [
+          "Contexts"
+        ],
+        "summary": "List Contexts",
+        "operationId": "list_contexts_api_v1_contexts_get",
+        "parameters": [
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Pagesize"
+            }
+          },
+          {
+            "name": "pageToken",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pagetoken"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedContexts"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Contexts"
+        ],
+        "summary": "Create Context",
+        "operationId": "create_context_api_v1_contexts_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateContextBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContextEntry"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/contexts/{context_id}": {
+      "patch": {
+        "tags": [
+          "Contexts"
+        ],
+        "summary": "Update Context",
+        "operationId": "update_context_api_v1_contexts__context_id__patch",
+        "parameters": [
+          {
+            "name": "context_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Context Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateContextBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContextEntry"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Contexts"
+        ],
+        "summary": "Delete Context",
+        "operationId": "delete_context_api_v1_contexts__context_id__delete",
+        "parameters": [
+          {
+            "name": "context_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Context Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/chats": {
+      "post": {
+        "tags": [
+          "Chat"
+        ],
+        "summary": "Create Chat",
+        "description": "RAG chat: embed latest user message \u2192 search Qdrant \u2192 stream LLM reply as SSE.",
+        "operationId": "create_chat_api_v1_chats_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -922,16 +957,92 @@
   },
   "components": {
     "schemas": {
-      "ApproveBody": {
+      "ApproveEvent": {
         "properties": {
-          "edited_text": {
+          "type": {
             "type": "string",
+            "const": "approve",
+            "title": "Type"
+          },
+          "edited_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Edited Text",
             "default": ""
           }
         },
         "type": "object",
-        "title": "ApproveBody"
+        "required": [
+          "type"
+        ],
+        "title": "ApproveEvent"
+      },
+      "ChatMessage": {
+        "properties": {
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          }
+        },
+        "type": "object",
+        "required": [
+          "role",
+          "content"
+        ],
+        "title": "ChatMessage"
+      },
+      "ChatRequest": {
+        "properties": {
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/ChatMessage"
+            },
+            "type": "array",
+            "title": "Messages"
+          },
+          "context": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context",
+            "description": "Optional free-text context injected into the system prompt.",
+            "default": ""
+          },
+          "top_k": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 20.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Top K",
+            "description": "Number of vector search results to retrieve per turn.",
+            "default": 5
+          }
+        },
+        "type": "object",
+        "required": [
+          "messages"
+        ],
+        "title": "ChatRequest"
       },
       "ClarificationRequest": {
         "properties": {
@@ -951,31 +1062,101 @@
         ],
         "title": "ClarificationRequest"
       },
-      "ClarifyBody": {
+      "ClarifyEvent": {
         "properties": {
+          "type": {
+            "type": "string",
+            "const": "clarify",
+            "title": "Type"
+          },
           "answers": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "type": "object",
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Answers",
             "default": {}
           },
           "free_prompt": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Free Prompt",
             "default": ""
           },
           "edited_text": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Edited Text",
             "default": ""
           }
         },
         "type": "object",
-        "title": "ClarifyBody"
+        "required": [
+          "type"
+        ],
+        "title": "ClarifyEvent"
+      },
+      "ClearErrorsEvent": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "clear_errors",
+            "title": "Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "title": "ClearErrorsEvent"
       },
       "ContextEntry": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "Immutable identifier assigned at creation."
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Human-readable name for this context entry."
+          },
+          "text": {
+            "type": "string",
+            "title": "Text",
+            "description": "The context text injected into LLM prompts."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "text"
+        ],
+        "title": "ContextEntry"
+      },
+      "CreateContextBody": {
         "properties": {
           "name": {
             "type": "string",
@@ -991,87 +1172,13 @@
           "name",
           "text"
         ],
-        "title": "ContextEntry"
-      },
-      "Counts": {
-        "properties": {
-          "pending": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pending"
-          },
-          "running": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Running"
-          },
-          "waiting": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Waiting"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error"
-          },
-          "done": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Done"
-          },
-          "by_stage": {
-            "anyOf": [
-              {
-                "additionalProperties": {
-                  "type": "integer"
-                },
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "By Stage"
-          }
-        },
-        "type": "object",
-        "title": "Counts"
+        "title": "CreateContextBody"
       },
       "DocumentDetail": {
         "properties": {
           "id": {
             "type": "string",
+            "format": "uuid",
             "title": "Id"
           },
           "title": {
@@ -1085,84 +1192,55 @@
             ],
             "title": "Title"
           },
-          "current_stage": {
-            "type": "string",
-            "title": "Current Stage"
-          },
-          "stage_state": {
-            "type": "string",
-            "title": "Stage State"
-          },
-          "created_at": {
-            "type": "string",
-            "title": "Created At"
-          },
-          "updated_at": {
-            "type": "string",
-            "title": "Updated At"
-          },
           "document_context": {
             "type": "string",
-            "title": "Document Context"
+            "title": "Document Context",
+            "description": "Free-text context attached by the user to guide LLM stages."
           },
-          "context_required": {
+          "context_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Ref",
+            "description": "UUID of a saved context entry linked to this document."
+          },
+          "has_image": {
             "type": "boolean",
-            "title": "Context Required"
+            "title": "Has Image",
+            "description": "True if a source PNG image is available."
           },
           "stage_displays": {
             "items": {
               "$ref": "#/components/schemas/StageDisplay"
             },
             "type": "array",
-            "title": "Stage Displays"
+            "title": "Stage Displays",
+            "description": "Completed stage outputs available for display."
           },
-          "review": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ReviewDetail"
-              },
-              {
-                "type": "null"
-              }
-            ]
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
           },
-          "replay_stages": {
-            "items": {
-              "$ref": "#/components/schemas/ReplayStage"
-            },
-            "type": "array",
-            "title": "Replay Stages"
-          },
-          "needs_context": {
-            "type": "boolean",
-            "title": "Needs Context"
-          },
-          "events": {
-            "items": {
-              "$ref": "#/components/schemas/StageEvent"
-            },
-            "type": "array",
-            "title": "Events"
-          },
-          "has_image": {
-            "type": "boolean",
-            "title": "Has Image"
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
           }
         },
         "type": "object",
         "required": [
           "id",
-          "current_stage",
-          "stage_state",
-          "created_at",
-          "updated_at",
           "document_context",
-          "context_required",
+          "has_image",
           "stage_displays",
-          "replay_stages",
-          "needs_context",
-          "events",
-          "has_image"
+          "created_at",
+          "updated_at"
         ],
         "title": "DocumentDetail"
       },
@@ -1170,7 +1248,9 @@
         "properties": {
           "id": {
             "type": "string",
-            "title": "Id"
+            "format": "uuid",
+            "title": "Id",
+            "description": "Unique document identifier."
           },
           "title": {
             "anyOf": [
@@ -1181,37 +1261,31 @@
                 "type": "null"
               }
             ],
-            "title": "Title"
+            "title": "Title",
+            "description": "Human-readable title."
           },
-          "current_stage": {
-            "type": "string",
-            "title": "Current Stage"
-          },
-          "stage_state": {
-            "type": "string",
-            "title": "Stage State"
+          "needs_context": {
+            "type": "boolean",
+            "title": "Needs Context",
+            "description": "True if the document's current stage is blocked waiting for context."
           },
           "created_at": {
             "type": "string",
+            "format": "date-time",
             "title": "Created At"
           },
           "updated_at": {
             "type": "string",
+            "format": "date-time",
             "title": "Updated At"
-          },
-          "needs_context": {
-            "type": "boolean",
-            "title": "Needs Context"
           }
         },
         "type": "object",
         "required": [
           "id",
-          "current_stage",
-          "stage_state",
+          "needs_context",
           "created_at",
-          "updated_at",
-          "needs_context"
+          "updated_at"
         ],
         "title": "DocumentSummary"
       },
@@ -1228,6 +1302,155 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "JobDetail": {
+        "properties": {
+          "doc_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Doc Id"
+          },
+          "current_stage": {
+            "type": "string",
+            "title": "Current Stage"
+          },
+          "stage_state": {
+            "$ref": "#/components/schemas/StageState"
+          },
+          "needs_context": {
+            "type": "boolean",
+            "title": "Needs Context",
+            "description": "True if the current stage is blocked waiting for context input."
+          },
+          "context_required": {
+            "type": "boolean",
+            "title": "Context Required",
+            "description": "True when the current stage requires context before it can run at all."
+          },
+          "review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReviewDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present when the document is waiting for human review."
+          },
+          "replay_stages": {
+            "items": {
+              "$ref": "#/components/schemas/ReplayStage"
+            },
+            "type": "array",
+            "title": "Replay Stages",
+            "description": "Completed stages the job can be rewound to."
+          }
+        },
+        "type": "object",
+        "required": [
+          "doc_id",
+          "current_stage",
+          "stage_state",
+          "needs_context",
+          "context_required",
+          "replay_stages"
+        ],
+        "title": "JobDetail"
+      },
+      "JobEventRecord": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id",
+            "description": "Monotonically increasing internal event ID (used as cursor)."
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Timestamp"
+          },
+          "stage": {
+            "type": "string",
+            "title": "Stage"
+          },
+          "event_type": {
+            "type": "string",
+            "title": "Event Type"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "timestamp",
+          "stage",
+          "event_type"
+        ],
+        "title": "JobEventRecord"
+      },
+      "JobSummary": {
+        "properties": {
+          "doc_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Doc Id"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "Denormalized document title."
+          },
+          "current_stage": {
+            "type": "string",
+            "title": "Current Stage"
+          },
+          "stage_state": {
+            "$ref": "#/components/schemas/StageState"
+          },
+          "needs_context": {
+            "type": "boolean",
+            "title": "Needs Context"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "doc_id",
+          "current_stage",
+          "stage_state",
+          "needs_context",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "JobSummary"
+      },
       "OkResponse": {
         "properties": {
           "ok": {
@@ -1241,6 +1464,337 @@
         ],
         "title": "OkResponse"
       },
+      "PaginatedContexts": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/ContextEntry"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "nextPageToken": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextpagetoken"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "PaginatedContexts"
+      },
+      "PaginatedDocuments": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentSummary"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "nextPageToken": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextpagetoken"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "PaginatedDocuments"
+      },
+      "PaginatedJobEvents": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/JobEventRecord"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "nextPageToken": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextpagetoken",
+            "description": "Pass as `afterId` on the next request to fetch subsequent events."
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "PaginatedJobEvents"
+      },
+      "PaginatedJobs": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/JobSummary"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "nextPageToken": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextpagetoken"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "PaginatedJobs"
+      },
+      "PaginatedPipelines": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/PipelineSummary"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "nextPageToken": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextpagetoken"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "PaginatedPipelines"
+      },
+      "PatchDocumentBody": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "document_context": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Context"
+          },
+          "context_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Ref",
+            "description": "UUID of a context entry to link, or null to unlink."
+          }
+        },
+        "type": "object",
+        "title": "PatchDocumentBody"
+      },
+      "PipelineDetail": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/PipelineStageConfig"
+            },
+            "type": "array",
+            "title": "Stages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "stages"
+        ],
+        "title": "PipelineDetail"
+      },
+      "PipelineStageConfig": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Stage identifier (e.g. `ocr`, `clarify`)."
+          },
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "description": "Stage handler type (e.g. `llm_text`, `embed`)."
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model",
+            "description": "Model override for LLM stages."
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "type"
+        ],
+        "title": "PipelineStageConfig"
+      },
+      "PipelineSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Pipeline identifier (filename stem)."
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Human-readable pipeline name."
+          },
+          "stage_count": {
+            "type": "integer",
+            "title": "Stage Count",
+            "description": "Number of stages in the pipeline."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "stage_count"
+        ],
+        "title": "PipelineSummary"
+      },
+      "ProvideContextEvent": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "provide_context",
+            "title": "Type"
+          },
+          "document_context": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Context",
+            "default": ""
+          },
+          "context_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Ref"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "title": "ProvideContextEvent"
+      },
+      "RejectEvent": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "reject",
+            "title": "Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "title": "RejectEvent"
+      },
+      "ReplayEvent": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "replay",
+            "title": "Type"
+          },
+          "stage": {
+            "type": "string",
+            "title": "Stage",
+            "description": "Name of the pipeline stage to rewind to."
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "stage"
+        ],
+        "title": "ReplayEvent"
+      },
       "ReplayStage": {
         "properties": {
           "name": {
@@ -1253,6 +1807,20 @@
           "name"
         ],
         "title": "ReplayStage"
+      },
+      "RetryEvent": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "retry",
+            "title": "Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "title": "RetryEvent"
       },
       "ReviewDetail": {
         "properties": {
@@ -1327,47 +1895,28 @@
         ],
         "title": "ReviewDetail"
       },
-      "SaveContextBody": {
-        "properties": {
-          "document_context": {
-            "type": "string",
-            "title": "Document Context",
-            "default": ""
-          }
-        },
-        "type": "object",
-        "title": "SaveContextBody"
-      },
-      "SaveContextEntryBody": {
-        "properties": {
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "text": {
-            "type": "string",
-            "title": "Text"
-          }
-        },
-        "type": "object",
-        "required": [
-          "name",
-          "text"
+      "Role": {
+        "type": "string",
+        "enum": [
+          "user",
+          "assistant"
         ],
-        "title": "SaveContextEntryBody"
+        "title": "Role"
       },
       "StageDisplay": {
         "properties": {
           "name": {
             "type": "string",
-            "title": "Name"
+            "title": "Name",
+            "description": "Pipeline stage name (e.g. `ocr`, `clarify`)."
           },
           "fields": {
             "additionalProperties": {
               "type": "string"
             },
             "type": "object",
-            "title": "Fields"
+            "title": "Fields",
+            "description": "Map of field name to text value for each output produced by the stage."
           }
         },
         "type": "object",
@@ -1377,69 +1926,58 @@
         ],
         "title": "StageDisplay"
       },
-      "StageEvent": {
+      "StageState": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "running",
+          "waiting",
+          "error",
+          "done"
+        ],
+        "title": "StageState"
+      },
+      "StopEvent": {
         "properties": {
-          "timestamp": {
+          "type": {
             "type": "string",
-            "title": "Timestamp"
-          },
-          "stage": {
-            "type": "string",
-            "title": "Stage"
-          },
-          "event_type": {
-            "type": "string",
-            "title": "Event Type"
-          },
-          "data": {
+            "const": "stop",
+            "title": "Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "title": "StopEvent"
+      },
+      "UpdateContextBody": {
+        "properties": {
+          "name": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Data"
+            "title": "Name"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
           }
         },
         "type": "object",
-        "required": [
-          "timestamp",
-          "stage",
-          "event_type"
-        ],
-        "title": "StageEvent"
-      },
-      "StagesResponse": {
-        "properties": {
-          "stages": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Stages"
-          }
-        },
-        "type": "object",
-        "required": [
-          "stages"
-        ],
-        "title": "StagesResponse"
-      },
-      "UpdateTitleBody": {
-        "properties": {
-          "title": {
-            "type": "string",
-            "title": "Title"
-          }
-        },
-        "type": "object",
-        "required": [
-          "title"
-        ],
-        "title": "UpdateTitleBody"
+        "title": "UpdateContextBody"
       },
       "ValidationError": {
         "properties": {
@@ -1464,13 +2002,6 @@
           "type": {
             "type": "string",
             "title": "Error Type"
-          },
-          "input": {
-            "title": "Input"
-          },
-          "ctx": {
-            "type": "object",
-            "title": "Context"
           }
         },
         "type": "object",

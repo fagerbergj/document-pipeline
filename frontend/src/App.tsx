@@ -1,9 +1,9 @@
-import { Routes, Route, useLocation } from 'react-router-dom'
+import { Routes, Route, useLocation, Navigate } from 'react-router-dom'
 import Sidebar from './components/Sidebar'
 import Dashboard from './pages/Dashboard'
 import Document from './pages/Document'
 import Contexts from './pages/Contexts'
-import Query from './pages/Query'
+import Chat from './pages/Chat'
 
 export default function App() {
   const { pathname } = useLocation()
@@ -17,7 +17,8 @@ export default function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/documents/:id" element={<Document />} />
           <Route path="/contexts" element={<Contexts />} />
-          <Route path="/query" element={<Query />} />
+          <Route path="/chat" element={<Chat />} />
+          <Route path="/query" element={<Navigate to="/chat" replace />} />
         </Routes>
       </div>
     </div>

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from pathlib import Path
 from typing import Optional
 
@@ -254,6 +255,112 @@ class Database:
             stage_counts = {row["current_stage"]: row["cnt"] for row in await cur.fetchall()}
         return {**state_counts, "by_stage": stage_counts}
 
+    async def list_documents_paginated(
+        self,
+        stages: Optional[list] = None,
+        states: Optional[list] = None,
+        sort: str = "pipeline",
+        page_size: int = 50,
+        page_token: Optional[dict] = None,  # decoded token: {k: sort_key, id: last_id}
+    ) -> tuple[list[Document], Optional[str]]:
+        """Return (page, next_page_token_encoded | None)."""
+        from adapters.inbound.schemas import encode_page_token
+
+        conditions = ["current_stage != 'deleted'"]
+        params: list = []
+        if stages:
+            conditions.append(f"current_stage IN ({','.join('?'*len(stages))})")
+            params.extend(stages)
+        if states:
+            conditions.append(f"stage_state IN ({','.join('?'*len(states))})")
+            params.extend(states)
+
+        # Sort config: (ORDER BY clause, cursor WHERE clause template, cursor key extractor)
+        _sort_map = {
+            "pipeline":     ("current_stage ASC, created_at ASC, id ASC",
+                             "(current_stage, created_at, id) > (?, ?, ?)",
+                             lambda d: [d.current_stage, d.created_at, d.id]),
+            "created_asc":  ("created_at ASC, id ASC",
+                             "(created_at, id) > (?, ?)",
+                             lambda d: [d.created_at, d.id]),
+            "created_desc": ("created_at DESC, id DESC",
+                             "(created_at, id) < (?, ?)",
+                             lambda d: [d.created_at, d.id]),
+            "title_asc":    ("LOWER(COALESCE(title,'')) ASC, id ASC",
+                             "(LOWER(COALESCE(title,'')), id) > (?, ?)",
+                             lambda d: [(d.title or "").lower(), d.id]),
+            "title_desc":   ("LOWER(COALESCE(title,'')) DESC, id DESC",
+                             "(LOWER(COALESCE(title,'')), id) < (?, ?)",
+                             lambda d: [(d.title or "").lower(), d.id]),
+        }
+        order_clause, cursor_where, key_fn = _sort_map.get(
+            sort, _sort_map["pipeline"]
+        )
+
+        if page_token:
+            k = page_token.get("k")
+            last_id = page_token.get("id", "")
+            cursor_vals = k if isinstance(k, list) else [k, last_id]
+            conditions.append(cursor_where)
+            params.extend(cursor_vals)
+
+        sql = (
+            f"SELECT * FROM documents WHERE {' AND '.join(conditions)}"
+            f" ORDER BY {order_clause} LIMIT ?"
+        )
+        params.append(page_size + 1)
+
+        async with self._conn.execute(sql, params) as cur:
+            rows = await cur.fetchall()
+
+        docs = [self._row_to_doc(r) for r in rows]
+        has_more = len(docs) > page_size
+        if has_more:
+            docs = docs[:page_size]
+
+        next_token = None
+        if has_more and docs:
+            last = docs[-1]
+            k_val = key_fn(last)
+            # k_val is [sort_key, id] or [s, t, id]; store as list
+            next_token = encode_page_token(k_val[:-1] if len(k_val) > 1 else k_val[0], last.id)
+        return docs, next_token
+
+    async def get_events_paginated(
+        self,
+        document_id: str,
+        page_size: int = 100,
+        after_id: Optional[int] = None,
+    ) -> tuple[list[dict], Optional[int]]:
+        """Return (events, next_after_id | None)."""
+        params: list = [document_id]
+        where_extra = ""
+        if after_id is not None:
+            where_extra = " AND id > ?"
+            params.append(after_id)
+        async with self._conn.execute(
+            f"SELECT id, timestamp, stage, event_type, data FROM stage_events"
+            f" WHERE document_id=?{where_extra} ORDER BY id ASC LIMIT ?",
+            params + [page_size + 1],
+        ) as cur:
+            rows = await cur.fetchall()
+
+        events = [
+            {
+                "id": r["id"],
+                "timestamp": r["timestamp"],
+                "stage": r["stage"],
+                "event_type": r["event_type"],
+                "data": json.loads(r["data"]) if r["data"] else None,
+            }
+            for r in rows
+        ]
+        has_more = len(events) > page_size
+        if has_more:
+            events = events[:page_size]
+        next_after = events[-1]["id"] if has_more and events else None
+        return events, next_after
+
     async def kv_get(self, key: str) -> Optional[str]:
         async with self._conn.execute("SELECT value FROM key_value WHERE key=?", (key,)) as cur:
             row = await cur.fetchone()
@@ -265,3 +372,20 @@ class Database:
             (key, value),
         )
         await self._conn.commit()
+
+    async def context_backfill_ids(self, key: str) -> None:
+        """Assign UUIDs to any context entries that are missing one."""
+        raw = await self.kv_get(key)
+        if not raw:
+            return
+        try:
+            entries = json.loads(raw)
+        except Exception:
+            return
+        changed = False
+        for entry in entries:
+            if "id" not in entry:
+                entry["id"] = str(uuid.uuid4())
+                changed = True
+        if changed:
+            await self.kv_set(key, json.dumps(entries, ensure_ascii=False))

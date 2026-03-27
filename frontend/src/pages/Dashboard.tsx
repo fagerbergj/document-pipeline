@@ -1,5 +1,5 @@
-import {useEffect, useRef, useState} from 'react'
-import {useMutation, useQuery, useQueryClient} from '@tanstack/react-query'
+import { useEffect, useRef, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
 import StatusBadge from '../components/StatusBadge'
@@ -22,15 +22,17 @@ export default function Dashboard() {
   const states = searchParams.get('states') ?? ''
   const sort = (searchParams.get('sort') ?? 'pipeline') as SortKey
 
-  const { data: docs, isLoading, dataUpdatedAt } = useQuery({
-    queryKey: ['documents', stages, states, sort],
-    queryFn: () => api.documents({
+  const { data: page, isLoading, dataUpdatedAt } = useQuery({
+    queryKey: ['jobs', stages, states, sort],
+    queryFn: () => api.jobs({
       stages: stages || undefined,
       states: states || undefined,
       sort,
     }),
     refetchInterval: 10_000,
   })
+
+  const jobs = page?.data ?? []
 
   function setSort(col: string) {
     const next = new URLSearchParams(searchParams)
@@ -72,7 +74,7 @@ export default function Dashboard() {
       <div className="p-6">
         {isLoading ? <LoadingSpinner /> : (
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            {!docs?.length ? (
+            {!jobs.length ? (
               <div className="py-16 text-center text-gray-400 text-sm">
                 {activeFilters > 0 ? 'No documents match the current filters.' : 'No documents yet.'}
               </div>
@@ -96,35 +98,35 @@ export default function Dashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {docs.map(doc => (
-                    <tr key={doc.id}
-                      onClick={() => navigate(`/documents/${doc.id}`)}
+                  {jobs.map(job => (
+                    <tr key={job.doc_id}
+                      onClick={() => navigate(`/documents/${job.doc_id}`)}
                       className="hover:bg-gray-50 transition-colors group cursor-pointer">
                       <td className="px-4 py-3">
                         <InlineTitle
-                          docId={doc.id}
-                          title={doc.title}
-                          onSaved={() => qc.invalidateQueries({ queryKey: ['documents'] })}
+                          docId={job.doc_id}
+                          title={job.title ?? null}
+                          onSaved={() => qc.invalidateQueries({ queryKey: ['jobs'] })}
                         />
-                        {doc.needs_context && (
+                        {job.needs_context && (
                           <span className="ml-2 text-xs text-red-500 font-medium">⚠ needs context</span>
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{doc.current_stage}</span>
+                        <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{job.current_stage}</span>
                       </td>
                       <td className="px-4 py-3">
-                        <StatusBadge state={doc.stage_state} />
+                        <StatusBadge state={job.stage_state} />
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-400 hidden sm:table-cell">
-                        {doc.created_at.slice(0, 16).replace('T', ' ')}
+                        {job.created_at.slice(0, 16).replace('T', ' ')}
                       </td>
                       <td className="px-2 py-3 text-right" onClick={e => e.stopPropagation()}>
                         <DocKebabMenu
-                          docId={doc.id}
-                          state={doc.stage_state}
-                          onDelete={() => qc.invalidateQueries({ queryKey: ['documents'] })}
-                          onSuccess={() => qc.invalidateQueries({ queryKey: ['documents'] })}
+                          docId={job.doc_id}
+                          state={job.stage_state}
+                          onDelete={() => qc.invalidateQueries({ queryKey: ['jobs'] })}
+                          onSuccess={() => qc.invalidateQueries({ queryKey: ['jobs'] })}
                           buttonClassName="w-7 h-7 flex items-center justify-center rounded text-gray-300 hover:text-gray-600 hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-all text-base leading-none"
                         />
                       </td>
@@ -150,7 +152,7 @@ function InlineTitle({ docId, title, onSaved }: {
   const [value, setValue] = useState(title ?? '')
   const inputRef = useRef<HTMLInputElement>(null)
   const mut = useMutation({
-    mutationFn: (t: string) => api.updateTitle(docId, t),
+    mutationFn: (t: string) => api.updateDocument(docId, { title: t }),
     onSuccess: () => { onSaved(); setEditing(false) },
   })
 

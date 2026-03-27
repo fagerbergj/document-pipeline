@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { ApproveDocumentApiV1DocumentsDocIdApprovePostData, ApproveDocumentApiV1DocumentsDocIdApprovePostErrors, ApproveDocumentApiV1DocumentsDocIdApprovePostResponses, ClarifyDocumentApiV1DocumentsDocIdClarifyPostData, ClarifyDocumentApiV1DocumentsDocIdClarifyPostErrors, ClarifyDocumentApiV1DocumentsDocIdClarifyPostResponses, ClearErrorsApiV1DocumentsDocIdErrorsDeleteData, ClearErrorsApiV1DocumentsDocIdErrorsDeleteErrors, ClearErrorsApiV1DocumentsDocIdErrorsDeleteResponses, DeleteContextEntryApiV1ContextLibraryNameDeleteData, DeleteContextEntryApiV1ContextLibraryNameDeleteErrors, DeleteContextEntryApiV1ContextLibraryNameDeleteResponses, DeleteDocumentApiV1DocumentsDocIdDeleteData, DeleteDocumentApiV1DocumentsDocIdDeleteErrors, DeleteDocumentApiV1DocumentsDocIdDeleteResponses, DocTokenStreamApiV1DocumentsDocIdStreamGetData, DocTokenStreamApiV1DocumentsDocIdStreamGetErrors, DocTokenStreamApiV1DocumentsDocIdStreamGetResponses, GetContextLibraryApiV1ContextLibraryGetData, GetContextLibraryApiV1ContextLibraryGetResponses, GetCountsApiV1CountsGetData, GetCountsApiV1CountsGetResponses, GetDocumentApiV1DocumentsDocIdGetData, GetDocumentApiV1DocumentsDocIdGetErrors, GetDocumentApiV1DocumentsDocIdGetResponses, GetDocumentImageApiV1DocumentsDocIdImageGetData, GetDocumentImageApiV1DocumentsDocIdImageGetErrors, GetDocumentImageApiV1DocumentsDocIdImageGetResponses, GetStagesApiV1PipelineStagesGetData, GetStagesApiV1PipelineStagesGetResponses, ListDocumentsApiV1DocumentsGetData, ListDocumentsApiV1DocumentsGetErrors, ListDocumentsApiV1DocumentsGetResponses, QueryKnowledgeBaseApiV1QueryPostData, QueryKnowledgeBaseApiV1QueryPostResponses, RejectDocumentApiV1DocumentsDocIdRejectPostData, RejectDocumentApiV1DocumentsDocIdRejectPostErrors, RejectDocumentApiV1DocumentsDocIdRejectPostResponses, ReplayDocumentApiV1DocumentsDocIdReplayStageNamePostData, ReplayDocumentApiV1DocumentsDocIdReplayStageNamePostErrors, ReplayDocumentApiV1DocumentsDocIdReplayStageNamePostResponses, RetryDocumentApiV1DocumentsDocIdRetryPostData, RetryDocumentApiV1DocumentsDocIdRetryPostErrors, RetryDocumentApiV1DocumentsDocIdRetryPostResponses, SaveContextApiV1DocumentsDocIdContextPostData, SaveContextApiV1DocumentsDocIdContextPostErrors, SaveContextApiV1DocumentsDocIdContextPostResponses, SaveContextEntryApiV1ContextLibraryPostData, SaveContextEntryApiV1ContextLibraryPostErrors, SaveContextEntryApiV1ContextLibraryPostResponses, SetContextAndRunApiV1DocumentsDocIdSetContextPostData, SetContextAndRunApiV1DocumentsDocIdSetContextPostErrors, SetContextAndRunApiV1DocumentsDocIdSetContextPostResponses, StopDocumentApiV1DocumentsDocIdStopPostData, StopDocumentApiV1DocumentsDocIdStopPostErrors, StopDocumentApiV1DocumentsDocIdStopPostResponses, UpdateTitleApiV1DocumentsDocIdTitlePostData, UpdateTitleApiV1DocumentsDocIdTitlePostErrors, UpdateTitleApiV1DocumentsDocIdTitlePostResponses, WebhookWebhookPostData, WebhookWebhookPostResponses } from './types.gen';
+import type { CreateChatApiV1ChatsPostData, CreateChatApiV1ChatsPostErrors, CreateChatApiV1ChatsPostResponses, CreateContextApiV1ContextsPostData, CreateContextApiV1ContextsPostErrors, CreateContextApiV1ContextsPostResponses, DeleteContextApiV1ContextsContextIdDeleteData, DeleteContextApiV1ContextsContextIdDeleteErrors, DeleteContextApiV1ContextsContextIdDeleteResponses, DeleteDocumentApiV1DocumentsDocIdDeleteData, DeleteDocumentApiV1DocumentsDocIdDeleteErrors, DeleteDocumentApiV1DocumentsDocIdDeleteResponses, GetDocumentApiV1DocumentsDocIdGetData, GetDocumentApiV1DocumentsDocIdGetErrors, GetDocumentApiV1DocumentsDocIdGetResponses, GetDocumentImageApiV1DocumentsDocIdImageGetData, GetDocumentImageApiV1DocumentsDocIdImageGetErrors, GetDocumentImageApiV1DocumentsDocIdImageGetResponses, GetJobApiV1DocumentsDocIdJobsGetData, GetJobApiV1DocumentsDocIdJobsGetErrors, GetJobApiV1DocumentsDocIdJobsGetResponses, GetPipelineApiV1PipelinesPipelineIdGetData, GetPipelineApiV1PipelinesPipelineIdGetErrors, GetPipelineApiV1PipelinesPipelineIdGetResponses, JobTokenStreamApiV1DocumentsDocIdJobsStreamGetData, JobTokenStreamApiV1DocumentsDocIdJobsStreamGetErrors, JobTokenStreamApiV1DocumentsDocIdJobsStreamGetResponses, ListContextsApiV1ContextsGetData, ListContextsApiV1ContextsGetErrors, ListContextsApiV1ContextsGetResponses, ListDocumentsApiV1DocumentsGetData, ListDocumentsApiV1DocumentsGetErrors, ListDocumentsApiV1DocumentsGetResponses, ListJobEventsApiV1DocumentsDocIdJobsEventsGetData, ListJobEventsApiV1DocumentsDocIdJobsEventsGetErrors, ListJobEventsApiV1DocumentsDocIdJobsEventsGetResponses, ListJobsApiV1JobsGetData, ListJobsApiV1JobsGetErrors, ListJobsApiV1JobsGetResponses, ListPipelinesApiV1PipelinesGetData, ListPipelinesApiV1PipelinesGetResponses, PatchDocumentApiV1DocumentsDocIdPatchData, PatchDocumentApiV1DocumentsDocIdPatchErrors, PatchDocumentApiV1DocumentsDocIdPatchResponses, PostJobEventApiV1DocumentsDocIdJobsEventsPostData, PostJobEventApiV1DocumentsDocIdJobsEventsPostErrors, PostJobEventApiV1DocumentsDocIdJobsEventsPostResponses, UpdateContextApiV1ContextsContextIdPatchData, UpdateContextApiV1ContextsContextIdPatchErrors, UpdateContextApiV1ContextsContextIdPatchResponses, WebhookApiV1RemarkableWebhookPostData, WebhookApiV1RemarkableWebhookPostResponses, WebhookWebhookPostData, WebhookWebhookPostResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -30,14 +30,25 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
 export const webhookWebhookPost = <ThrowOnError extends boolean = false>(options?: Options<WebhookWebhookPostData, ThrowOnError>) => (options?.client ?? client).post<WebhookWebhookPostResponses, unknown, ThrowOnError>({ url: '/webhook', ...options });
 
 /**
- * Get Stages
+ * Webhook
+ *
+ * Receives a document send from the reMarkable tablet via rmfakecloud.
+ * multipart/form-data with:
+ * - data:       JSON string with document metadata
+ * - attachment: rendered PNG of the current sheet
+ * Returns immediately; OCR runs asynchronously.
  */
-export const getStagesApiV1PipelineStagesGet = <ThrowOnError extends boolean = false>(options?: Options<GetStagesApiV1PipelineStagesGetData, ThrowOnError>) => (options?.client ?? client).get<GetStagesApiV1PipelineStagesGetResponses, unknown, ThrowOnError>({ url: '/api/v1/pipeline/stages', ...options });
+export const webhookApiV1RemarkableWebhookPost = <ThrowOnError extends boolean = false>(options?: Options<WebhookApiV1RemarkableWebhookPostData, ThrowOnError>) => (options?.client ?? client).post<WebhookApiV1RemarkableWebhookPostResponses, unknown, ThrowOnError>({ url: '/api/v1/remarkable/webhook', ...options });
 
 /**
- * Get Counts
+ * List Pipelines
  */
-export const getCountsApiV1CountsGet = <ThrowOnError extends boolean = false>(options?: Options<GetCountsApiV1CountsGetData, ThrowOnError>) => (options?.client ?? client).get<GetCountsApiV1CountsGetResponses, unknown, ThrowOnError>({ url: '/api/v1/counts', ...options });
+export const listPipelinesApiV1PipelinesGet = <ThrowOnError extends boolean = false>(options?: Options<ListPipelinesApiV1PipelinesGetData, ThrowOnError>) => (options?.client ?? client).get<ListPipelinesApiV1PipelinesGetResponses, unknown, ThrowOnError>({ url: '/api/v1/pipelines', ...options });
+
+/**
+ * Get Pipeline
+ */
+export const getPipelineApiV1PipelinesPipelineIdGet = <ThrowOnError extends boolean = false>(options: Options<GetPipelineApiV1PipelinesPipelineIdGetData, ThrowOnError>) => (options.client ?? client).get<GetPipelineApiV1PipelinesPipelineIdGetResponses, GetPipelineApiV1PipelinesPipelineIdGetErrors, ThrowOnError>({ url: '/api/v1/pipelines/{pipeline_id}', ...options });
 
 /**
  * List Documents
@@ -55,15 +66,49 @@ export const deleteDocumentApiV1DocumentsDocIdDelete = <ThrowOnError extends boo
 export const getDocumentApiV1DocumentsDocIdGet = <ThrowOnError extends boolean = false>(options: Options<GetDocumentApiV1DocumentsDocIdGetData, ThrowOnError>) => (options.client ?? client).get<GetDocumentApiV1DocumentsDocIdGetResponses, GetDocumentApiV1DocumentsDocIdGetErrors, ThrowOnError>({ url: '/api/v1/documents/{doc_id}', ...options });
 
 /**
+ * Patch Document
+ */
+export const patchDocumentApiV1DocumentsDocIdPatch = <ThrowOnError extends boolean = false>(options: Options<PatchDocumentApiV1DocumentsDocIdPatchData, ThrowOnError>) => (options.client ?? client).patch<PatchDocumentApiV1DocumentsDocIdPatchResponses, PatchDocumentApiV1DocumentsDocIdPatchErrors, ThrowOnError>({
+    url: '/api/v1/documents/{doc_id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
  * Get Document Image
  */
 export const getDocumentImageApiV1DocumentsDocIdImageGet = <ThrowOnError extends boolean = false>(options: Options<GetDocumentImageApiV1DocumentsDocIdImageGetData, ThrowOnError>) => (options.client ?? client).get<GetDocumentImageApiV1DocumentsDocIdImageGetResponses, GetDocumentImageApiV1DocumentsDocIdImageGetErrors, ThrowOnError>({ url: '/api/v1/documents/{doc_id}/image', ...options });
 
 /**
- * Update Title
+ * List Jobs
  */
-export const updateTitleApiV1DocumentsDocIdTitlePost = <ThrowOnError extends boolean = false>(options: Options<UpdateTitleApiV1DocumentsDocIdTitlePostData, ThrowOnError>) => (options.client ?? client).post<UpdateTitleApiV1DocumentsDocIdTitlePostResponses, UpdateTitleApiV1DocumentsDocIdTitlePostErrors, ThrowOnError>({
-    url: '/api/v1/documents/{doc_id}/title',
+export const listJobsApiV1JobsGet = <ThrowOnError extends boolean = false>(options?: Options<ListJobsApiV1JobsGetData, ThrowOnError>) => (options?.client ?? client).get<ListJobsApiV1JobsGetResponses, ListJobsApiV1JobsGetErrors, ThrowOnError>({ url: '/api/v1/jobs', ...options });
+
+/**
+ * Get Job
+ */
+export const getJobApiV1DocumentsDocIdJobsGet = <ThrowOnError extends boolean = false>(options: Options<GetJobApiV1DocumentsDocIdJobsGetData, ThrowOnError>) => (options.client ?? client).get<GetJobApiV1DocumentsDocIdJobsGetResponses, GetJobApiV1DocumentsDocIdJobsGetErrors, ThrowOnError>({ url: '/api/v1/documents/{doc_id}/jobs', ...options });
+
+/**
+ * Job Token Stream
+ *
+ * SSE stream of LLM tokens while the document's job is running.
+ */
+export const jobTokenStreamApiV1DocumentsDocIdJobsStreamGet = <ThrowOnError extends boolean = false>(options: Options<JobTokenStreamApiV1DocumentsDocIdJobsStreamGetData, ThrowOnError>) => (options.client ?? client).get<JobTokenStreamApiV1DocumentsDocIdJobsStreamGetResponses, JobTokenStreamApiV1DocumentsDocIdJobsStreamGetErrors, ThrowOnError>({ url: '/api/v1/documents/{doc_id}/jobs/stream', ...options });
+
+/**
+ * List Job Events
+ */
+export const listJobEventsApiV1DocumentsDocIdJobsEventsGet = <ThrowOnError extends boolean = false>(options: Options<ListJobEventsApiV1DocumentsDocIdJobsEventsGetData, ThrowOnError>) => (options.client ?? client).get<ListJobEventsApiV1DocumentsDocIdJobsEventsGetResponses, ListJobEventsApiV1DocumentsDocIdJobsEventsGetErrors, ThrowOnError>({ url: '/api/v1/documents/{doc_id}/jobs/events', ...options });
+
+/**
+ * Post Job Event
+ */
+export const postJobEventApiV1DocumentsDocIdJobsEventsPost = <ThrowOnError extends boolean = false>(options: Options<PostJobEventApiV1DocumentsDocIdJobsEventsPostData, ThrowOnError>) => (options.client ?? client).post<PostJobEventApiV1DocumentsDocIdJobsEventsPostResponses, PostJobEventApiV1DocumentsDocIdJobsEventsPostErrors, ThrowOnError>({
+    url: '/api/v1/documents/{doc_id}/jobs/events',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -72,10 +117,15 @@ export const updateTitleApiV1DocumentsDocIdTitlePost = <ThrowOnError extends boo
 });
 
 /**
- * Save Context
+ * List Contexts
  */
-export const saveContextApiV1DocumentsDocIdContextPost = <ThrowOnError extends boolean = false>(options: Options<SaveContextApiV1DocumentsDocIdContextPostData, ThrowOnError>) => (options.client ?? client).post<SaveContextApiV1DocumentsDocIdContextPostResponses, SaveContextApiV1DocumentsDocIdContextPostErrors, ThrowOnError>({
-    url: '/api/v1/documents/{doc_id}/context',
+export const listContextsApiV1ContextsGet = <ThrowOnError extends boolean = false>(options?: Options<ListContextsApiV1ContextsGetData, ThrowOnError>) => (options?.client ?? client).get<ListContextsApiV1ContextsGetResponses, ListContextsApiV1ContextsGetErrors, ThrowOnError>({ url: '/api/v1/contexts', ...options });
+
+/**
+ * Create Context
+ */
+export const createContextApiV1ContextsPost = <ThrowOnError extends boolean = false>(options: Options<CreateContextApiV1ContextsPostData, ThrowOnError>) => (options.client ?? client).post<CreateContextApiV1ContextsPostResponses, CreateContextApiV1ContextsPostErrors, ThrowOnError>({
+    url: '/api/v1/contexts',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -84,10 +134,15 @@ export const saveContextApiV1DocumentsDocIdContextPost = <ThrowOnError extends b
 });
 
 /**
- * Set Context And Run
+ * Delete Context
  */
-export const setContextAndRunApiV1DocumentsDocIdSetContextPost = <ThrowOnError extends boolean = false>(options: Options<SetContextAndRunApiV1DocumentsDocIdSetContextPostData, ThrowOnError>) => (options.client ?? client).post<SetContextAndRunApiV1DocumentsDocIdSetContextPostResponses, SetContextAndRunApiV1DocumentsDocIdSetContextPostErrors, ThrowOnError>({
-    url: '/api/v1/documents/{doc_id}/set-context',
+export const deleteContextApiV1ContextsContextIdDelete = <ThrowOnError extends boolean = false>(options: Options<DeleteContextApiV1ContextsContextIdDeleteData, ThrowOnError>) => (options.client ?? client).delete<DeleteContextApiV1ContextsContextIdDeleteResponses, DeleteContextApiV1ContextsContextIdDeleteErrors, ThrowOnError>({ url: '/api/v1/contexts/{context_id}', ...options });
+
+/**
+ * Update Context
+ */
+export const updateContextApiV1ContextsContextIdPatch = <ThrowOnError extends boolean = false>(options: Options<UpdateContextApiV1ContextsContextIdPatchData, ThrowOnError>) => (options.client ?? client).patch<UpdateContextApiV1ContextsContextIdPatchResponses, UpdateContextApiV1ContextsContextIdPatchErrors, ThrowOnError>({
+    url: '/api/v1/contexts/{context_id}',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -96,86 +151,15 @@ export const setContextAndRunApiV1DocumentsDocIdSetContextPost = <ThrowOnError e
 });
 
 /**
- * Approve Document
- */
-export const approveDocumentApiV1DocumentsDocIdApprovePost = <ThrowOnError extends boolean = false>(options: Options<ApproveDocumentApiV1DocumentsDocIdApprovePostData, ThrowOnError>) => (options.client ?? client).post<ApproveDocumentApiV1DocumentsDocIdApprovePostResponses, ApproveDocumentApiV1DocumentsDocIdApprovePostErrors, ThrowOnError>({
-    url: '/api/v1/documents/{doc_id}/approve',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-
-/**
- * Reject Document
- */
-export const rejectDocumentApiV1DocumentsDocIdRejectPost = <ThrowOnError extends boolean = false>(options: Options<RejectDocumentApiV1DocumentsDocIdRejectPostData, ThrowOnError>) => (options.client ?? client).post<RejectDocumentApiV1DocumentsDocIdRejectPostResponses, RejectDocumentApiV1DocumentsDocIdRejectPostErrors, ThrowOnError>({ url: '/api/v1/documents/{doc_id}/reject', ...options });
-
-/**
- * Clarify Document
- */
-export const clarifyDocumentApiV1DocumentsDocIdClarifyPost = <ThrowOnError extends boolean = false>(options: Options<ClarifyDocumentApiV1DocumentsDocIdClarifyPostData, ThrowOnError>) => (options.client ?? client).post<ClarifyDocumentApiV1DocumentsDocIdClarifyPostResponses, ClarifyDocumentApiV1DocumentsDocIdClarifyPostErrors, ThrowOnError>({
-    url: '/api/v1/documents/{doc_id}/clarify',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-
-/**
- * Clear Errors
- */
-export const clearErrorsApiV1DocumentsDocIdErrorsDelete = <ThrowOnError extends boolean = false>(options: Options<ClearErrorsApiV1DocumentsDocIdErrorsDeleteData, ThrowOnError>) => (options.client ?? client).delete<ClearErrorsApiV1DocumentsDocIdErrorsDeleteResponses, ClearErrorsApiV1DocumentsDocIdErrorsDeleteErrors, ThrowOnError>({ url: '/api/v1/documents/{doc_id}/errors', ...options });
-
-/**
- * Stop Document
- */
-export const stopDocumentApiV1DocumentsDocIdStopPost = <ThrowOnError extends boolean = false>(options: Options<StopDocumentApiV1DocumentsDocIdStopPostData, ThrowOnError>) => (options.client ?? client).post<StopDocumentApiV1DocumentsDocIdStopPostResponses, StopDocumentApiV1DocumentsDocIdStopPostErrors, ThrowOnError>({ url: '/api/v1/documents/{doc_id}/stop', ...options });
-
-/**
- * Retry Document
- */
-export const retryDocumentApiV1DocumentsDocIdRetryPost = <ThrowOnError extends boolean = false>(options: Options<RetryDocumentApiV1DocumentsDocIdRetryPostData, ThrowOnError>) => (options.client ?? client).post<RetryDocumentApiV1DocumentsDocIdRetryPostResponses, RetryDocumentApiV1DocumentsDocIdRetryPostErrors, ThrowOnError>({ url: '/api/v1/documents/{doc_id}/retry', ...options });
-
-/**
- * Replay Document
- */
-export const replayDocumentApiV1DocumentsDocIdReplayStageNamePost = <ThrowOnError extends boolean = false>(options: Options<ReplayDocumentApiV1DocumentsDocIdReplayStageNamePostData, ThrowOnError>) => (options.client ?? client).post<ReplayDocumentApiV1DocumentsDocIdReplayStageNamePostResponses, ReplayDocumentApiV1DocumentsDocIdReplayStageNamePostErrors, ThrowOnError>({ url: '/api/v1/documents/{doc_id}/replay/{stage_name}', ...options });
-
-/**
- * Get Context Library
- */
-export const getContextLibraryApiV1ContextLibraryGet = <ThrowOnError extends boolean = false>(options?: Options<GetContextLibraryApiV1ContextLibraryGetData, ThrowOnError>) => (options?.client ?? client).get<GetContextLibraryApiV1ContextLibraryGetResponses, unknown, ThrowOnError>({ url: '/api/v1/context-library', ...options });
-
-/**
- * Save Context Entry
- */
-export const saveContextEntryApiV1ContextLibraryPost = <ThrowOnError extends boolean = false>(options: Options<SaveContextEntryApiV1ContextLibraryPostData, ThrowOnError>) => (options.client ?? client).post<SaveContextEntryApiV1ContextLibraryPostResponses, SaveContextEntryApiV1ContextLibraryPostErrors, ThrowOnError>({
-    url: '/api/v1/context-library',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-
-/**
- * Delete Context Entry
- */
-export const deleteContextEntryApiV1ContextLibraryNameDelete = <ThrowOnError extends boolean = false>(options: Options<DeleteContextEntryApiV1ContextLibraryNameDeleteData, ThrowOnError>) => (options.client ?? client).delete<DeleteContextEntryApiV1ContextLibraryNameDeleteResponses, DeleteContextEntryApiV1ContextLibraryNameDeleteErrors, ThrowOnError>({ url: '/api/v1/context-library/{name}', ...options });
-
-/**
- * Query Knowledge Base
+ * Create Chat
  *
  * RAG chat: embed latest user message → search Qdrant → stream LLM reply as SSE.
  */
-export const queryKnowledgeBaseApiV1QueryPost = <ThrowOnError extends boolean = false>(options?: Options<QueryKnowledgeBaseApiV1QueryPostData, ThrowOnError>) => (options?.client ?? client).post<QueryKnowledgeBaseApiV1QueryPostResponses, unknown, ThrowOnError>({ url: '/api/v1/query', ...options });
-
-/**
- * Doc Token Stream
- *
- * SSE endpoint: streams LLM tokens while the document is running, then sends 'done'.
- */
-export const docTokenStreamApiV1DocumentsDocIdStreamGet = <ThrowOnError extends boolean = false>(options: Options<DocTokenStreamApiV1DocumentsDocIdStreamGetData, ThrowOnError>) => (options.client ?? client).get<DocTokenStreamApiV1DocumentsDocIdStreamGetResponses, DocTokenStreamApiV1DocumentsDocIdStreamGetErrors, ThrowOnError>({ url: '/api/v1/documents/{doc_id}/stream', ...options });
+export const createChatApiV1ChatsPost = <ThrowOnError extends boolean = false>(options: Options<CreateChatApiV1ChatsPostData, ThrowOnError>) => (options.client ?? client).post<CreateChatApiV1ChatsPostResponses, CreateChatApiV1ChatsPostErrors, ThrowOnError>({
+    url: '/api/v1/chats',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});

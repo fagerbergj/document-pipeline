@@ -31,7 +31,7 @@ export default function DocKebabMenu({
 
   useEffect(() => {
     if (!open || providedStages !== undefined || fetchedStages !== null) return
-    api.document(docId).then(d => setFetchedStages(d.replay_stages)).catch(() => setFetchedStages([]))
+    api.job(docId).then(j => setFetchedStages(j.replay_stages)).catch(() => setFetchedStages([]))
   }, [open, docId, providedStages, fetchedStages])
 
   useEffect(() => {
@@ -44,10 +44,10 @@ export default function DocKebabMenu({
 
   const done = (cb: () => void) => { setOpen(false); cb() }
 
-  const stopMut   = useMutation({ mutationFn: () => api.stop(docId),         onSuccess: () => done(onSuccess) })
-  const retryMut  = useMutation({ mutationFn: () => api.retry(docId),        onSuccess: () => done(onSuccess) })
-  const replayMut = useMutation({ mutationFn: (s: string) => api.replay(docId, s), onSuccess: () => done(onSuccess) })
-  const deleteMut = useMutation({ mutationFn: () => api.deleteDocument(docId), onSuccess: () => done(onDelete) })
+  const stopMut   = useMutation({ mutationFn: () => api.postJobEvent(docId, { type: 'stop' }),              onSuccess: () => done(onSuccess) })
+  const retryMut  = useMutation({ mutationFn: () => api.postJobEvent(docId, { type: 'retry' }),             onSuccess: () => done(onSuccess) })
+  const replayMut = useMutation({ mutationFn: (s: string) => api.postJobEvent(docId, { type: 'replay', stage: s }), onSuccess: () => done(onSuccess) })
+  const deleteMut = useMutation({ mutationFn: () => api.deleteDocument(docId),                              onSuccess: () => done(onDelete) })
 
   return (
     <div ref={ref} className="relative">

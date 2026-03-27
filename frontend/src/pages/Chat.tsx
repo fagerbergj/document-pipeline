@@ -5,7 +5,6 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
 import { api } from '../api'
-import type { ContextEntry } from '../types'
 
 interface SourceDoc {
   doc_id: string
@@ -22,7 +21,7 @@ interface Message {
   sourcesOpen?: boolean
 }
 
-export default function Query() {
+export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [context, setContext] = useState('')
@@ -35,10 +34,11 @@ export default function Query() {
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  const { data: contextLibrary } = useQuery<ContextEntry[]>({
-    queryKey: ['context-library'],
-    queryFn: api.contextLibrary,
+  const { data: contextsPage } = useQuery({
+    queryKey: ['contexts'],
+    queryFn: () => api.contexts(),
   })
+  const contextLibrary = contextsPage?.data ?? []
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -90,7 +90,6 @@ export default function Query() {
     setError('')
     setLoading(true)
 
-    // placeholder for streaming assistant reply
     const assistantIdx = updatedMessages.length
     setMessages(prev => [...prev, { role: 'assistant', content: '', sources: [], sourcesOpen: false }])
 
@@ -99,20 +98,16 @@ export default function Query() {
     abortRef.current = abort
 
     try {
-      const res = await fetch('/api/v1/query', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: updatedMessages.map(m => ({ role: m.role, content: m.content })),
-          context: context.trim(),
-          top_k: topK,
-        }),
-        signal: abort.signal,
-      })
+      const res = await api.chatStream(
+        updatedMessages.map(m => ({ role: m.role, content: m.content })),
+        context.trim(),
+        topK,
+        abort.signal,
+      )
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || `${res.status} ${res.statusText}`)
+        throw new Error((data as { error?: string }).error || `${res.status} ${res.statusText}`)
       }
 
       const reader = res.body!.getReader()
@@ -151,7 +146,6 @@ export default function Query() {
     } catch (err: unknown) {
       if ((err as Error)?.name !== 'AbortError') {
         setError((err as Error)?.message || 'Request failed')
-        // remove empty placeholder on error
         setMessages(prev => {
           const last = prev[prev.length - 1]
           return last?.role === 'assistant' && !last.content ? prev.slice(0, -1) : prev
@@ -173,7 +167,7 @@ export default function Query() {
     <div className="flex flex-col h-screen">
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 bg-white">
-        <h1 className="text-base font-semibold text-gray-900">Query Knowledge Base</h1>
+        <h1 className="text-base font-semibold text-gray-900">Chat</h1>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowSettings(s => !s)}
@@ -200,7 +194,7 @@ export default function Query() {
             <div className="flex-1">
               <div className="flex items-center justify-between mb-1">
                 <label className="text-xs font-medium text-gray-600">Context <span className="text-gray-400">(optional)</span></label>
-                {contextLibrary && contextLibrary.length > 0 && (
+                {contextLibrary.length > 0 && (
                   <select
                     className="text-xs text-gray-500 border border-gray-200 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
                     defaultValue=""
@@ -211,7 +205,7 @@ export default function Query() {
                   >
                     <option value="">Load saved…</option>
                     {contextLibrary.map(e => (
-                      <option key={e.name} value={e.name}>{e.name}</option>
+                      <option key={e.id} value={e.name}>{e.name}</option>
                     ))}
                   </select>
                 )}

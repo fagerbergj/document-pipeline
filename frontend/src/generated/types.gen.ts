@@ -5,13 +5,50 @@ export type ClientOptions = {
 };
 
 /**
- * ApproveBody
+ * ApproveEvent
  */
-export type ApproveBody = {
+export type ApproveEvent = {
+    /**
+     * Type
+     */
+    type: 'approve';
     /**
      * Edited Text
      */
-    edited_text?: string;
+    edited_text?: string | null;
+};
+
+/**
+ * ChatMessage
+ */
+export type ChatMessage = {
+    role: Role;
+    /**
+     * Content
+     */
+    content: string;
+};
+
+/**
+ * ChatRequest
+ */
+export type ChatRequest = {
+    /**
+     * Messages
+     */
+    messages: Array<ChatMessage>;
+    /**
+     * Context
+     *
+     * Optional free-text context injected into the system prompt.
+     */
+    context?: string | null;
+    /**
+     * Top K
+     *
+     * Number of vector search results to retrieve per turn.
+     */
+    top_k?: number | null;
 };
 
 /**
@@ -29,29 +66,67 @@ export type ClarificationRequest = {
 };
 
 /**
- * ClarifyBody
+ * ClarifyEvent
  */
-export type ClarifyBody = {
+export type ClarifyEvent = {
+    /**
+     * Type
+     */
+    type: 'clarify';
     /**
      * Answers
      */
     answers?: {
         [key: string]: string;
-    };
+    } | null;
     /**
      * Free Prompt
      */
-    free_prompt?: string;
+    free_prompt?: string | null;
     /**
      * Edited Text
      */
-    edited_text?: string;
+    edited_text?: string | null;
+};
+
+/**
+ * ClearErrorsEvent
+ */
+export type ClearErrorsEvent = {
+    /**
+     * Type
+     */
+    type: 'clear_errors';
 };
 
 /**
  * ContextEntry
  */
 export type ContextEntry = {
+    /**
+     * Id
+     *
+     * Immutable identifier assigned at creation.
+     */
+    id: string;
+    /**
+     * Name
+     *
+     * Human-readable name for this context entry.
+     */
+    name: string;
+    /**
+     * Text
+     *
+     * The context text injected into LLM prompts.
+     */
+    text: string;
+};
+
+/**
+ * CreateContextBody
+ */
+export type CreateContextBody = {
     /**
      * Name
      */
@@ -60,38 +135,6 @@ export type ContextEntry = {
      * Text
      */
     text: string;
-};
-
-/**
- * Counts
- */
-export type Counts = {
-    /**
-     * Pending
-     */
-    pending?: number | null;
-    /**
-     * Running
-     */
-    running?: number | null;
-    /**
-     * Waiting
-     */
-    waiting?: number | null;
-    /**
-     * Error
-     */
-    error?: number | null;
-    /**
-     * Done
-     */
-    done?: number | null;
-    /**
-     * By Stage
-     */
-    by_stage?: {
-        [key: string]: number;
-    } | null;
 };
 
 /**
@@ -107,13 +150,29 @@ export type DocumentDetail = {
      */
     title?: string | null;
     /**
-     * Current Stage
+     * Document Context
+     *
+     * Free-text context attached by the user to guide LLM stages.
      */
-    current_stage: string;
+    document_context: string;
     /**
-     * Stage State
+     * Context Ref
+     *
+     * UUID of a saved context entry linked to this document.
      */
-    stage_state: string;
+    context_ref?: string | null;
+    /**
+     * Has Image
+     *
+     * True if a source PNG image is available.
+     */
+    has_image: boolean;
+    /**
+     * Stage Displays
+     *
+     * Completed stage outputs available for display.
+     */
+    stage_displays: Array<StageDisplay>;
     /**
      * Created At
      */
@@ -122,35 +181,6 @@ export type DocumentDetail = {
      * Updated At
      */
     updated_at: string;
-    /**
-     * Document Context
-     */
-    document_context: string;
-    /**
-     * Context Required
-     */
-    context_required: boolean;
-    /**
-     * Stage Displays
-     */
-    stage_displays: Array<StageDisplay>;
-    review?: ReviewDetail | null;
-    /**
-     * Replay Stages
-     */
-    replay_stages: Array<ReplayStage>;
-    /**
-     * Needs Context
-     */
-    needs_context: boolean;
-    /**
-     * Events
-     */
-    events: Array<StageEvent>;
-    /**
-     * Has Image
-     */
-    has_image: boolean;
 };
 
 /**
@@ -159,20 +189,22 @@ export type DocumentDetail = {
 export type DocumentSummary = {
     /**
      * Id
+     *
+     * Unique document identifier.
      */
     id: string;
     /**
      * Title
+     *
+     * Human-readable title.
      */
     title?: string | null;
     /**
-     * Current Stage
+     * Needs Context
+     *
+     * True if the document's current stage is blocked waiting for context.
      */
-    current_stage: string;
-    /**
-     * Stage State
-     */
-    stage_state: string;
+    needs_context: boolean;
     /**
      * Created At
      */
@@ -181,10 +213,6 @@ export type DocumentSummary = {
      * Updated At
      */
     updated_at: string;
-    /**
-     * Needs Context
-     */
-    needs_context: boolean;
 };
 
 /**
@@ -198,6 +226,106 @@ export type HttpValidationError = {
 };
 
 /**
+ * JobDetail
+ */
+export type JobDetail = {
+    /**
+     * Doc Id
+     */
+    doc_id: string;
+    /**
+     * Current Stage
+     */
+    current_stage: string;
+    stage_state: StageState;
+    /**
+     * Needs Context
+     *
+     * True if the current stage is blocked waiting for context input.
+     */
+    needs_context: boolean;
+    /**
+     * Context Required
+     *
+     * True when the current stage requires context before it can run at all.
+     */
+    context_required: boolean;
+    /**
+     * Present when the document is waiting for human review.
+     */
+    review?: ReviewDetail | null;
+    /**
+     * Replay Stages
+     *
+     * Completed stages the job can be rewound to.
+     */
+    replay_stages: Array<ReplayStage>;
+};
+
+/**
+ * JobEventRecord
+ */
+export type JobEventRecord = {
+    /**
+     * Id
+     *
+     * Monotonically increasing internal event ID (used as cursor).
+     */
+    id: number;
+    /**
+     * Timestamp
+     */
+    timestamp: string;
+    /**
+     * Stage
+     */
+    stage: string;
+    /**
+     * Event Type
+     */
+    event_type: string;
+    /**
+     * Data
+     */
+    data?: {
+        [key: string]: unknown;
+    } | null;
+};
+
+/**
+ * JobSummary
+ */
+export type JobSummary = {
+    /**
+     * Doc Id
+     */
+    doc_id: string;
+    /**
+     * Title
+     *
+     * Denormalized document title.
+     */
+    title?: string | null;
+    /**
+     * Current Stage
+     */
+    current_stage: string;
+    stage_state: StageState;
+    /**
+     * Needs Context
+     */
+    needs_context: boolean;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Updated At
+     */
+    updated_at: string;
+};
+
+/**
  * OkResponse
  */
 export type OkResponse = {
@@ -208,6 +336,208 @@ export type OkResponse = {
 };
 
 /**
+ * PaginatedContexts
+ */
+export type PaginatedContexts = {
+    /**
+     * Data
+     */
+    data: Array<ContextEntry>;
+    /**
+     * Nextpagetoken
+     */
+    nextPageToken?: string | null;
+};
+
+/**
+ * PaginatedDocuments
+ */
+export type PaginatedDocuments = {
+    /**
+     * Data
+     */
+    data: Array<DocumentSummary>;
+    /**
+     * Nextpagetoken
+     */
+    nextPageToken?: string | null;
+};
+
+/**
+ * PaginatedJobEvents
+ */
+export type PaginatedJobEvents = {
+    /**
+     * Data
+     */
+    data: Array<JobEventRecord>;
+    /**
+     * Nextpagetoken
+     *
+     * Pass as `afterId` on the next request to fetch subsequent events.
+     */
+    nextPageToken?: number | null;
+};
+
+/**
+ * PaginatedJobs
+ */
+export type PaginatedJobs = {
+    /**
+     * Data
+     */
+    data: Array<JobSummary>;
+    /**
+     * Nextpagetoken
+     */
+    nextPageToken?: string | null;
+};
+
+/**
+ * PaginatedPipelines
+ */
+export type PaginatedPipelines = {
+    /**
+     * Data
+     */
+    data: Array<PipelineSummary>;
+    /**
+     * Nextpagetoken
+     */
+    nextPageToken?: string | null;
+};
+
+/**
+ * PatchDocumentBody
+ */
+export type PatchDocumentBody = {
+    /**
+     * Title
+     */
+    title?: string | null;
+    /**
+     * Document Context
+     */
+    document_context?: string | null;
+    /**
+     * Context Ref
+     *
+     * UUID of a context entry to link, or null to unlink.
+     */
+    context_ref?: string | null;
+};
+
+/**
+ * PipelineDetail
+ */
+export type PipelineDetail = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Stages
+     */
+    stages: Array<PipelineStageConfig>;
+};
+
+/**
+ * PipelineStageConfig
+ */
+export type PipelineStageConfig = {
+    /**
+     * Name
+     *
+     * Stage identifier (e.g. `ocr`, `clarify`).
+     */
+    name: string;
+    /**
+     * Type
+     *
+     * Stage handler type (e.g. `llm_text`, `embed`).
+     */
+    type: string;
+    /**
+     * Model
+     *
+     * Model override for LLM stages.
+     */
+    model?: string | null;
+};
+
+/**
+ * PipelineSummary
+ */
+export type PipelineSummary = {
+    /**
+     * Id
+     *
+     * Pipeline identifier (filename stem).
+     */
+    id: string;
+    /**
+     * Name
+     *
+     * Human-readable pipeline name.
+     */
+    name: string;
+    /**
+     * Stage Count
+     *
+     * Number of stages in the pipeline.
+     */
+    stage_count: number;
+};
+
+/**
+ * ProvideContextEvent
+ */
+export type ProvideContextEvent = {
+    /**
+     * Type
+     */
+    type: 'provide_context';
+    /**
+     * Document Context
+     */
+    document_context?: string | null;
+    /**
+     * Context Ref
+     */
+    context_ref?: string | null;
+};
+
+/**
+ * RejectEvent
+ */
+export type RejectEvent = {
+    /**
+     * Type
+     */
+    type: 'reject';
+};
+
+/**
+ * ReplayEvent
+ */
+export type ReplayEvent = {
+    /**
+     * Type
+     */
+    type: 'replay';
+    /**
+     * Stage
+     *
+     * Name of the pipeline stage to rewind to.
+     */
+    stage: string;
+};
+
+/**
  * ReplayStage
  */
 export type ReplayStage = {
@@ -215,6 +545,16 @@ export type ReplayStage = {
      * Name
      */
     name: string;
+};
+
+/**
+ * RetryEvent
+ */
+export type RetryEvent = {
+    /**
+     * Type
+     */
+    type: 'retry';
 };
 
 /**
@@ -264,28 +604,9 @@ export type ReviewDetail = {
 };
 
 /**
- * SaveContextBody
+ * Role
  */
-export type SaveContextBody = {
-    /**
-     * Document Context
-     */
-    document_context?: string;
-};
-
-/**
- * SaveContextEntryBody
- */
-export type SaveContextEntryBody = {
-    /**
-     * Name
-     */
-    name: string;
-    /**
-     * Text
-     */
-    text: string;
-};
+export type Role = 'user' | 'assistant';
 
 /**
  * StageDisplay
@@ -293,10 +614,14 @@ export type SaveContextEntryBody = {
 export type StageDisplay = {
     /**
      * Name
+     *
+     * Pipeline stage name (e.g. `ocr`, `clarify`).
      */
     name: string;
     /**
      * Fields
+     *
+     * Map of field name to text value for each output produced by the stage.
      */
     fields: {
         [key: string]: string;
@@ -304,47 +629,32 @@ export type StageDisplay = {
 };
 
 /**
- * StageEvent
+ * StageState
  */
-export type StageEvent = {
+export type StageState = 'pending' | 'running' | 'waiting' | 'error' | 'done';
+
+/**
+ * StopEvent
+ */
+export type StopEvent = {
     /**
-     * Timestamp
+     * Type
      */
-    timestamp: string;
-    /**
-     * Stage
-     */
-    stage: string;
-    /**
-     * Event Type
-     */
-    event_type: string;
-    /**
-     * Data
-     */
-    data?: {
-        [key: string]: unknown;
-    } | null;
+    type: 'stop';
 };
 
 /**
- * StagesResponse
+ * UpdateContextBody
  */
-export type StagesResponse = {
+export type UpdateContextBody = {
     /**
-     * Stages
+     * Name
      */
-    stages: Array<string>;
-};
-
-/**
- * UpdateTitleBody
- */
-export type UpdateTitleBody = {
+    name?: string | null;
     /**
-     * Title
+     * Text
      */
-    title: string;
+    text?: string | null;
 };
 
 /**
@@ -363,16 +673,6 @@ export type ValidationError = {
      * Error Type
      */
     type: string;
-    /**
-     * Input
-     */
-    input?: unknown;
-    /**
-     * Context
-     */
-    ctx?: {
-        [key: string]: unknown;
-    };
 };
 
 export type WebhookWebhookPostData = {
@@ -389,37 +689,65 @@ export type WebhookWebhookPostResponses = {
     200: unknown;
 };
 
-export type GetStagesApiV1PipelineStagesGetData = {
+export type WebhookApiV1RemarkableWebhookPostData = {
     body?: never;
     path?: never;
     query?: never;
-    url: '/api/v1/pipeline/stages';
+    url: '/api/v1/remarkable/webhook';
 };
 
-export type GetStagesApiV1PipelineStagesGetResponses = {
+export type WebhookApiV1RemarkableWebhookPostResponses = {
     /**
      * Successful Response
      */
-    200: StagesResponse;
+    200: unknown;
 };
 
-export type GetStagesApiV1PipelineStagesGetResponse = GetStagesApiV1PipelineStagesGetResponses[keyof GetStagesApiV1PipelineStagesGetResponses];
-
-export type GetCountsApiV1CountsGetData = {
+export type ListPipelinesApiV1PipelinesGetData = {
     body?: never;
     path?: never;
     query?: never;
-    url: '/api/v1/counts';
+    url: '/api/v1/pipelines';
 };
 
-export type GetCountsApiV1CountsGetResponses = {
+export type ListPipelinesApiV1PipelinesGetResponses = {
     /**
      * Successful Response
      */
-    200: Counts;
+    200: PaginatedPipelines;
 };
 
-export type GetCountsApiV1CountsGetResponse = GetCountsApiV1CountsGetResponses[keyof GetCountsApiV1CountsGetResponses];
+export type ListPipelinesApiV1PipelinesGetResponse = ListPipelinesApiV1PipelinesGetResponses[keyof ListPipelinesApiV1PipelinesGetResponses];
+
+export type GetPipelineApiV1PipelinesPipelineIdGetData = {
+    body?: never;
+    path: {
+        /**
+         * Pipeline Id
+         */
+        pipeline_id: string;
+    };
+    query?: never;
+    url: '/api/v1/pipelines/{pipeline_id}';
+};
+
+export type GetPipelineApiV1PipelinesPipelineIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetPipelineApiV1PipelinesPipelineIdGetError = GetPipelineApiV1PipelinesPipelineIdGetErrors[keyof GetPipelineApiV1PipelinesPipelineIdGetErrors];
+
+export type GetPipelineApiV1PipelinesPipelineIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: PipelineDetail;
+};
+
+export type GetPipelineApiV1PipelinesPipelineIdGetResponse = GetPipelineApiV1PipelinesPipelineIdGetResponses[keyof GetPipelineApiV1PipelinesPipelineIdGetResponses];
 
 export type ListDocumentsApiV1DocumentsGetData = {
     body?: never;
@@ -437,6 +765,14 @@ export type ListDocumentsApiV1DocumentsGetData = {
          * Sort
          */
         sort?: string;
+        /**
+         * Pagesize
+         */
+        pageSize?: number;
+        /**
+         * Pagetoken
+         */
+        pageToken?: string | null;
     };
     url: '/api/v1/documents';
 };
@@ -452,11 +788,9 @@ export type ListDocumentsApiV1DocumentsGetError = ListDocumentsApiV1DocumentsGet
 
 export type ListDocumentsApiV1DocumentsGetResponses = {
     /**
-     * Response List Documents Api V1 Documents Get
-     *
      * Successful Response
      */
-    200: Array<DocumentSummary>;
+    200: PaginatedDocuments;
 };
 
 export type ListDocumentsApiV1DocumentsGetResponse = ListDocumentsApiV1DocumentsGetResponses[keyof ListDocumentsApiV1DocumentsGetResponses];
@@ -521,6 +855,36 @@ export type GetDocumentApiV1DocumentsDocIdGetResponses = {
 
 export type GetDocumentApiV1DocumentsDocIdGetResponse = GetDocumentApiV1DocumentsDocIdGetResponses[keyof GetDocumentApiV1DocumentsDocIdGetResponses];
 
+export type PatchDocumentApiV1DocumentsDocIdPatchData = {
+    body: PatchDocumentBody;
+    path: {
+        /**
+         * Doc Id
+         */
+        doc_id: string;
+    };
+    query?: never;
+    url: '/api/v1/documents/{doc_id}';
+};
+
+export type PatchDocumentApiV1DocumentsDocIdPatchErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PatchDocumentApiV1DocumentsDocIdPatchError = PatchDocumentApiV1DocumentsDocIdPatchErrors[keyof PatchDocumentApiV1DocumentsDocIdPatchErrors];
+
+export type PatchDocumentApiV1DocumentsDocIdPatchResponses = {
+    /**
+     * Successful Response
+     */
+    200: DocumentDetail;
+};
+
+export type PatchDocumentApiV1DocumentsDocIdPatchResponse = PatchDocumentApiV1DocumentsDocIdPatchResponses[keyof PatchDocumentApiV1DocumentsDocIdPatchResponses];
+
 export type GetDocumentImageApiV1DocumentsDocIdImageGetData = {
     body?: never;
     path: {
@@ -549,402 +913,111 @@ export type GetDocumentImageApiV1DocumentsDocIdImageGetResponses = {
     200: unknown;
 };
 
-export type UpdateTitleApiV1DocumentsDocIdTitlePostData = {
-    body: UpdateTitleBody;
-    path: {
-        /**
-         * Doc Id
-         */
-        doc_id: string;
-    };
-    query?: never;
-    url: '/api/v1/documents/{doc_id}/title';
-};
-
-export type UpdateTitleApiV1DocumentsDocIdTitlePostErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type UpdateTitleApiV1DocumentsDocIdTitlePostError = UpdateTitleApiV1DocumentsDocIdTitlePostErrors[keyof UpdateTitleApiV1DocumentsDocIdTitlePostErrors];
-
-export type UpdateTitleApiV1DocumentsDocIdTitlePostResponses = {
-    /**
-     * Successful Response
-     */
-    200: DocumentDetail;
-};
-
-export type UpdateTitleApiV1DocumentsDocIdTitlePostResponse = UpdateTitleApiV1DocumentsDocIdTitlePostResponses[keyof UpdateTitleApiV1DocumentsDocIdTitlePostResponses];
-
-export type SaveContextApiV1DocumentsDocIdContextPostData = {
-    body: SaveContextBody;
-    path: {
-        /**
-         * Doc Id
-         */
-        doc_id: string;
-    };
-    query?: never;
-    url: '/api/v1/documents/{doc_id}/context';
-};
-
-export type SaveContextApiV1DocumentsDocIdContextPostErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type SaveContextApiV1DocumentsDocIdContextPostError = SaveContextApiV1DocumentsDocIdContextPostErrors[keyof SaveContextApiV1DocumentsDocIdContextPostErrors];
-
-export type SaveContextApiV1DocumentsDocIdContextPostResponses = {
-    /**
-     * Successful Response
-     */
-    200: DocumentDetail;
-};
-
-export type SaveContextApiV1DocumentsDocIdContextPostResponse = SaveContextApiV1DocumentsDocIdContextPostResponses[keyof SaveContextApiV1DocumentsDocIdContextPostResponses];
-
-export type SetContextAndRunApiV1DocumentsDocIdSetContextPostData = {
-    body: SaveContextBody;
-    path: {
-        /**
-         * Doc Id
-         */
-        doc_id: string;
-    };
-    query?: never;
-    url: '/api/v1/documents/{doc_id}/set-context';
-};
-
-export type SetContextAndRunApiV1DocumentsDocIdSetContextPostErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type SetContextAndRunApiV1DocumentsDocIdSetContextPostError = SetContextAndRunApiV1DocumentsDocIdSetContextPostErrors[keyof SetContextAndRunApiV1DocumentsDocIdSetContextPostErrors];
-
-export type SetContextAndRunApiV1DocumentsDocIdSetContextPostResponses = {
-    /**
-     * Successful Response
-     */
-    200: DocumentDetail;
-};
-
-export type SetContextAndRunApiV1DocumentsDocIdSetContextPostResponse = SetContextAndRunApiV1DocumentsDocIdSetContextPostResponses[keyof SetContextAndRunApiV1DocumentsDocIdSetContextPostResponses];
-
-export type ApproveDocumentApiV1DocumentsDocIdApprovePostData = {
-    body: ApproveBody;
-    path: {
-        /**
-         * Doc Id
-         */
-        doc_id: string;
-    };
-    query?: never;
-    url: '/api/v1/documents/{doc_id}/approve';
-};
-
-export type ApproveDocumentApiV1DocumentsDocIdApprovePostErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type ApproveDocumentApiV1DocumentsDocIdApprovePostError = ApproveDocumentApiV1DocumentsDocIdApprovePostErrors[keyof ApproveDocumentApiV1DocumentsDocIdApprovePostErrors];
-
-export type ApproveDocumentApiV1DocumentsDocIdApprovePostResponses = {
-    /**
-     * Successful Response
-     */
-    200: DocumentDetail;
-};
-
-export type ApproveDocumentApiV1DocumentsDocIdApprovePostResponse = ApproveDocumentApiV1DocumentsDocIdApprovePostResponses[keyof ApproveDocumentApiV1DocumentsDocIdApprovePostResponses];
-
-export type RejectDocumentApiV1DocumentsDocIdRejectPostData = {
-    body?: never;
-    path: {
-        /**
-         * Doc Id
-         */
-        doc_id: string;
-    };
-    query?: never;
-    url: '/api/v1/documents/{doc_id}/reject';
-};
-
-export type RejectDocumentApiV1DocumentsDocIdRejectPostErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type RejectDocumentApiV1DocumentsDocIdRejectPostError = RejectDocumentApiV1DocumentsDocIdRejectPostErrors[keyof RejectDocumentApiV1DocumentsDocIdRejectPostErrors];
-
-export type RejectDocumentApiV1DocumentsDocIdRejectPostResponses = {
-    /**
-     * Successful Response
-     */
-    200: DocumentDetail;
-};
-
-export type RejectDocumentApiV1DocumentsDocIdRejectPostResponse = RejectDocumentApiV1DocumentsDocIdRejectPostResponses[keyof RejectDocumentApiV1DocumentsDocIdRejectPostResponses];
-
-export type ClarifyDocumentApiV1DocumentsDocIdClarifyPostData = {
-    body: ClarifyBody;
-    path: {
-        /**
-         * Doc Id
-         */
-        doc_id: string;
-    };
-    query?: never;
-    url: '/api/v1/documents/{doc_id}/clarify';
-};
-
-export type ClarifyDocumentApiV1DocumentsDocIdClarifyPostErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type ClarifyDocumentApiV1DocumentsDocIdClarifyPostError = ClarifyDocumentApiV1DocumentsDocIdClarifyPostErrors[keyof ClarifyDocumentApiV1DocumentsDocIdClarifyPostErrors];
-
-export type ClarifyDocumentApiV1DocumentsDocIdClarifyPostResponses = {
-    /**
-     * Successful Response
-     */
-    200: DocumentDetail;
-};
-
-export type ClarifyDocumentApiV1DocumentsDocIdClarifyPostResponse = ClarifyDocumentApiV1DocumentsDocIdClarifyPostResponses[keyof ClarifyDocumentApiV1DocumentsDocIdClarifyPostResponses];
-
-export type ClearErrorsApiV1DocumentsDocIdErrorsDeleteData = {
-    body?: never;
-    path: {
-        /**
-         * Doc Id
-         */
-        doc_id: string;
-    };
-    query?: never;
-    url: '/api/v1/documents/{doc_id}/errors';
-};
-
-export type ClearErrorsApiV1DocumentsDocIdErrorsDeleteErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type ClearErrorsApiV1DocumentsDocIdErrorsDeleteError = ClearErrorsApiV1DocumentsDocIdErrorsDeleteErrors[keyof ClearErrorsApiV1DocumentsDocIdErrorsDeleteErrors];
-
-export type ClearErrorsApiV1DocumentsDocIdErrorsDeleteResponses = {
-    /**
-     * Successful Response
-     */
-    200: DocumentDetail;
-};
-
-export type ClearErrorsApiV1DocumentsDocIdErrorsDeleteResponse = ClearErrorsApiV1DocumentsDocIdErrorsDeleteResponses[keyof ClearErrorsApiV1DocumentsDocIdErrorsDeleteResponses];
-
-export type StopDocumentApiV1DocumentsDocIdStopPostData = {
-    body?: never;
-    path: {
-        /**
-         * Doc Id
-         */
-        doc_id: string;
-    };
-    query?: never;
-    url: '/api/v1/documents/{doc_id}/stop';
-};
-
-export type StopDocumentApiV1DocumentsDocIdStopPostErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type StopDocumentApiV1DocumentsDocIdStopPostError = StopDocumentApiV1DocumentsDocIdStopPostErrors[keyof StopDocumentApiV1DocumentsDocIdStopPostErrors];
-
-export type StopDocumentApiV1DocumentsDocIdStopPostResponses = {
-    /**
-     * Successful Response
-     */
-    200: DocumentDetail;
-};
-
-export type StopDocumentApiV1DocumentsDocIdStopPostResponse = StopDocumentApiV1DocumentsDocIdStopPostResponses[keyof StopDocumentApiV1DocumentsDocIdStopPostResponses];
-
-export type RetryDocumentApiV1DocumentsDocIdRetryPostData = {
-    body?: never;
-    path: {
-        /**
-         * Doc Id
-         */
-        doc_id: string;
-    };
-    query?: never;
-    url: '/api/v1/documents/{doc_id}/retry';
-};
-
-export type RetryDocumentApiV1DocumentsDocIdRetryPostErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type RetryDocumentApiV1DocumentsDocIdRetryPostError = RetryDocumentApiV1DocumentsDocIdRetryPostErrors[keyof RetryDocumentApiV1DocumentsDocIdRetryPostErrors];
-
-export type RetryDocumentApiV1DocumentsDocIdRetryPostResponses = {
-    /**
-     * Successful Response
-     */
-    200: DocumentDetail;
-};
-
-export type RetryDocumentApiV1DocumentsDocIdRetryPostResponse = RetryDocumentApiV1DocumentsDocIdRetryPostResponses[keyof RetryDocumentApiV1DocumentsDocIdRetryPostResponses];
-
-export type ReplayDocumentApiV1DocumentsDocIdReplayStageNamePostData = {
-    body?: never;
-    path: {
-        /**
-         * Doc Id
-         */
-        doc_id: string;
-        /**
-         * Stage Name
-         */
-        stage_name: string;
-    };
-    query?: never;
-    url: '/api/v1/documents/{doc_id}/replay/{stage_name}';
-};
-
-export type ReplayDocumentApiV1DocumentsDocIdReplayStageNamePostErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type ReplayDocumentApiV1DocumentsDocIdReplayStageNamePostError = ReplayDocumentApiV1DocumentsDocIdReplayStageNamePostErrors[keyof ReplayDocumentApiV1DocumentsDocIdReplayStageNamePostErrors];
-
-export type ReplayDocumentApiV1DocumentsDocIdReplayStageNamePostResponses = {
-    /**
-     * Successful Response
-     */
-    200: DocumentDetail;
-};
-
-export type ReplayDocumentApiV1DocumentsDocIdReplayStageNamePostResponse = ReplayDocumentApiV1DocumentsDocIdReplayStageNamePostResponses[keyof ReplayDocumentApiV1DocumentsDocIdReplayStageNamePostResponses];
-
-export type GetContextLibraryApiV1ContextLibraryGetData = {
+export type ListJobsApiV1JobsGetData = {
     body?: never;
     path?: never;
-    query?: never;
-    url: '/api/v1/context-library';
+    query?: {
+        /**
+         * Stages
+         */
+        stages?: string | null;
+        /**
+         * States
+         */
+        states?: string | null;
+        /**
+         * Sort
+         */
+        sort?: string;
+        /**
+         * Pagesize
+         */
+        pageSize?: number;
+        /**
+         * Pagetoken
+         */
+        pageToken?: string | null;
+    };
+    url: '/api/v1/jobs';
 };
 
-export type GetContextLibraryApiV1ContextLibraryGetResponses = {
-    /**
-     * Response Get Context Library Api V1 Context Library Get
-     *
-     * Successful Response
-     */
-    200: Array<ContextEntry>;
-};
-
-export type GetContextLibraryApiV1ContextLibraryGetResponse = GetContextLibraryApiV1ContextLibraryGetResponses[keyof GetContextLibraryApiV1ContextLibraryGetResponses];
-
-export type SaveContextEntryApiV1ContextLibraryPostData = {
-    body: SaveContextEntryBody;
-    path?: never;
-    query?: never;
-    url: '/api/v1/context-library';
-};
-
-export type SaveContextEntryApiV1ContextLibraryPostErrors = {
+export type ListJobsApiV1JobsGetErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type SaveContextEntryApiV1ContextLibraryPostError = SaveContextEntryApiV1ContextLibraryPostErrors[keyof SaveContextEntryApiV1ContextLibraryPostErrors];
+export type ListJobsApiV1JobsGetError = ListJobsApiV1JobsGetErrors[keyof ListJobsApiV1JobsGetErrors];
 
-export type SaveContextEntryApiV1ContextLibraryPostResponses = {
+export type ListJobsApiV1JobsGetResponses = {
     /**
-     * Response Save Context Entry Api V1 Context Library Post
-     *
      * Successful Response
      */
-    200: Array<ContextEntry>;
+    200: PaginatedJobs;
 };
 
-export type SaveContextEntryApiV1ContextLibraryPostResponse = SaveContextEntryApiV1ContextLibraryPostResponses[keyof SaveContextEntryApiV1ContextLibraryPostResponses];
+export type ListJobsApiV1JobsGetResponse = ListJobsApiV1JobsGetResponses[keyof ListJobsApiV1JobsGetResponses];
 
-export type DeleteContextEntryApiV1ContextLibraryNameDeleteData = {
+export type GetJobApiV1DocumentsDocIdJobsGetData = {
     body?: never;
     path: {
         /**
-         * Name
+         * Doc Id
          */
-        name: string;
+        doc_id: string;
     };
     query?: never;
-    url: '/api/v1/context-library/{name}';
+    url: '/api/v1/documents/{doc_id}/jobs';
 };
 
-export type DeleteContextEntryApiV1ContextLibraryNameDeleteErrors = {
+export type GetJobApiV1DocumentsDocIdJobsGetErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type DeleteContextEntryApiV1ContextLibraryNameDeleteError = DeleteContextEntryApiV1ContextLibraryNameDeleteErrors[keyof DeleteContextEntryApiV1ContextLibraryNameDeleteErrors];
+export type GetJobApiV1DocumentsDocIdJobsGetError = GetJobApiV1DocumentsDocIdJobsGetErrors[keyof GetJobApiV1DocumentsDocIdJobsGetErrors];
 
-export type DeleteContextEntryApiV1ContextLibraryNameDeleteResponses = {
+export type GetJobApiV1DocumentsDocIdJobsGetResponses = {
     /**
-     * Response Delete Context Entry Api V1 Context Library  Name  Delete
-     *
      * Successful Response
      */
-    200: Array<ContextEntry>;
+    200: JobDetail;
 };
 
-export type DeleteContextEntryApiV1ContextLibraryNameDeleteResponse = DeleteContextEntryApiV1ContextLibraryNameDeleteResponses[keyof DeleteContextEntryApiV1ContextLibraryNameDeleteResponses];
+export type GetJobApiV1DocumentsDocIdJobsGetResponse = GetJobApiV1DocumentsDocIdJobsGetResponses[keyof GetJobApiV1DocumentsDocIdJobsGetResponses];
 
-export type QueryKnowledgeBaseApiV1QueryPostData = {
+export type JobTokenStreamApiV1DocumentsDocIdJobsStreamGetData = {
     body?: never;
-    path?: never;
+    path: {
+        /**
+         * Doc Id
+         */
+        doc_id: string;
+    };
     query?: never;
-    url: '/api/v1/query';
+    url: '/api/v1/documents/{doc_id}/jobs/stream';
 };
 
-export type QueryKnowledgeBaseApiV1QueryPostResponses = {
+export type JobTokenStreamApiV1DocumentsDocIdJobsStreamGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type JobTokenStreamApiV1DocumentsDocIdJobsStreamGetError = JobTokenStreamApiV1DocumentsDocIdJobsStreamGetErrors[keyof JobTokenStreamApiV1DocumentsDocIdJobsStreamGetErrors];
+
+export type JobTokenStreamApiV1DocumentsDocIdJobsStreamGetResponses = {
     /**
      * Successful Response
      */
     200: unknown;
 };
 
-export type DocTokenStreamApiV1DocumentsDocIdStreamGetData = {
+export type ListJobEventsApiV1DocumentsDocIdJobsEventsGetData = {
     body?: never;
     path: {
         /**
@@ -952,20 +1025,222 @@ export type DocTokenStreamApiV1DocumentsDocIdStreamGetData = {
          */
         doc_id: string;
     };
-    query?: never;
-    url: '/api/v1/documents/{doc_id}/stream';
+    query?: {
+        /**
+         * Pagesize
+         */
+        pageSize?: number;
+        /**
+         * Pagetoken
+         */
+        pageToken?: string | null;
+    };
+    url: '/api/v1/documents/{doc_id}/jobs/events';
 };
 
-export type DocTokenStreamApiV1DocumentsDocIdStreamGetErrors = {
+export type ListJobEventsApiV1DocumentsDocIdJobsEventsGetErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type DocTokenStreamApiV1DocumentsDocIdStreamGetError = DocTokenStreamApiV1DocumentsDocIdStreamGetErrors[keyof DocTokenStreamApiV1DocumentsDocIdStreamGetErrors];
+export type ListJobEventsApiV1DocumentsDocIdJobsEventsGetError = ListJobEventsApiV1DocumentsDocIdJobsEventsGetErrors[keyof ListJobEventsApiV1DocumentsDocIdJobsEventsGetErrors];
 
-export type DocTokenStreamApiV1DocumentsDocIdStreamGetResponses = {
+export type ListJobEventsApiV1DocumentsDocIdJobsEventsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: PaginatedJobEvents;
+};
+
+export type ListJobEventsApiV1DocumentsDocIdJobsEventsGetResponse = ListJobEventsApiV1DocumentsDocIdJobsEventsGetResponses[keyof ListJobEventsApiV1DocumentsDocIdJobsEventsGetResponses];
+
+export type PostJobEventApiV1DocumentsDocIdJobsEventsPostData = {
+    /**
+     * Body
+     */
+    body: ({
+        type: 'approve';
+    } & ApproveEvent) | ({
+        type: 'reject';
+    } & RejectEvent) | ({
+        type: 'clarify';
+    } & ClarifyEvent) | ({
+        type: 'retry';
+    } & RetryEvent) | ({
+        type: 'stop';
+    } & StopEvent) | ({
+        type: 'replay';
+    } & ReplayEvent) | ({
+        type: 'provide_context';
+    } & ProvideContextEvent) | ({
+        type: 'clear_errors';
+    } & ClearErrorsEvent);
+    path: {
+        /**
+         * Doc Id
+         */
+        doc_id: string;
+    };
+    query?: never;
+    url: '/api/v1/documents/{doc_id}/jobs/events';
+};
+
+export type PostJobEventApiV1DocumentsDocIdJobsEventsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PostJobEventApiV1DocumentsDocIdJobsEventsPostError = PostJobEventApiV1DocumentsDocIdJobsEventsPostErrors[keyof PostJobEventApiV1DocumentsDocIdJobsEventsPostErrors];
+
+export type PostJobEventApiV1DocumentsDocIdJobsEventsPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: JobDetail;
+};
+
+export type PostJobEventApiV1DocumentsDocIdJobsEventsPostResponse = PostJobEventApiV1DocumentsDocIdJobsEventsPostResponses[keyof PostJobEventApiV1DocumentsDocIdJobsEventsPostResponses];
+
+export type ListContextsApiV1ContextsGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Pagesize
+         */
+        pageSize?: number;
+        /**
+         * Pagetoken
+         */
+        pageToken?: string | null;
+    };
+    url: '/api/v1/contexts';
+};
+
+export type ListContextsApiV1ContextsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListContextsApiV1ContextsGetError = ListContextsApiV1ContextsGetErrors[keyof ListContextsApiV1ContextsGetErrors];
+
+export type ListContextsApiV1ContextsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: PaginatedContexts;
+};
+
+export type ListContextsApiV1ContextsGetResponse = ListContextsApiV1ContextsGetResponses[keyof ListContextsApiV1ContextsGetResponses];
+
+export type CreateContextApiV1ContextsPostData = {
+    body: CreateContextBody;
+    path?: never;
+    query?: never;
+    url: '/api/v1/contexts';
+};
+
+export type CreateContextApiV1ContextsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateContextApiV1ContextsPostError = CreateContextApiV1ContextsPostErrors[keyof CreateContextApiV1ContextsPostErrors];
+
+export type CreateContextApiV1ContextsPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ContextEntry;
+};
+
+export type CreateContextApiV1ContextsPostResponse = CreateContextApiV1ContextsPostResponses[keyof CreateContextApiV1ContextsPostResponses];
+
+export type DeleteContextApiV1ContextsContextIdDeleteData = {
+    body?: never;
+    path: {
+        /**
+         * Context Id
+         */
+        context_id: string;
+    };
+    query?: never;
+    url: '/api/v1/contexts/{context_id}';
+};
+
+export type DeleteContextApiV1ContextsContextIdDeleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteContextApiV1ContextsContextIdDeleteError = DeleteContextApiV1ContextsContextIdDeleteErrors[keyof DeleteContextApiV1ContextsContextIdDeleteErrors];
+
+export type DeleteContextApiV1ContextsContextIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    200: OkResponse;
+};
+
+export type DeleteContextApiV1ContextsContextIdDeleteResponse = DeleteContextApiV1ContextsContextIdDeleteResponses[keyof DeleteContextApiV1ContextsContextIdDeleteResponses];
+
+export type UpdateContextApiV1ContextsContextIdPatchData = {
+    body: UpdateContextBody;
+    path: {
+        /**
+         * Context Id
+         */
+        context_id: string;
+    };
+    query?: never;
+    url: '/api/v1/contexts/{context_id}';
+};
+
+export type UpdateContextApiV1ContextsContextIdPatchErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateContextApiV1ContextsContextIdPatchError = UpdateContextApiV1ContextsContextIdPatchErrors[keyof UpdateContextApiV1ContextsContextIdPatchErrors];
+
+export type UpdateContextApiV1ContextsContextIdPatchResponses = {
+    /**
+     * Successful Response
+     */
+    200: ContextEntry;
+};
+
+export type UpdateContextApiV1ContextsContextIdPatchResponse = UpdateContextApiV1ContextsContextIdPatchResponses[keyof UpdateContextApiV1ContextsContextIdPatchResponses];
+
+export type CreateChatApiV1ChatsPostData = {
+    body: ChatRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/chats';
+};
+
+export type CreateChatApiV1ChatsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateChatApiV1ChatsPostError = CreateChatApiV1ChatsPostErrors[keyof CreateChatApiV1ChatsPostErrors];
+
+export type CreateChatApiV1ChatsPostResponses = {
     /**
      * Successful Response
      */

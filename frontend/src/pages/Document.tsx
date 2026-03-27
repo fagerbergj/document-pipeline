@@ -8,34 +8,51 @@ import { api } from '../api'
 import StatusBadge from '../components/StatusBadge'
 import LoadingSpinner from '../components/LoadingSpinner'
 import DocKebabMenu from '../components/DocKebabMenu'
-import type { DocumentDetail, ClarificationRequest, StageEvent } from '../types'
+import type { DocumentDetail, JobDetail, ClarificationRequest, JobEventRecord } from '../types'
 
 export default function Document() {
   const { id } = useParams<{ id: string }>()
   const qc = useQueryClient()
   const navigate = useNavigate()
 
-  const { data: doc, isLoading } = useQuery({
+  const { data: doc, isLoading: docLoading } = useQuery({
     queryKey: ['document', id],
     queryFn: () => api.document(id!),
   })
 
-  const refresh = () => qc.invalidateQueries({ queryKey: ['document', id] })
+  const { data: job, isLoading: jobLoading } = useQuery({
+    queryKey: ['job', id],
+    queryFn: () => api.job(id!),
+  })
+
+  const { data: eventsPage } = useQuery({
+    queryKey: ['job-events', id],
+    queryFn: () => api.jobEvents(id!),
+    enabled: !!id,
+  })
+
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ['document', id] })
+    qc.invalidateQueries({ queryKey: ['job', id] })
+    qc.invalidateQueries({ queryKey: ['job-events', id] })
+  }
 
   const handleDelete = () => navigate('/')
+
+  const isLoading = docLoading || jobLoading
 
   if (isLoading) return (
     <div className="flex items-center justify-center h-full py-24">
       <LoadingSpinner />
     </div>
   )
-  if (!doc) return (
+  if (!doc || !job) return (
     <div className="flex items-center justify-center h-full py-24 text-gray-400">
       Document not found
     </div>
   )
 
-  const errorEvents = doc.events.filter(e => e.event_type === 'failed')
+  const errorEvents = (eventsPage?.data ?? []).filter((e: JobEventRecord) => e.event_type === 'failed')
 
   return (
     <div>
@@ -43,12 +60,12 @@ export default function Document() {
       <div className="sticky top-0 z-10 flex items-center gap-3 px-6 py-4 border-b border-gray-200 bg-white">
         <Link to="/" className="text-gray-400 hover:text-gray-600 text-sm">←</Link>
         <h1 className="text-base font-semibold text-gray-900 flex-1 truncate">{doc.title || '(untitled)'}</h1>
-        <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{doc.current_stage}</span>
-        <StatusBadge state={doc.stage_state} />
+        <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{job.current_stage}</span>
+        <StatusBadge state={job.stage_state} />
         <DocKebabMenu
           docId={doc.id}
-          state={doc.stage_state}
-          replayStages={doc.replay_stages}
+          state={job.stage_state}
+          replayStages={job.replay_stages}
           onDelete={handleDelete}
           onSuccess={refresh}
         />
@@ -57,14 +74,14 @@ export default function Document() {
       {/* Content */}
       <div className="p-6 space-y-4">
         <TitleSection doc={doc} onRefresh={refresh} />
-        <ContextSection doc={doc} onRefresh={refresh} />
-        {doc.stage_state === 'running' && <LiveLogSection docId={doc.id} onDone={refresh} />}
-        {doc.review && <ReviewSection doc={doc} review={doc.review} onRefresh={refresh} />}
+        <ContextSection doc={doc} job={job} onRefresh={refresh} />
+        {job.stage_state === 'running' && <LiveLogSection docId={doc.id} onDone={refresh} />}
+        {job.review && <ReviewSection doc={doc} review={job.review} onRefresh={refresh} />}
         {(doc.has_image || doc.stage_displays.length > 0) && (
           <ArtifactsSection doc={doc} />
         )}
         {errorEvents.length > 0 && <EventLogSection events={errorEvents} docId={doc.id} onCleared={refresh} />}
-        {doc.replay_stages.length > 0 && <ReplaySection doc={doc} onRefresh={refresh} />}
+        {job.replay_stages.length > 0 && <ReplaySection docId={doc.id} job={job} onRefresh={refresh} />}
       </div>
     </div>
   )
@@ -72,7 +89,10 @@ export default function Document() {
 
 function TitleSection({ doc, onRefresh }: { doc: DocumentDetail; onRefresh: () => void }) {
   const [title, setTitle] = useState(doc.title ?? '')
-  const mut = useMutation({ mutationFn: (t: string) => api.updateTitle(doc.id, t), onSuccess: onRefresh })
+  const mut = useMutation({
+    mutationFn: (t: string) => api.updateDocument(doc.id, { title: t }),
+    onSuccess: onRefresh,
+  })
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4">
@@ -90,20 +110,26 @@ function TitleSection({ doc, onRefresh }: { doc: DocumentDetail; onRefresh: () =
   )
 }
 
-function ContextSection({ doc, onRefresh }: { doc: DocumentDetail; onRefresh: () => void }) {
+function ContextSection({ doc, job, onRefresh }: { doc: DocumentDetail; job: JobDetail; onRefresh: () => void }) {
   const [editing, setEditing] = useState(false)
   const [ctx, setCtx] = useState(doc.document_context)
-  const [entries, setEntries] = useState<{ name: string; text: string }[]>([])
-  const saveMut = useMutation({ mutationFn: (c: string) => api.saveContext(doc.id, c), onSuccess: () => { onRefresh(); setEditing(false) } })
-  const setMut = useMutation({ mutationFn: (c: string) => api.setContext(doc.id, c), onSuccess: () => { onRefresh(); setEditing(false) } })
+  const [entries, setEntries] = useState<{ id: string; name: string; text: string }[]>([])
+
+  const saveMut = useMutation({
+    mutationFn: (c: string) => api.updateDocument(doc.id, { document_context: c }),
+    onSuccess: () => { onRefresh(); setEditing(false) },
+  })
+  const setMut = useMutation({
+    mutationFn: (c: string) => api.postJobEvent(doc.id, { type: 'provide_context', document_context: c }),
+    onSuccess: () => { onRefresh(); setEditing(false) },
+  })
 
   useEffect(() => {
-    if (editing) api.contextLibrary().then(setEntries).catch(() => {})
+    if (editing) api.contexts().then(p => setEntries(p.data ?? [])).catch(() => {})
   }, [editing])
 
-  const required = doc.context_required
+  const required = job.context_required
 
-  // No context + required → always show the form
   if (!doc.document_context || editing) {
     return (
       <div className={`bg-white rounded-xl border p-4 ${required ? 'border-red-300 ring-1 ring-red-200' : 'border-gray-200'}`}>
@@ -120,7 +146,7 @@ function ContextSection({ doc, onRefresh }: { doc: DocumentDetail; onRefresh: ()
               <select onChange={e => { if (e.target.value) setCtx(e.target.value) }}
                 className="text-xs border border-gray-200 rounded px-2 py-1 bg-white text-gray-600">
                 <option value="">Load saved…</option>
-                {entries.map(e => <option key={e.name} value={e.text}>{e.name}</option>)}
+                {entries.map(e => <option key={e.id} value={e.text}>{e.name}</option>)}
               </select>
             )}
           </div>
@@ -246,7 +272,7 @@ function LiveLogSection({ docId, onDone }: { docId: string; onDone: () => void }
   const [status, setStatus] = useState('connecting…')
 
   useEffect(() => {
-    const es = new EventSource(`/api/v1/documents/${docId}/stream`)
+    const es = new EventSource(`/api/v1/documents/${docId}/jobs/stream`)
     es.addEventListener('token', (e) => {
       const data = JSON.parse((e as MessageEvent).data)
       if (logRef.current) {
@@ -280,23 +306,26 @@ function LiveLogSection({ docId, onDone }: { docId: string; onDone: () => void }
   )
 }
 
-function EventLogSection({ events, docId, onCleared }: { events: StageEvent[]; docId: string; onCleared: () => void }) {
-  const handleClear = async () => {
-    await fetch(`/api/v1/documents/${docId}/errors`, { method: 'DELETE' })
-    onCleared()
-  }
+function EventLogSection({ events, docId, onCleared }: { events: JobEventRecord[]; docId: string; onCleared: () => void }) {
+  const clearMut = useMutation({
+    mutationFn: () => api.postJobEvent(docId, { type: 'clear_errors' }),
+    onSuccess: onCleared,
+  })
 
   return (
     <div className="bg-white rounded-xl border border-red-200 p-4">
       <div className="flex items-center justify-between mb-3">
         <div className="text-xs font-semibold text-red-500 uppercase tracking-wide">Error log</div>
-        <button onClick={handleClear} className="text-xs text-gray-400 hover:text-red-500 transition-colors">Clear</button>
+        <button onClick={() => clearMut.mutate()} disabled={clearMut.isPending}
+          className="text-xs text-gray-400 hover:text-red-500 transition-colors disabled:opacity-50">
+          Clear
+        </button>
       </div>
       <div className="space-y-2">
         {events.map((e, i) => (
           <div key={i} className="bg-red-50 border border-red-100 rounded-lg p-3 text-xs font-mono">
             <div className="text-gray-400 mb-1">{e.timestamp.slice(0, 19).replace('T', ' ')} · {e.stage}</div>
-            <div className="text-red-700 whitespace-pre-wrap">{e.data?.error ?? '(no detail)'}</div>
+            <div className="text-red-700 whitespace-pre-wrap">{(e.data as { error?: string } | null)?.error ?? '(no detail)'}</div>
           </div>
         ))}
       </div>
@@ -304,19 +333,34 @@ function EventLogSection({ events, docId, onCleared }: { events: StageEvent[]; d
   )
 }
 
-function ReviewSection({ doc, review, onRefresh }: { doc: DocumentDetail; review: NonNullable<DocumentDetail['review']>; onRefresh: () => void }) {
+function ReviewSection({ doc, review, onRefresh }: {
+  doc: DocumentDetail
+  review: NonNullable<JobDetail['review']>
+  onRefresh: () => void
+}) {
   const [editedText, setEditedText] = useState(review.output_text)
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [freePrompt, setFreePrompt] = useState('')
 
   const approveMut = useMutation({
-    mutationFn: () => api.approve(doc.id, review.is_single_output ? editedText : undefined),
-    onSuccess: onRefresh
+    mutationFn: () => api.postJobEvent(doc.id, {
+      type: 'approve',
+      edited_text: review.is_single_output ? editedText : undefined,
+    }),
+    onSuccess: onRefresh,
   })
-  const rejectMut = useMutation({ mutationFn: () => api.reject(doc.id), onSuccess: onRefresh })
+  const rejectMut = useMutation({
+    mutationFn: () => api.postJobEvent(doc.id, { type: 'reject' }),
+    onSuccess: onRefresh,
+  })
   const clarifyMut = useMutation({
-    mutationFn: () => api.clarify(doc.id, answers, freePrompt, review.is_single_output ? editedText : undefined),
-    onSuccess: onRefresh
+    mutationFn: () => api.postJobEvent(doc.id, {
+      type: 'clarify',
+      answers,
+      free_prompt: freePrompt,
+      edited_text: review.is_single_output ? editedText : undefined,
+    }),
+    onSuccess: onRefresh,
   })
 
   const confidenceColor = review.confidence === 'high'
@@ -397,7 +441,7 @@ function ContextUpdatesSection({ doc, proposed, onRefresh }: { doc: DocumentDeta
   const [edited, setEdited] = useState(proposed)
 
   const saveMut = useMutation({
-    mutationFn: () => api.saveContext(doc.id, edited),
+    mutationFn: () => api.updateDocument(doc.id, { document_context: edited }),
     onSuccess: onRefresh,
   })
 
@@ -450,16 +494,21 @@ function ClarificationForm({
   )
 }
 
-function ReplaySection({ doc, onRefresh }: { doc: DocumentDetail; onRefresh: () => void }) {
+function ReplaySection({ docId, job, onRefresh }: { docId: string; job: JobDetail; onRefresh: () => void }) {
+  const replayMut = useMutation({
+    mutationFn: (stage: string) => api.postJobEvent(docId, { type: 'replay', stage }),
+    onSuccess: onRefresh,
+  })
+
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4">
       <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Replay from stage</div>
       <div className="flex flex-wrap gap-2">
-        {doc.replay_stages.map(s => (
+        {job.replay_stages.map(s => (
           <button key={s.name}
             onClick={() => {
               if (confirm(`Replay from ${s.name}? This will clear downstream stage data.`))
-                api.replay(doc.id, s.name).then(onRefresh)
+                replayMut.mutate(s.name)
             }}
             className="px-3 py-1.5 text-xs font-mono font-medium border border-gray-200 rounded-lg hover:bg-gray-50">
             {s.name}

@@ -1,53 +1,112 @@
-import type { Counts, DocumentSummary, DocumentDetail, ContextEntry } from './types'
+/**
+ * Thin wrapper around the generated SDK. Pages import from here for clean names.
+ * All API calls use the generated functions so URLs/types stay in sync with openapi.yaml.
+ * SSE streaming endpoints use raw fetch since they need manual stream handling.
+ */
+import {
+  getDocumentApiV1DocumentsDocIdGet,
+  patchDocumentApiV1DocumentsDocIdPatch,
+  deleteDocumentApiV1DocumentsDocIdDelete,
+  listJobsApiV1JobsGet,
+  getJobApiV1DocumentsDocIdJobsGet,
+  postJobEventApiV1DocumentsDocIdJobsEventsPost,
+  listJobEventsApiV1DocumentsDocIdJobsEventsGet,
+  listContextsApiV1ContextsGet,
+  createContextApiV1ContextsPost,
+  updateContextApiV1ContextsContextIdPatch,
+  deleteContextApiV1ContextsContextIdDelete,
+} from './generated'
 
-const BASE = ''
+export type {
+  DocumentDetail,
+  DocumentSummary,
+  JobDetail,
+  JobSummary,
+  PaginatedJobs,
+  PaginatedContexts,
+  PaginatedJobEvents,
+  ContextEntry,
+  PatchDocumentBody,
+  CreateContextBody,
+  UpdateContextBody,
+  ReviewDetail,
+  ClarificationRequest,
+  StageDisplay,
+  ReplayStage,
+  JobEventRecord,
+} from './generated'
 
-async function apiFetch(path: string, options?: RequestInit) {
-  const res = await fetch(BASE + path, options)
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
-  return res.json()
+async function unwrap<T>(call: Promise<{ data?: T; error?: unknown }>): Promise<T> {
+  const { data, error } = await call
+  if (error) throw error
+  return data as T
 }
 
 export const api = {
-  stages: (): Promise<{ stages: string[] }> => apiFetch('/api/v1/pipeline/stages'),
-  counts: (): Promise<Counts> => apiFetch('/api/v1/counts'),
-  documents: (params?: { stages?: string; states?: string; sort?: string }): Promise<DocumentSummary[]> => {
-    const q = new URLSearchParams()
-    if (params?.stages) q.set('stages', params.stages)
-    if (params?.states) q.set('states', params.states)
-    if (params?.sort) q.set('sort', params.sort)
-    return apiFetch(`/api/v1/documents?${q}`)
-  },
-  document: (id: string): Promise<DocumentDetail> => apiFetch(`/api/v1/documents/${id}`),
-  updateTitle: (id: string, title: string): Promise<DocumentDetail> =>
-    apiFetch(`/api/v1/documents/${id}/title`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }) }),
-  saveContext: (id: string, ctx: string): Promise<DocumentDetail> =>
-    apiFetch(`/api/v1/documents/${id}/context`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ document_context: ctx }) }),
-  setContext: (id: string, ctx: string): Promise<DocumentDetail> =>
-    apiFetch(`/api/v1/documents/${id}/set-context`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ document_context: ctx }) }),
-  approve: (id: string, editedText?: string): Promise<DocumentDetail> =>
-    apiFetch(`/api/v1/documents/${id}/approve`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ edited_text: editedText ?? '' }) }),
-  reject: (id: string): Promise<DocumentDetail> =>
-    apiFetch(`/api/v1/documents/${id}/reject`, { method: 'POST' }),
-  clarify: (id: string, answers: Record<string, string>, free_prompt: string, edited_text?: string): Promise<DocumentDetail> =>
-    apiFetch(`/api/v1/documents/${id}/clarify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ answers, free_prompt, edited_text: edited_text ?? '' }) }),
-  stop: (id: string): Promise<DocumentDetail> =>
-    apiFetch(`/api/v1/documents/${id}/stop`, { method: 'POST' }),
-  retry: (id: string): Promise<DocumentDetail> =>
-    apiFetch(`/api/v1/documents/${id}/retry`, { method: 'POST' }),
-  replay: (id: string, stage: string): Promise<DocumentDetail> =>
-    apiFetch(`/api/v1/documents/${id}/replay/${stage}`, { method: 'POST' }),
-  deleteDocument: (id: string): Promise<{ ok: boolean }> =>
-    apiFetch(`/api/v1/documents/${id}`, { method: 'DELETE' }),
-  contextLibrary: (): Promise<ContextEntry[]> => apiFetch('/api/v1/context-library'),
-  saveContextEntry: (name: string, text: string): Promise<ContextEntry[]> =>
-    apiFetch('/api/v1/context-library', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, text }) }),
-  deleteContextEntry: (name: string): Promise<ContextEntry[]> =>
-    apiFetch(`/api/v1/context-library/${encodeURIComponent(name)}`, { method: 'DELETE' }),
-  queryStream: (query: string, context: string, topK: number): Promise<Response> =>
-    fetch('/api/v1/query', {
+  // ── Documents ─────────────────────────────────────────────────────────────
+  document: (id: string) =>
+    unwrap(getDocumentApiV1DocumentsDocIdGet({ path: { doc_id: id } })),
+
+  updateDocument: (id: string, patch: { title?: string | null; document_context?: string | null; context_ref?: string | null }) =>
+    unwrap(patchDocumentApiV1DocumentsDocIdPatch({ path: { doc_id: id }, body: patch })),
+
+  deleteDocument: (id: string) =>
+    unwrap(deleteDocumentApiV1DocumentsDocIdDelete({ path: { doc_id: id } })),
+
+  // ── Jobs ──────────────────────────────────────────────────────────────────
+  jobs: (params?: { stages?: string; states?: string; sort?: string; pageToken?: string; pageSize?: number }) =>
+    unwrap(listJobsApiV1JobsGet({ query: {
+      stages: params?.stages,
+      states: params?.states,
+      sort: params?.sort,
+      pageToken: params?.pageToken,
+      pageSize: params?.pageSize,
+    }})),
+
+  job: (id: string) =>
+    unwrap(getJobApiV1DocumentsDocIdJobsGet({ path: { doc_id: id } })),
+
+  postJobEvent: (
+    id: string,
+    event:
+      | { type: 'approve'; edited_text?: string }
+      | { type: 'reject' }
+      | { type: 'clarify'; answers?: Record<string, string>; free_prompt?: string; edited_text?: string }
+      | { type: 'retry' }
+      | { type: 'stop' }
+      | { type: 'replay'; stage: string }
+      | { type: 'provide_context'; document_context?: string; context_ref?: string | null }
+      | { type: 'clear_errors' },
+  ) =>
+    unwrap(postJobEventApiV1DocumentsDocIdJobsEventsPost({ path: { doc_id: id }, body: event as never })),
+
+  jobEvents: (id: string, pageSize = 100) =>
+    unwrap(listJobEventsApiV1DocumentsDocIdJobsEventsGet({ path: { doc_id: id }, query: { pageSize } })),
+
+  // ── Contexts ──────────────────────────────────────────────────────────────
+  contexts: () =>
+    unwrap(listContextsApiV1ContextsGet({})),
+
+  createContext: (name: string, text: string) =>
+    unwrap(createContextApiV1ContextsPost({ body: { name, text } })),
+
+  updateContext: (id: string, patch: { name?: string | null; text?: string | null }) =>
+    unwrap(updateContextApiV1ContextsContextIdPatch({ path: { context_id: id }, body: patch })),
+
+  deleteContext: (id: string) =>
+    unwrap(deleteContextApiV1ContextsContextIdDelete({ path: { context_id: id } })),
+
+  // ── Chat (SSE — manual fetch needed for streaming) ────────────────────────
+  chatStream: (
+    messages: { role: string; content: string }[],
+    context: string,
+    topK: number,
+    signal?: AbortSignal,
+  ): Promise<Response> =>
+    fetch('/api/v1/chats', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, context, top_k: topK }),
+      body: JSON.stringify({ messages, context, top_k: topK }),
+      signal,
     }),
 }

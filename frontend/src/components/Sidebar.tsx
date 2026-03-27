@@ -1,7 +1,6 @@
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api'
-import type { Counts } from '../types'
 
 const STATES = ['pending', 'running', 'waiting', 'error', 'done']
 const STATE_COLORS: Record<string, string> = {
@@ -19,16 +18,24 @@ export default function Sidebar() {
   const selectedStages = (searchParams.get('stages') ?? '').split(',').filter(Boolean)
   const selectedStates = (searchParams.get('states') ?? '').split(',').filter(Boolean)
 
-  const { data: counts } = useQuery<Counts>({
-    queryKey: ['counts'],
-    queryFn: api.counts,
+  // Fetch all jobs (finite dataset) and aggregate counts client-side
+  const { data: jobsPage } = useQuery({
+    queryKey: ['jobs-all'],
+    queryFn: () => api.jobs({ pageSize: 1000 }),
     refetchInterval: 10_000,
   })
 
-  const { data: stagesData } = useQuery({
-    queryKey: ['stages'],
-    queryFn: api.stages,
-  })
+  const jobs = jobsPage?.data ?? []
+
+  // Aggregate counts from jobs list
+  const stateCounts: Record<string, number> = {}
+  const stageCounts: Record<string, number> = {}
+  const stageNames: string[] = []
+  for (const job of jobs) {
+    stateCounts[job.stage_state] = (stateCounts[job.stage_state] ?? 0) + 1
+    stageCounts[job.current_stage] = (stageCounts[job.current_stage] ?? 0) + 1
+    if (!stageNames.includes(job.current_stage)) stageNames.push(job.current_stage)
+  }
 
   function toggleStage(s: string) {
     const next = new URLSearchParams(searchParams)
@@ -72,8 +79,8 @@ export default function Sidebar() {
         <Link to="/contexts" className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${pathname === '/contexts' ? 'bg-gray-800 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800/50'}`}>
           <span>Contexts</span>
         </Link>
-        <Link to="/query" className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${pathname === '/query' ? 'bg-gray-800 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800/50'}`}>
-          <span>Query</span>
+        <Link to="/chat" className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${pathname === '/chat' ? 'bg-gray-800 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800/50'}`}>
+          <span>Chat</span>
         </Link>
       </nav>
 
@@ -93,7 +100,7 @@ export default function Sidebar() {
             </div>
             <div className="space-y-1">
               {STATES.map(s => {
-                const n = (counts as Record<string, number> | undefined)?.[s] ?? 0
+                const n = stateCounts[s] ?? 0
                 const active = selectedStates.includes(s)
                 return (
                   <button key={s} onClick={() => toggleState(s)}
@@ -110,29 +117,31 @@ export default function Sidebar() {
           </div>
 
           {/* Stage filter */}
-          <div>
-            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-              Stage {selectedStages.length > 0 && <span className="ml-1 text-blue-400">({selectedStages.length})</span>}
+          {stageNames.length > 0 && (
+            <div>
+              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                Stage {selectedStages.length > 0 && <span className="ml-1 text-blue-400">({selectedStages.length})</span>}
+              </div>
+              <div className="space-y-1">
+                {stageNames.map(s => {
+                  const active = selectedStages.includes(s)
+                  const n = stageCounts[s] ?? 0
+                  return (
+                    <button key={s} onClick={() => toggleStage(s)}
+                      className={`w-full flex items-center justify-between px-2 py-1.5 rounded text-sm transition-colors ${active ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800/50'}`}>
+                      <div className="flex items-center gap-2">
+                        <span className={`w-3 h-3 rounded border flex-shrink-0 flex items-center justify-center ${active ? 'bg-blue-500 border-blue-500' : 'border-gray-600'}`}>
+                          {active && <span className="text-white text-[8px] leading-none">✓</span>}
+                        </span>
+                        <span className="font-mono text-xs">{s}</span>
+                      </div>
+                      {n > 0 && <span className="text-xs text-gray-500">{n}</span>}
+                    </button>
+                  )
+                })}
+              </div>
             </div>
-            <div className="space-y-1">
-              {stagesData?.stages.map(s => {
-                const active = selectedStages.includes(s)
-                const n = counts?.by_stage?.[s] ?? 0
-                return (
-                  <button key={s} onClick={() => toggleStage(s)}
-                    className={`w-full flex items-center justify-between px-2 py-1.5 rounded text-sm transition-colors ${active ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800/50'}`}>
-                    <div className="flex items-center gap-2">
-                      <span className={`w-3 h-3 rounded border flex-shrink-0 flex items-center justify-center ${active ? 'bg-blue-500 border-blue-500' : 'border-gray-600'}`}>
-                        {active && <span className="text-white text-[8px] leading-none">✓</span>}
-                      </span>
-                      <span className="font-mono text-xs">{s}</span>
-                    </div>
-                    {n > 0 && <span className="text-xs text-gray-500">{n}</span>}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
+          )}
         </div>
       )}
     </aside>

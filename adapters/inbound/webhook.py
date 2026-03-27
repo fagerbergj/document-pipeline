@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+@router.post("/api/v1/remarkable/webhook")
 @router.post("/webhook")
 async def webhook(request: Request):
     """

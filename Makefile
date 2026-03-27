@@ -2,13 +2,13 @@
 
 # Regenerate both server (Python) and client (TypeScript) from openapi.yaml.
 # Prerequisites:
-#   pip install -r requirements-dev.txt   (datamodel-code-generator)
+#   uv sync --dev   (installs datamodel-code-generator)
 #   cd frontend && npm install             (@hey-api/openapi-ts)
 generate: generate-server generate-client
 
 # Generate Python Pydantic models from openapi.yaml → adapters/inbound/schemas.py
 generate-server:
-	datamodel-codegen \
+	uv run datamodel-codegen \
 	  --input openapi.yaml \
 	  --input-file-type openapi \
 	  --output adapters/inbound/schemas.py \
@@ -20,4 +20,5 @@ generate-server:
 
 # Export openapi.json then generate TypeScript client from it
 generate-client:
-	cd frontend && npm run generate
+	uv run python export_schema.py
+	cd frontend && npx openapi-ts
