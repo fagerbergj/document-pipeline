@@ -112,75 +112,123 @@ function TitleSection({ doc, onRefresh }: { doc: DocumentDetail; onRefresh: () =
 
 function ContextSection({ doc, job, onRefresh }: { doc: DocumentDetail; job: JobDetail; onRefresh: () => void }) {
   const [editing, setEditing] = useState(false)
-  const [ctx, setCtx] = useState(doc.document_context)
+  const [ctx, setCtx] = useState(doc.document_context ?? '')
+  const [contextRef, setContextRef] = useState<string>(doc.context_ref ?? '')
   const [entries, setEntries] = useState<{ id: string; name: string; text: string }[]>([])
 
-  const saveMut = useMutation({
-    mutationFn: (c: string) => api.updateDocument(doc.id, { document_context: c }),
-    onSuccess: () => { onRefresh(); setEditing(false) },
-  })
-  const setMut = useMutation({
-    mutationFn: (c: string) => api.postJobEvent(doc.id, { type: 'provide_context', document_context: c }),
-    onSuccess: () => { onRefresh(); setEditing(false) },
-  })
+  const required = job.context_required
+  const hasContext = !!(doc.context_ref || doc.document_context)
 
   useEffect(() => {
-    if (editing) api.contexts().then(p => setEntries(p.data ?? [])).catch(() => {})
-  }, [editing])
+    if (editing || required) {
+      api.contexts().then(p => setEntries(p.data ?? [])).catch(() => {})
+    }
+  }, [editing, required])
 
-  const required = job.context_required
+  function openEdit() {
+    setCtx(doc.document_context ?? '')
+    setContextRef(doc.context_ref ?? '')
+    setEditing(true)
+  }
 
-  if (!doc.document_context || editing) {
+  const linkedEntry = entries.find(e => e.id === (editing ? contextRef : doc.context_ref))
+
+  const saveMut = useMutation({
+    mutationFn: () => api.updateDocument(doc.id, {
+      document_context: ctx || null,
+      context_ref: contextRef || null,
+    }),
+    onSuccess: () => { onRefresh(); setEditing(false) },
+  })
+  const runMut = useMutation({
+    mutationFn: () => api.postJobEvent(doc.id, {
+      type: 'provide_context',
+      document_context: ctx || undefined,
+      context_ref: contextRef || null,
+    }),
+    onSuccess: () => { onRefresh(); setEditing(false) },
+  })
+
+  // Collapsed pill when context is set and not editing
+  if (hasContext && !editing) {
+    const parts: string[] = []
+    if (doc.context_ref) {
+      const name = entries.find(e => e.id === doc.context_ref)?.name ?? `ref:${doc.context_ref.slice(0, 8)}…`
+      parts.push(`↗ ${name}`)
+    }
+    if (doc.document_context) {
+      const preview = doc.document_context.split('\n')[0].slice(0, 48)
+      parts.push(preview + (doc.document_context.length > 48 || doc.document_context.includes('\n') ? '…' : ''))
+    }
     return (
-      <div className={`bg-white rounded-xl border p-4 ${required ? 'border-red-300 ring-1 ring-red-200' : 'border-gray-200'}`}>
-        <div className="flex items-center justify-between mb-3">
-          <div className={`text-xs font-semibold uppercase tracking-wide ${required ? 'text-red-600' : 'text-gray-400'}`}>
-            Document context
-            {required && <span className="ml-1 font-normal normal-case text-red-500">— required to continue</span>}
-          </div>
-          <div className="flex items-center gap-2">
-            {doc.document_context && (
-              <button onClick={() => setEditing(false)} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
-            )}
-            {entries.length > 0 && (
-              <select onChange={e => { if (e.target.value) setCtx(e.target.value) }}
-                className="text-xs border border-gray-200 rounded px-2 py-1 bg-white text-gray-600">
-                <option value="">Load saved…</option>
-                {entries.map(e => <option key={e.id} value={e.text}>{e.name}</option>)}
-              </select>
-            )}
-          </div>
-        </div>
-        <textarea value={ctx} onChange={e => setCtx(e.target.value)} rows={4}
-          className={`w-full text-sm font-mono border rounded-lg px-3 py-2 resize-y mb-3 focus:outline-none focus:ring-2 ${required ? 'border-red-300 bg-red-50 focus:ring-red-200' : 'border-gray-200 focus:ring-blue-200'}`}
-          placeholder="Describe this document — used by clarify, classify, and other stages that require context…" />
-        <div className="flex gap-2">
-          <button onClick={() => saveMut.mutate(ctx)} disabled={saveMut.isPending}
-            className="px-3 py-1.5 text-xs font-medium border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50">
-            Save
-          </button>
-          {required && (
-            <button onClick={() => setMut.mutate(ctx)} disabled={setMut.isPending}
-              className="px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
-              Save &amp; run now
-            </button>
-          )}
-        </div>
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-gray-400 uppercase tracking-wide font-semibold">Context</span>
+        <button onClick={openEdit}
+          className="inline-flex items-center gap-1 px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs rounded-full transition-colors max-w-sm truncate">
+          <span className="truncate">{parts.join(' · ')}</span>
+          <span className="text-gray-400 flex-shrink-0">✎</span>
+        </button>
       </div>
     )
   }
 
-  const preview = doc.document_context.split('\n')[0].slice(0, 72)
-  const truncated = doc.document_context.length > 72 || doc.document_context.includes('\n')
+  const canSave = !!(contextRef || ctx.trim())
 
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-xs text-gray-400 uppercase tracking-wide font-semibold">Context</span>
-      <button onClick={() => { setCtx(doc.document_context); setEditing(true) }}
-        className="inline-flex items-center gap-1 px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs rounded-full transition-colors max-w-xs truncate">
-        <span className="truncate">{preview}{truncated ? '…' : ''}</span>
-        <span className="text-gray-400 flex-shrink-0">✎</span>
-      </button>
+    <div className={`bg-white rounded-xl border p-4 ${required ? 'border-red-300 ring-1 ring-red-200' : 'border-gray-200'}`}>
+      <div className="flex items-center justify-between mb-3">
+        <div className={`text-xs font-semibold uppercase tracking-wide ${required ? 'text-red-600' : 'text-gray-400'}`}>
+          Document context
+          {required && <span className="ml-1 font-normal normal-case text-red-500">— required to continue</span>}
+        </div>
+        {hasContext && (
+          <button onClick={() => setEditing(false)} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
+        )}
+      </div>
+
+      {/* Saved context ref picker */}
+      {entries.length > 0 && (
+        <div className="mb-3">
+          <label className="block text-xs text-gray-500 mb-1">Saved context</label>
+          <div className="flex items-center gap-2">
+            <select
+              value={contextRef}
+              onChange={e => setContextRef(e.target.value)}
+              className="flex-1 text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-200"
+            >
+              <option value="">None</option>
+              {entries.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+            </select>
+            {contextRef && (
+              <button onClick={() => setContextRef('')} className="text-xs text-gray-400 hover:text-red-500">✕</button>
+            )}
+          </div>
+          {linkedEntry && (
+            <pre className="mt-1.5 text-xs text-gray-500 font-mono whitespace-pre-wrap line-clamp-2 px-1">{linkedEntry.text}</pre>
+          )}
+        </div>
+      )}
+
+      {/* Free-text context */}
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Additional context</label>
+        <textarea value={ctx} onChange={e => setCtx(e.target.value)} rows={4}
+          className={`w-full text-sm font-mono border rounded-lg px-3 py-2 resize-y focus:outline-none focus:ring-2 ${required && !contextRef ? 'border-red-300 bg-red-50 focus:ring-red-200' : 'border-gray-200 focus:ring-blue-200'}`}
+          placeholder="Describe this document — used by clarify, classify, and other stages…" />
+      </div>
+
+      <div className="flex gap-2 mt-3">
+        <button onClick={() => saveMut.mutate()} disabled={saveMut.isPending || !canSave}
+          className="px-3 py-1.5 text-xs font-medium border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50">
+          Save
+        </button>
+        {required && (
+          <button onClick={() => runMut.mutate()} disabled={runMut.isPending || !canSave}
+            className="px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
+            Save &amp; run now
+          </button>
+        )}
+      </div>
     </div>
   )
 }
