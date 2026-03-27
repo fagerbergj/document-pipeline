@@ -269,7 +269,11 @@ export default function Query() {
                         )}
                       </div>
                     ) : (
-                      <span className="inline-block w-1.5 h-4 bg-gray-400 animate-pulse align-middle" />
+                      <span className="flex items-center gap-1 h-5">
+                        <span className="w-2 h-2 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.3s]" />
+                        <span className="w-2 h-2 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.15s]" />
+                        <span className="w-2 h-2 rounded-full bg-gray-400 animate-bounce" />
+                      </span>
                     )}
                   </div>
 
