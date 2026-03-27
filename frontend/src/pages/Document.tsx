@@ -187,27 +187,34 @@ function ContextSection({ doc, job, onRefresh }: { doc: DocumentDetail; job: Job
       </div>
 
       {/* Saved context ref picker */}
-      {entries.length > 0 && (
-        <div className="mb-3">
-          <label className="block text-xs text-gray-500 mb-1">Saved context</label>
-          <div className="flex items-center gap-2">
-            <select
-              value={contextRef}
-              onChange={e => setContextRef(e.target.value)}
-              className="flex-1 text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-200"
-            >
-              <option value="">None</option>
-              {entries.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-            </select>
-            {contextRef && (
-              <button onClick={() => setContextRef('')} className="text-xs text-gray-400 hover:text-red-500">✕</button>
+      <div className="mb-3">
+        <label className="block text-xs text-gray-500 mb-1">Saved context</label>
+        {entries.length > 0 ? (
+          <>
+            <div className="flex items-center gap-2">
+              <select
+                value={contextRef}
+                onChange={e => setContextRef(e.target.value)}
+                className="flex-1 text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              >
+                <option value="">None</option>
+                {entries.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+              </select>
+              {contextRef && (
+                <button onClick={() => setContextRef('')} className="text-xs text-gray-400 hover:text-red-500">✕</button>
+              )}
+            </div>
+            {linkedEntry && (
+              <pre className="mt-1.5 text-xs text-gray-500 font-mono whitespace-pre-wrap line-clamp-2 px-1">{linkedEntry.text}</pre>
             )}
-          </div>
-          {linkedEntry && (
-            <pre className="mt-1.5 text-xs text-gray-500 font-mono whitespace-pre-wrap line-clamp-2 px-1">{linkedEntry.text}</pre>
-          )}
-        </div>
-      )}
+          </>
+        ) : (
+          <p className="text-xs text-gray-400">
+            No saved contexts —{' '}
+            <Link to="/contexts" className="text-blue-500 hover:underline">create one in Context Library</Link>
+          </p>
+        )}
+      </div>
 
       {/* Free-text context */}
       <div>
@@ -477,26 +484,49 @@ function ReviewSection({ doc, review, onRefresh }: {
         </div>
       </div>
 
-      {review.context_updates?.trim() && (
-        <ContextUpdatesSection doc={doc} proposed={review.context_updates.trim()} onRefresh={onRefresh} />
+      {review.document_context_update?.trim() && (
+        <ContextUpdatesSection
+          label="Document context"
+          description="Per-document notes (this chapter)"
+          current={doc.document_context}
+          proposed={review.document_context_update.trim()}
+          onSave={(text) => api.updateDocument(doc.id, { document_context: text })}
+          onRefresh={onRefresh}
+        />
+      )}
+      {review.linked_context_update?.trim() && review.context_ref && (
+        <LinkedContextUpdatesSection
+          contextRef={review.context_ref}
+          proposed={review.linked_context_update.trim()}
+          onRefresh={onRefresh}
+        />
       )}
     </div>
   )
 }
 
-function ContextUpdatesSection({ doc, proposed, onRefresh }: { doc: DocumentDetail; proposed: string; onRefresh: () => void }) {
-  const current = doc.document_context
+function ContextUpdatesSection({ label, description, current, proposed, onSave, onRefresh }: {
+  label: string
+  description: string
+  current?: string | null
+  proposed: string
+  onSave: (text: string) => Promise<unknown>
+  onRefresh: () => void
+}) {
   const [edited, setEdited] = useState(proposed)
 
   const saveMut = useMutation({
-    mutationFn: () => api.updateDocument(doc.id, { document_context: edited }),
+    mutationFn: () => onSave(edited),
     onSuccess: onRefresh,
   })
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4">
       <div className="flex items-center justify-between mb-4">
-        <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Review — Context Updates</div>
+        <div>
+          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Review — {label}</div>
+          <div className="text-xs text-gray-400 mt-0.5">{description}</div>
+        </div>
         <button onClick={() => saveMut.mutate()} disabled={saveMut.isPending}
           className="px-4 py-1.5 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
           {saveMut.isSuccess ? 'Saved' : 'Accept'}
@@ -514,6 +544,30 @@ function ContextUpdatesSection({ doc, proposed, onRefresh }: { doc: DocumentDeta
         </div>
       </div>
     </div>
+  )
+}
+
+function LinkedContextUpdatesSection({ contextRef, proposed, onRefresh }: {
+  contextRef: string
+  proposed: string
+  onRefresh: () => void
+}) {
+  const { data: contextsPage } = useQuery({
+    queryKey: ['contexts'],
+    queryFn: () => api.contexts(),
+    staleTime: 30_000,
+  })
+  const entry = contextsPage?.data?.find(e => e.id === contextRef)
+
+  return (
+    <ContextUpdatesSection
+      label="Shared context"
+      description={entry ? `"${entry.name}" — collection-level notes (the book)` : 'Collection-level notes (the book)'}
+      current={entry?.text}
+      proposed={proposed}
+      onSave={(text) => api.updateContext(contextRef, { text })}
+      onRefresh={onRefresh}
+    />
   )
 }
 

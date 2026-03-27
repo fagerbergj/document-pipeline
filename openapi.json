@@ -433,7 +433,7 @@
             "required": false,
             "schema": {
               "type": "integer",
-              "maximum": 200,
+              "maximum": 1000,
               "minimum": 1,
               "default": 50,
               "title": "Pagesize"
@@ -729,36 +729,6 @@
         ],
         "summary": "List Contexts",
         "operationId": "list_contexts_api_v1_contexts_get",
-        "parameters": [
-          {
-            "name": "pageSize",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 200,
-              "minimum": 1,
-              "default": 50,
-              "title": "Pagesize"
-            }
-          },
-          {
-            "name": "pageToken",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Pagetoken"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -766,16 +736,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PaginatedContexts"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -789,14 +749,14 @@
         "summary": "Create Context",
         "operationId": "create_context_api_v1_contexts_post",
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/CreateContextBody"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -1530,7 +1490,7 @@
           "nextPageToken": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "string"
               },
               {
                 "type": "null"
@@ -1877,9 +1837,24 @@
             "type": "array",
             "title": "Clarification Requests"
           },
-          "context_updates": {
+          "document_context_update": {
             "type": "string",
-            "title": "Context Updates"
+            "title": "Document Context Update"
+          },
+          "linked_context_update": {
+            "type": "string",
+            "title": "Linked Context Update"
+          },
+          "context_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Ref"
           }
         },
         "type": "object",
@@ -1891,7 +1866,8 @@
           "confidence",
           "qa_rounds",
           "clarification_requests",
-          "context_updates"
+          "document_context_update",
+          "linked_context_update"
         ],
         "title": "ReviewDetail"
       },

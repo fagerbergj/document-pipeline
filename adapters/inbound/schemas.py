@@ -311,7 +311,9 @@ class ReviewDetail(BaseModel):
     confidence: str
     qa_rounds: int
     clarification_requests: list[ClarificationRequest]
-    context_updates: str
+    document_context_update: str
+    linked_context_update: str
+    context_ref: str | None = None
 
 
 class JobDetail(BaseModel):

@@ -376,7 +376,7 @@ export type PaginatedJobEvents = {
      *
      * Pass as `afterId` on the next request to fetch subsequent events.
      */
-    nextPageToken?: number | null;
+    nextPageToken?: string | null;
 };
 
 /**
@@ -598,9 +598,17 @@ export type ReviewDetail = {
      */
     clarification_requests: Array<ClarificationRequest>;
     /**
-     * Context Updates
+     * Document Context Update
      */
-    context_updates: string;
+    document_context_update: string;
+    /**
+     * Linked Context Update
+     */
+    linked_context_update: string;
+    /**
+     * Context Ref
+     */
+    context_ref?: string | null;
 };
 
 /**
@@ -1108,27 +1116,9 @@ export type PostJobEventApiV1DocumentsDocIdJobsEventsPostResponse = PostJobEvent
 export type ListContextsApiV1ContextsGetData = {
     body?: never;
     path?: never;
-    query?: {
-        /**
-         * Pagesize
-         */
-        pageSize?: number;
-        /**
-         * Pagetoken
-         */
-        pageToken?: string | null;
-    };
+    query?: never;
     url: '/api/v1/contexts';
 };
-
-export type ListContextsApiV1ContextsGetErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type ListContextsApiV1ContextsGetError = ListContextsApiV1ContextsGetErrors[keyof ListContextsApiV1ContextsGetErrors];
 
 export type ListContextsApiV1ContextsGetResponses = {
     /**

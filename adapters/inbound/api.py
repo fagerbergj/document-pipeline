@@ -92,18 +92,19 @@ def _build_job_detail(doc, config) -> dict:
     )
 
     start_if = (stage_def.start_if or {}) if stage_def else {}
+    has_context = bool(document_context or doc.context_ref)
     context_required = (
         doc.stage_state in ("waiting", "pending")
         and stage_def is not None
         and not has_llm_output
         and (stage_def.require_context or start_if.get("context_provided"))
-        and not document_context
+        and not has_context
     )
     needs_context = (
         doc.stage_state in ("waiting", "pending")
         and stage_def is not None
         and (start_if.get("context_provided") or stage_def.require_context)
-        and not document_context
+        and not has_context
     )
 
     review = None
@@ -137,7 +138,9 @@ def _build_job_detail(doc, config) -> dict:
             "confidence": sdata.get("confidence", ""),
             "qa_rounds": len(sdata.get("qa_history", [])),
             "clarification_requests": sdata.get("clarification_requests", []),
-            "context_updates": _clean_context_updates(sdata.get("context_updates", "")),
+            "document_context_update": _clean_context_updates(sdata.get("document_context_update", "")),
+            "linked_context_update": _clean_context_updates(sdata.get("linked_context_update", "")),
+            "context_ref": doc.context_ref,
         }
 
     stage_names = [s.name for s in config.stages]

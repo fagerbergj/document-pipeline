@@ -828,7 +828,8 @@ components:
         - confidence
         - qa_rounds
         - clarification_requests
-        - context_updates
+        - document_context_update
+        - linked_context_update
       properties:
         stage_name:
           type: string
@@ -852,8 +853,13 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ClarificationRequest'
-        context_updates:
+        document_context_update:
           type: string
+        linked_context_update:
+          type: string
+        context_ref:
+          type: string
+          nullable: true
 
     ClarificationRequest:
       type: object

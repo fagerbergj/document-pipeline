@@ -153,24 +153,23 @@ async def _run_llm_text(
     if stage.prompt:
         raw_template = Path(stage.prompt).read_text(encoding="utf-8")
         existing = doc.stage_data.get(stage.name, {})
-        context = ""
-        if db is not None:
-            raw = await db.kv_get("context_library")
-            if raw:
-                import json as _json
-                entries = _json.loads(raw)
-                for e in entries:
-                    if e.get("name") == "user_context":
-                        context = e.get("text", "").strip()
-                        break
         document_context = doc.stage_data.get("_ingest", {}).get("document_context", "")
+        linked_context = ""
+        linked_context_name = ""
+        if db is not None and doc.context_ref:
+            for e in await db.list_contexts():
+                if e.get("id") == doc.context_ref:
+                    linked_context = e.get("text", "").strip()
+                    linked_context_name = e.get("name", "").strip()
+                    break
         qa_history = existing.get("qa_history", [])
         free_prompt = existing.get("free_prompt", "")
         previous_output = existing.get("clarified_text", "") if qa_history else ""
         prompt_text = Template(raw_template).render(
             qa_history=qa_history,
-            context=context,
             document_context=document_context,
+            linked_context=linked_context,
+            linked_context_name=linked_context_name,
             free_prompt=free_prompt,
             previous_output=previous_output,
         )
@@ -219,7 +218,8 @@ async def _run_llm_text(
             "clarified_text": clarified,
             "confidence": _extract("confidence") or "medium",
             "clarification_requests": _parse_questions(_extract("questions")),
-            "context_updates": _extract("context_updates"),
+            "document_context_update": _extract("document_context_update"),
+            "linked_context_update": _extract("linked_context_update"),
         }
     else:
         cleaned = re.sub(r"^```(?:json)?\s*", "", raw_response.strip())
@@ -252,12 +252,13 @@ async def _run_llm_text(
         new_entry["clarification_requests"] = parsed["clarification_requests"]
     if "confidence" in parsed:
         new_entry["confidence"] = parsed["confidence"]
-    ctx_updates = parsed.get("context_updates", "")
-    if isinstance(ctx_updates, str):
-        ctx_updates = ctx_updates.strip()
     _NULL_VALS = {"none", "null", "n/a", "nothing", "no updates", "no new information", ""}
-    if ctx_updates and ctx_updates.lower() not in _NULL_VALS:
-        new_entry["context_updates"] = ctx_updates
+    for _field in ("document_context_update", "linked_context_update"):
+        val = parsed.get(_field, "")
+        if isinstance(val, str):
+            val = val.strip()
+        if val and val.lower() not in _NULL_VALS:
+            new_entry[_field] = val
 
     stage_data = dict(doc.stage_data)
     stage_data[stage.name] = new_entry
