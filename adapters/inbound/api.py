@@ -328,7 +328,7 @@ async def list_jobs(
     stages: Optional[str] = Query(default=None),
     states: Optional[str] = Query(default=None),
     sort: str = Query(default="pipeline"),
-    pageSize: int = Query(default=50, ge=1, le=200),
+    pageSize: int = Query(default=50, ge=1, le=1000),
     pageToken: Optional[str] = Query(default=None),
 ):
     db = request.app.state.db
