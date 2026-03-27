@@ -57,7 +57,7 @@ async def lifespan(app: FastAPI):
     logger.info("Shutdown complete")
 
 
-app = FastAPI(title="document-pipeline", lifespan=lifespan)
+app = FastAPI(title="document-pipeline", lifespan=lifespan, openapi_version="3.1.0")
 app.include_router(webhook_router)
 app.include_router(api_v1_router)
 

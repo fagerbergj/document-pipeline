@@ -7,10 +7,15 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Request, Query
+from fastapi import APIRouter, Request, Query, UploadFile, File
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from core.services import review as review_service
+from adapters.inbound.schemas import (
+    ApproveBody, ClarifyBody, ContextEntry, Counts, DocumentDetail,
+    DocumentSummary, OkResponse, SaveContextBody, SaveContextEntryBody,
+    StagesResponse, UpdateTitleBody,
+)
 
 router = APIRouter(prefix="/api/v1")
 
@@ -176,24 +181,24 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-@router.get("/pipeline/stages")
+@router.get("/pipeline/stages", response_model=StagesResponse, tags=["pipeline"])
 async def get_stages(request: Request):
     config = request.app.state.pipeline
     return {"stages": [s.name for s in config.stages]}
 
 
-@router.get("/counts")
+@router.get("/counts", response_model=Counts, tags=["pipeline"])
 async def get_counts(request: Request):
     db = request.app.state.db
     counts = await db.status_counts()
     return counts
 
 
-@router.get("/documents")
+@router.get("/documents", response_model=list[DocumentSummary], tags=["documents"])
 async def list_documents(
     request: Request,
-    stages: Optional[str] = Query(default=None),  # comma-separated
-    states: Optional[str] = Query(default=None),  # comma-separated
+    stages: Optional[str] = Query(default=None),
+    states: Optional[str] = Query(default=None),
     sort: str = Query(default="pipeline"),
 ):
     db = request.app.state.db
@@ -204,7 +209,7 @@ async def list_documents(
     return [_doc_summary(doc, config) for doc in docs]
 
 
-@router.get("/documents/{doc_id}")
+@router.get("/documents/{doc_id}", response_model=DocumentDetail, tags=["documents"])
 async def get_document(request: Request, doc_id: str):
     db = request.app.state.db
     config = request.app.state.pipeline
@@ -215,7 +220,7 @@ async def get_document(request: Request, doc_id: str):
     return _build_doc_detail(doc, config, events)
 
 
-@router.get("/documents/{doc_id}/image")
+@router.get("/documents/{doc_id}/image", tags=["documents"])
 async def get_document_image(request: Request, doc_id: str):
     db = request.app.state.db
     doc = await db.get(doc_id)
@@ -224,7 +229,7 @@ async def get_document_image(request: Request, doc_id: str):
     return FileResponse(doc.png_path, media_type="image/png")
 
 
-@router.delete("/documents/{doc_id}")
+@router.delete("/documents/{doc_id}", response_model=OkResponse, tags=["documents"])
 async def delete_document(request: Request, doc_id: str):
     db = request.app.state.db
     doc = await db.get(doc_id)
@@ -234,30 +239,28 @@ async def delete_document(request: Request, doc_id: str):
     return {"ok": True}
 
 
-@router.post("/documents/{doc_id}/title")
-async def update_title(request: Request, doc_id: str):
+@router.post("/documents/{doc_id}/title", response_model=DocumentDetail, tags=["documents"])
+async def update_title(request: Request, doc_id: str, body: UpdateTitleBody):
     db = request.app.state.db
     config = request.app.state.pipeline
     doc = await db.get(doc_id)
     if doc is None:
         return JSONResponse({"error": "not found"}, status_code=404)
-    body = await request.json()
-    new_title = body.get("title", "").strip()
+    new_title = body.title.strip()
     if new_title:
         await db.update(replace(doc, title=new_title, updated_at=_now()))
     doc = await db.get(doc_id)
     return _build_doc_detail(doc, config)
 
 
-@router.post("/documents/{doc_id}/context")
-async def save_context(request: Request, doc_id: str):
+@router.post("/documents/{doc_id}/context", response_model=DocumentDetail, tags=["documents"])
+async def save_context(request: Request, doc_id: str, body: SaveContextBody):
     db = request.app.state.db
     config = request.app.state.pipeline
     doc = await db.get(doc_id)
     if doc is None:
         return JSONResponse({"error": "not found"}, status_code=404)
-    body = await request.json()
-    document_context = body.get("document_context", "").strip()
+    document_context = body.document_context.strip()
     stage_data = dict(doc.stage_data)
     ingest = dict(stage_data.get("_ingest", {}))
     ingest["document_context"] = document_context
@@ -267,15 +270,14 @@ async def save_context(request: Request, doc_id: str):
     return _build_doc_detail(doc, config)
 
 
-@router.post("/documents/{doc_id}/set-context")
-async def set_context_and_run(request: Request, doc_id: str):
+@router.post("/documents/{doc_id}/set-context", response_model=DocumentDetail, tags=["documents"])
+async def set_context_and_run(request: Request, doc_id: str, body: SaveContextBody):
     db = request.app.state.db
     config = request.app.state.pipeline
     doc = await db.get(doc_id)
     if doc is None:
         return JSONResponse({"error": "not found"}, status_code=404)
-    body = await request.json()
-    document_context = body.get("document_context", "").strip()
+    document_context = body.document_context.strip()
     stage_data = dict(doc.stage_data)
     ingest = dict(stage_data.get("_ingest", {}))
     ingest["document_context"] = document_context
@@ -299,15 +301,14 @@ async def set_context_and_run(request: Request, doc_id: str):
     return _build_doc_detail(doc, config)
 
 
-@router.post("/documents/{doc_id}/approve")
-async def approve_document(request: Request, doc_id: str):
+@router.post("/documents/{doc_id}/approve", response_model=DocumentDetail, tags=["documents"])
+async def approve_document(request: Request, doc_id: str, body: ApproveBody):
     db = request.app.state.db
     config = request.app.state.pipeline
     doc = await db.get(doc_id)
     if doc is None:
         return JSONResponse({"error": "not found"}, status_code=404)
-    body = await request.json()
-    edited_text = body.get("edited_text", "").strip()
+    edited_text = body.edited_text.strip()
     stage_def = config.get_stage(doc.current_stage)
     if edited_text and stage_def and stage_def.output:
         stage_data = dict(doc.stage_data)
@@ -320,7 +321,7 @@ async def approve_document(request: Request, doc_id: str):
     return _build_doc_detail(updated, config)
 
 
-@router.post("/documents/{doc_id}/reject")
+@router.post("/documents/{doc_id}/reject", response_model=DocumentDetail, tags=["documents"])
 async def reject_document(request: Request, doc_id: str):
     db = request.app.state.db
     config = request.app.state.pipeline
@@ -331,17 +332,16 @@ async def reject_document(request: Request, doc_id: str):
     return _build_doc_detail(updated, config)
 
 
-@router.post("/documents/{doc_id}/clarify")
-async def clarify_document(request: Request, doc_id: str):
+@router.post("/documents/{doc_id}/clarify", response_model=DocumentDetail, tags=["documents"])
+async def clarify_document(request: Request, doc_id: str, body: ClarifyBody):
     db = request.app.state.db
     config = request.app.state.pipeline
     doc = await db.get(doc_id)
     if doc is None:
         return JSONResponse({"error": "not found"}, status_code=404)
-    body = await request.json()
-    answers: dict = body.get("answers", {})
-    free_prompt: str = body.get("free_prompt", "").strip()
-    edited_text: str = body.get("edited_text", "").strip()
+    answers = body.answers
+    free_prompt = body.free_prompt.strip()
+    edited_text = body.edited_text.strip()
     stage_name = doc.current_stage
     existing_requests = (doc.stage_data.get(stage_name) or {}).get("clarification_requests", [])
     clarification_responses = [
@@ -354,8 +354,7 @@ async def clarify_document(request: Request, doc_id: str):
     return _build_doc_detail(updated, config)
 
 
-
-@router.delete("/documents/{doc_id}/errors")
+@router.delete("/documents/{doc_id}/errors", response_model=DocumentDetail, tags=["documents"])
 async def clear_errors(request: Request, doc_id: str):
     db = request.app.state.db
     config = request.app.state.pipeline
@@ -367,7 +366,7 @@ async def clear_errors(request: Request, doc_id: str):
     return _build_doc_detail(doc, config, events)
 
 
-@router.post("/documents/{doc_id}/stop")
+@router.post("/documents/{doc_id}/stop", response_model=DocumentDetail, tags=["documents"])
 async def stop_document(request: Request, doc_id: str):
     db = request.app.state.db
     config = request.app.state.pipeline
@@ -381,7 +380,7 @@ async def stop_document(request: Request, doc_id: str):
     return _build_doc_detail(updated, config)
 
 
-@router.post("/documents/{doc_id}/retry")
+@router.post("/documents/{doc_id}/retry", response_model=DocumentDetail, tags=["documents"])
 async def retry_document(request: Request, doc_id: str):
     db = request.app.state.db
     config = request.app.state.pipeline
@@ -395,7 +394,7 @@ async def retry_document(request: Request, doc_id: str):
     return _build_doc_detail(updated, config)
 
 
-@router.post("/documents/{doc_id}/replay/{stage_name}")
+@router.post("/documents/{doc_id}/replay/{stage_name}", response_model=DocumentDetail, tags=["documents"])
 async def replay_document(request: Request, doc_id: str, stage_name: str):
     db = request.app.state.db
     config = request.app.state.pipeline
@@ -416,19 +415,18 @@ async def replay_document(request: Request, doc_id: str, stage_name: str):
     return _build_doc_detail(updated, config)
 
 
-@router.get("/context-library")
+@router.get("/context-library", response_model=list[ContextEntry], tags=["context"])
 async def get_context_library(request: Request):
     db = request.app.state.db
     entries = await _load_context_library(db)
     return entries
 
 
-@router.post("/context-library")
-async def save_context_entry(request: Request):
+@router.post("/context-library", response_model=list[ContextEntry], tags=["context"])
+async def save_context_entry(request: Request, body: SaveContextEntryBody):
     db = request.app.state.db
-    body = await request.json()
-    name = body.get("name", "").strip()
-    text = body.get("text", "").strip()
+    name = body.name.strip()
+    text = body.text.strip()
     if name and text:
         entries = await _load_context_library(db)
         for e in entries:
@@ -441,7 +439,7 @@ async def save_context_entry(request: Request):
     return await _load_context_library(db)
 
 
-@router.delete("/context-library/{name}")
+@router.delete("/context-library/{name}", response_model=list[ContextEntry], tags=["context"])
 async def delete_context_entry(request: Request, name: str):
     db = request.app.state.db
     entries = [e for e in await _load_context_library(db) if e["name"] != name]
@@ -449,7 +447,7 @@ async def delete_context_entry(request: Request, name: str):
     return entries
 
 
-@router.post("/query")
+@router.post("/query", tags=["query"])
 async def query_knowledge_base(request: Request):
     """RAG chat: embed latest user message → search Qdrant → stream LLM reply as SSE."""
     from adapters.outbound import ollama as _ollama
@@ -590,7 +588,7 @@ async def query_knowledge_base(request: Request):
     )
 
 
-@router.get("/documents/{doc_id}/stream")
+@router.get("/documents/{doc_id}/stream", tags=["documents"])
 async def doc_token_stream(request: Request, doc_id: str):
     """SSE endpoint: streams LLM tokens while the document is running, then sends 'done'."""
     from adapters.outbound import streams as _streams
