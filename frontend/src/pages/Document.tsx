@@ -120,10 +120,10 @@ function ContextSection({ doc, job, onRefresh }: { doc: DocumentDetail; job: Job
   const hasContext = !!(doc.context_ref || doc.document_context)
 
   useEffect(() => {
-    if (editing || required) {
+    if (editing || required || doc.context_ref) {
       api.contexts().then(p => setEntries(p.data ?? [])).catch(() => {})
     }
-  }, [editing, required])
+  }, [editing, required, doc.context_ref])
 
   function openEdit() {
     setCtx(doc.document_context ?? '')
