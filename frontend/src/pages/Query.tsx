@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -24,7 +25,24 @@ export default function Query() {
   const [error, setError] = useState('')
   const [phase, setPhase] = useState<'idle' | 'searching' | 'answering' | 'done'>('idle')
   const [sourcesOpen, setSourcesOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
+
+  function handleCopy() {
+    navigator.clipboard.writeText(answer)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  function handleDownload() {
+    const blob = new Blob([answer], { type: 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'answer.md'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   const { data: contextLibrary } = useQuery<ContextEntry[]>({
     queryKey: ['context-library'],
@@ -211,7 +229,25 @@ export default function Query() {
       {/* Answer */}
       {(answer || (loading && phase === 'answering')) && (
         <div>
-          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Answer</h2>
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Answer</h2>
+            {answer && !loading && (
+              <div className="flex gap-2">
+                <button
+                  onClick={handleCopy}
+                  className="text-xs text-gray-500 hover:text-gray-800 border border-gray-200 rounded px-2 py-1 transition-colors"
+                >
+                  {copied ? 'Copied!' : 'Copy'}
+                </button>
+                <button
+                  onClick={handleDownload}
+                  className="text-xs text-gray-500 hover:text-gray-800 border border-gray-200 rounded px-2 py-1 transition-colors"
+                >
+                  Download
+                </button>
+              </div>
+            )}
+          </div>
           <div className="rounded-md border border-gray-200 bg-white px-5 py-4 prose prose-sm max-w-none">
             <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{answer || ' '}</ReactMarkdown>
             {loading && phase === 'answering' && (
@@ -234,14 +270,14 @@ export default function Query() {
           {sourcesOpen && (
             <div className="mt-2 space-y-2">
               {sources.map((s, i) => (
-                <div key={i} className="rounded-md border border-gray-200 bg-white px-4 py-3">
+                <Link key={i} to={`/documents/${s.doc_id}`} className="block rounded-md border border-gray-200 bg-white px-4 py-3 hover:border-blue-300 hover:bg-blue-50 transition-colors">
                   <div className="flex items-start justify-between gap-2">
                     <span className="text-sm font-medium text-gray-800">{s.title}</span>
                     <span className="text-xs text-gray-400 whitespace-nowrap">score {s.score.toFixed(3)}</span>
                   </div>
                   {s.date_month && <div className="text-xs text-gray-400 mt-0.5">{s.date_month}</div>}
                   {s.summary && <div className="text-xs text-gray-600 mt-1 line-clamp-2">{s.summary}</div>}
-                </div>
+                </Link>
               ))}
             </div>
           )}
