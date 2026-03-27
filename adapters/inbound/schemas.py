@@ -123,7 +123,7 @@ class JobEventRecord(BaseModel):
 
 class PaginatedJobEvents(BaseModel):
     data: list[JobEventRecord]
-    next_page_token: int | None = Field(
+    next_page_token: str | None = Field(
         None,
         alias='nextPageToken',
         description='Pass as `afterId` on the next request to fetch subsequent events.',

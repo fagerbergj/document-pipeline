@@ -802,9 +802,9 @@ components:
           items:
             $ref: '#/components/schemas/JobEventRecord'
         nextPageToken:
-          type: integer
+          type: string
           nullable: true
-          description: Pass as `afterId` on the next request to fetch subsequent events.
+          description: Page token to pass on the next request to fetch subsequent events.
 
     ReplayStage:
       type: object

@@ -613,7 +613,7 @@ async def create_chat(request: Request, body: ChatRequest):
     from adapters.outbound import ollama as _ollama
     from adapters.outbound import qdrant as _qdrant
 
-    messages = [m.model_dump() for m in body.messages]
+    messages = [m.model_dump(mode='json') for m in body.messages]
     context = body.context.strip()
     top_k = body.top_k
 
