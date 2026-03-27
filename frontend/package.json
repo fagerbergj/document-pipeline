@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "generate": "openapi-ts"
+    "generate": "python3 ../export_schema.py && openapi-ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.0",

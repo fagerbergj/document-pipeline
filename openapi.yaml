@@ -1,0 +1,946 @@
+openapi: 3.1.0
+
+info:
+  title: document-pipeline
+  version: 0.1.0
+  description: |
+    Ingests handwritten notes from a reMarkable tablet, runs them through a
+    configurable OCR → clarify → classify → embed pipeline, and stores the
+    results in a vector database for RAG queries.
+
+    Documents move through pipeline stages asynchronously. The frontend polls
+    for state changes and streams live LLM output via Server-Sent Events.
+
+tags:
+  - name: pipeline
+    description: Pipeline configuration and aggregate status counts.
+  - name: documents
+    description: Document lifecycle — create, inspect, review, and control pipeline stages.
+  - name: context
+    description: Reusable context snippets that can be attached to documents to guide LLM stages.
+  - name: query
+    description: RAG chat over the embedded knowledge base.
+  - name: ingest
+    description: Webhook endpoint for reMarkable tablet push notifications.
+
+paths:
+
+  # ── Ingest ──────────────────────────────────────────────────────────────────
+
+  /webhook:
+    post:
+      tags: [ingest]
+      summary: Receive document from reMarkable
+      description: |
+        Receives a document pushed by rmfakecloud from the reMarkable tablet.
+        Expects `multipart/form-data` with two fields:
+        - `data`: JSON string containing document metadata and destination names.
+        - `attachment`: rendered PNG of the current sheet.
+
+        The document is persisted immediately and OCR runs asynchronously.
+        Returns 200 as soon as the file is saved (or if it is a duplicate).
+      operationId: receiveWebhook
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                data:
+                  type: string
+                  description: JSON-encoded document metadata from rmfakecloud.
+                attachment:
+                  type: string
+                  format: binary
+                  description: PNG image of the reMarkable sheet.
+      responses:
+        '200':
+          description: Document accepted (or silently skipped as a duplicate).
+
+  # ── Pipeline ─────────────────────────────────────────────────────────────────
+
+  /api/v1/pipeline/stages:
+    get:
+      tags: [pipeline]
+      summary: List pipeline stages
+      description: Returns the ordered list of stage names as defined in `config/pipeline.yaml`.
+      operationId: listStages
+      responses:
+        '200':
+          description: Ordered list of stage names.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StagesResponse'
+
+  /api/v1/counts:
+    get:
+      tags: [pipeline]
+      summary: Get document counts
+      description: Returns counts grouped by stage state and by current pipeline stage.
+      operationId: getCounts
+      responses:
+        '200':
+          description: Count breakdown by state and stage.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Counts'
+
+  # ── Documents ────────────────────────────────────────────────────────────────
+
+  /api/v1/documents:
+    get:
+      tags: [documents]
+      summary: List documents
+      description: Returns all documents, optionally filtered by stage and/or state.
+      operationId: listDocuments
+      parameters:
+        - $ref: '#/components/parameters/stagesFilter'
+        - $ref: '#/components/parameters/statesFilter'
+        - $ref: '#/components/parameters/sortOrder'
+      responses:
+        '200':
+          description: Array of document summaries.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DocumentSummary'
+
+  /api/v1/documents/{doc_id}:
+    parameters:
+      - $ref: '#/components/parameters/doc_id'
+    get:
+      tags: [documents]
+      summary: Get document detail
+      description: Returns full document state including stage outputs, review data, and event history.
+      operationId: getDocument
+      responses:
+        '200':
+          description: Full document detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [documents]
+      summary: Delete document
+      description: Permanently deletes the document and all associated stage data and events.
+      operationId: deleteDocument
+      responses:
+        '200':
+          description: Document deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/documents/{doc_id}/image:
+    parameters:
+      - $ref: '#/components/parameters/doc_id'
+    get:
+      tags: [documents]
+      summary: Get document image
+      description: Returns the original PNG image captured from the reMarkable tablet.
+      operationId: getDocumentImage
+      responses:
+        '200':
+          description: PNG image bytes.
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/documents/{doc_id}/stream:
+    parameters:
+      - $ref: '#/components/parameters/doc_id'
+    get:
+      tags: [documents]
+      summary: Stream LLM tokens (SSE)
+      description: |
+        Server-Sent Events stream of LLM output tokens while the document is
+        in the `running` state. Emits `token` events with `{"text": "..."}` payloads
+        and a final `done` event when generation completes or state changes.
+      operationId: streamDocumentTokens
+      responses:
+        '200':
+          description: SSE stream of token events.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/documents/{doc_id}/title:
+    parameters:
+      - $ref: '#/components/parameters/doc_id'
+    post:
+      tags: [documents]
+      summary: Update document title
+      operationId: updateDocumentTitle
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTitleBody'
+      responses:
+        '200':
+          description: Updated document detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/documents/{doc_id}/context:
+    parameters:
+      - $ref: '#/components/parameters/doc_id'
+    post:
+      tags: [documents]
+      summary: Save document context
+      description: |
+        Saves free-text context for the document without advancing the pipeline.
+        Use this to attach notes, hints, or background information that LLM stages
+        will receive in their prompts.
+      operationId: saveDocumentContext
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveContextBody'
+      responses:
+        '200':
+          description: Updated document detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/documents/{doc_id}/set-context:
+    parameters:
+      - $ref: '#/components/parameters/doc_id'
+    post:
+      tags: [documents]
+      summary: Save context and advance pipeline
+      description: |
+        Saves context and, if the document is `waiting` at a context-gated stage
+        with no LLM output yet, transitions the stage state back to `pending` so
+        the worker picks it up immediately.
+      operationId: setDocumentContextAndRun
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveContextBody'
+      responses:
+        '200':
+          description: Updated document detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/documents/{doc_id}/approve:
+    parameters:
+      - $ref: '#/components/parameters/doc_id'
+    post:
+      tags: [documents]
+      summary: Approve LLM output
+      description: |
+        Approves the current stage's LLM output and advances the document to the
+        next pipeline stage. Optionally accepts an edited version of the output
+        which replaces the LLM's text before advancing.
+      operationId: approveDocument
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApproveBody'
+      responses:
+        '200':
+          description: Updated document detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/documents/{doc_id}/reject:
+    parameters:
+      - $ref: '#/components/parameters/doc_id'
+    post:
+      tags: [documents]
+      summary: Reject LLM output and retry
+      description: Discards the current stage output and resets the stage to `pending` for re-processing.
+      operationId: rejectDocument
+      responses:
+        '200':
+          description: Updated document detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/documents/{doc_id}/clarify:
+    parameters:
+      - $ref: '#/components/parameters/doc_id'
+    post:
+      tags: [documents]
+      summary: Submit clarification answers
+      description: |
+        Provides answers to the LLM's clarification questions and/or a free-form
+        follow-up prompt, then retries the current stage with this additional context.
+      operationId: clarifyDocument
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClarifyBody'
+      responses:
+        '200':
+          description: Updated document detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/documents/{doc_id}/errors:
+    parameters:
+      - $ref: '#/components/parameters/doc_id'
+    delete:
+      tags: [documents]
+      summary: Clear stage errors
+      description: Removes all `failed` events from the document's history, allowing retries without the error backoff counter.
+      operationId: clearDocumentErrors
+      responses:
+        '200':
+          description: Updated document detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/documents/{doc_id}/stop:
+    parameters:
+      - $ref: '#/components/parameters/doc_id'
+    post:
+      tags: [documents]
+      summary: Stop processing
+      description: Forcibly sets the document's stage state to `error`, halting pipeline processing.
+      operationId: stopDocument
+      responses:
+        '200':
+          description: Updated document detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/documents/{doc_id}/retry:
+    parameters:
+      - $ref: '#/components/parameters/doc_id'
+    post:
+      tags: [documents]
+      summary: Retry current stage
+      description: Resets the current stage state from `error` or `waiting` back to `pending`.
+      operationId: retryDocument
+      responses:
+        '200':
+          description: Updated document detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/documents/{doc_id}/replay/{stage_name}:
+    parameters:
+      - $ref: '#/components/parameters/doc_id'
+      - name: stage_name
+        in: path
+        required: true
+        description: Name of the pipeline stage to rewind to.
+        schema:
+          type: string
+    post:
+      tags: [documents]
+      summary: Replay from a previous stage
+      description: |
+        Rewinds the document to a completed stage and clears all subsequent stage
+        data, then sets state to `pending` so the worker re-runs from that point.
+      operationId: replayDocument
+      responses:
+        '200':
+          description: Updated document detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Context library ──────────────────────────────────────────────────────────
+
+  /api/v1/context-library:
+    get:
+      tags: [context]
+      summary: List saved contexts
+      description: Returns all saved context entries from the context library.
+      operationId: listContextEntries
+      responses:
+        '200':
+          description: Array of context entries.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ContextEntry'
+    post:
+      tags: [context]
+      summary: Create or update a context entry
+      description: Upserts a named context entry. If an entry with the same name exists it is overwritten.
+      operationId: upsertContextEntry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveContextEntryBody'
+      responses:
+        '200':
+          description: Updated list of all context entries.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ContextEntry'
+
+  /api/v1/context-library/{name}:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        description: Name of the context entry to delete.
+        schema:
+          type: string
+    delete:
+      tags: [context]
+      summary: Delete a context entry
+      operationId: deleteContextEntry
+      responses:
+        '200':
+          description: Updated list of all remaining context entries.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ContextEntry'
+
+  # ── Query ────────────────────────────────────────────────────────────────────
+
+  /api/v1/query:
+    post:
+      tags: [query]
+      summary: RAG chat query
+      description: |
+        Embeds the latest user message, searches the Qdrant vector store for
+        relevant notes, builds a system prompt from the retrieved context, and
+        streams the LLM response back as Server-Sent Events.
+
+        SSE event types:
+        - `sources`: JSON array of `SourceDoc` objects retrieved from the vector store.
+        - `token`: `{"text": "..."}` — one LLM output token.
+        - `done`: `{}` — generation complete.
+        - `error`: `{"error": "..."}` — something went wrong.
+      operationId: queryKnowledgeBase
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueryRequest'
+      responses:
+        '200':
+          description: SSE stream of sources, tokens, and completion events.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+components:
+
+  # ── Reusable parameters ───────────────────────────────────────────────────────
+
+  parameters:
+    doc_id:
+      name: doc_id
+      in: path
+      required: true
+      description: UUID of the document.
+      schema:
+        type: string
+        format: uuid
+
+    stagesFilter:
+      name: stages
+      in: query
+      required: false
+      description: Comma-separated list of stage names to filter by.
+      schema:
+        type: string
+        example: ocr,clarify
+
+    statesFilter:
+      name: states
+      in: query
+      required: false
+      description: Comma-separated list of stage states to filter by.
+      schema:
+        type: string
+        example: pending,waiting
+
+    sortOrder:
+      name: sort
+      in: query
+      required: false
+      description: Sort order for the document list.
+      schema:
+        type: string
+        default: pipeline
+        enum: [pipeline, title_asc, title_desc, created_asc, created_desc]
+
+  # ── Reusable responses ────────────────────────────────────────────────────────
+
+  responses:
+    NotFound:
+      description: The requested resource was not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  # ── Schemas ───────────────────────────────────────────────────────────────────
+
+  schemas:
+
+    # — Shared primitives ——————————————————————————————————————————————————————
+
+    StageState:
+      type: string
+      description: Current execution state of a document within its active pipeline stage.
+      enum: [pending, running, waiting, error, done]
+
+    ErrorResponse:
+      type: object
+      description: Generic error body.
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: Human-readable error message.
+
+    OkResponse:
+      type: object
+      description: Simple success acknowledgement.
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+
+    # — Pipeline ————————————————————————————————————————————————————————————————
+
+    StagesResponse:
+      type: object
+      description: Ordered list of pipeline stage names.
+      required: [stages]
+      properties:
+        stages:
+          type: array
+          items:
+            type: string
+          description: Stage names in execution order.
+
+    Counts:
+      type: object
+      description: Document counts broken down by state and by current stage.
+      properties:
+        pending:
+          type: integer
+          description: Documents queued for processing.
+        running:
+          type: integer
+          description: Documents actively being processed.
+        waiting:
+          type: integer
+          description: Documents paused for human review or context input.
+        error:
+          type: integer
+          description: Documents that encountered a processing error.
+        done:
+          type: integer
+          description: Documents that have completed all pipeline stages.
+        by_stage:
+          type: object
+          description: Count of documents at each named pipeline stage.
+          additionalProperties:
+            type: integer
+
+    # — Documents ————————————————————————————————————————————————————————————————
+
+    DocumentSummary:
+      type: object
+      description: Lightweight document representation used in list views.
+      required: [id, current_stage, stage_state, created_at, updated_at, needs_context]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique document identifier.
+        title:
+          type: string
+          nullable: true
+          description: Human-readable title, extracted from metadata or user-provided.
+        current_stage:
+          type: string
+          description: Name of the pipeline stage the document is currently at.
+        stage_state:
+          $ref: '#/components/schemas/StageState'
+        created_at:
+          type: string
+          format: date-time
+          description: When the document was first ingested.
+        updated_at:
+          type: string
+          format: date-time
+          description: When the document was last modified.
+        needs_context:
+          type: boolean
+          description: True if the current stage is blocked waiting for context input.
+
+    DocumentDetail:
+      type: object
+      description: Full document state including stage outputs, review data, and event history.
+      required:
+        - id
+        - current_stage
+        - stage_state
+        - created_at
+        - updated_at
+        - document_context
+        - context_required
+        - stage_displays
+        - replay_stages
+        - needs_context
+        - events
+        - has_image
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          nullable: true
+        current_stage:
+          type: string
+        stage_state:
+          $ref: '#/components/schemas/StageState'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        document_context:
+          type: string
+          description: Free-text context attached by the user to guide LLM stages.
+        context_required:
+          type: boolean
+          description: True when the current stage requires context before it can run.
+        stage_displays:
+          type: array
+          items:
+            $ref: '#/components/schemas/StageDisplay'
+          description: Completed stage outputs available for display.
+        review:
+          $ref: '#/components/schemas/ReviewDetail'
+          nullable: true
+          description: Present when the document is waiting for human review.
+        replay_stages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReplayStage'
+          description: Stages that can be rewound to.
+        needs_context:
+          type: boolean
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/StageEvent'
+          description: Chronological log of pipeline events.
+        has_image:
+          type: boolean
+          description: True if a source PNG image is available for this document.
+
+    StageDisplay:
+      type: object
+      description: Named output fields produced by a completed pipeline stage.
+      required: [name, fields]
+      properties:
+        name:
+          type: string
+          description: Pipeline stage name (e.g. `ocr`, `clarify`).
+        fields:
+          type: object
+          description: Map of field name → text value for each output produced by the stage.
+          additionalProperties:
+            type: string
+
+    StageEvent:
+      type: object
+      description: A single recorded event in a document's pipeline history.
+      required: [timestamp, stage, event_type]
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        stage:
+          type: string
+          description: The pipeline stage this event belongs to.
+        event_type:
+          type: string
+          description: Event identifier (e.g. `received`, `synced`, `failed`, `context_set`).
+        data:
+          type: object
+          nullable: true
+          description: Optional structured payload (e.g. `{"error": "..."}` or `{"destination": "qdrant"}`).
+          additionalProperties: true
+
+    ReplayStage:
+      type: object
+      description: A completed stage that the document can be rewound to.
+      required: [name]
+      properties:
+        name:
+          type: string
+
+    ReviewDetail:
+      type: object
+      description: |
+        LLM review data shown when a document is in `waiting` state at an
+        `llm_text` stage. Contains the input, output, and any clarification
+        questions the LLM raised.
+      required:
+        - stage_name
+        - input_text
+        - output_text
+        - is_single_output
+        - confidence
+        - qa_rounds
+        - clarification_requests
+        - context_updates
+      properties:
+        stage_name:
+          type: string
+        input_field:
+          type: string
+          nullable: true
+          description: Name of the stage_data field used as LLM input.
+        output_field:
+          type: string
+          nullable: true
+          description: Name of the stage_data field written by the LLM.
+        input_text:
+          type: string
+          description: The text that was fed into the LLM.
+        output_text:
+          type: string
+          description: The text produced by the LLM.
+        is_single_output:
+          type: boolean
+          description: True when the stage writes a single output field (vs. multiple structured fields).
+        confidence:
+          type: string
+          description: LLM self-reported confidence level (e.g. `high`, `medium`, `low`).
+        qa_rounds:
+          type: integer
+          description: Number of clarification rounds completed so far.
+        clarification_requests:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClarificationRequest'
+        context_updates:
+          type: string
+          description: Additional context the LLM suggests saving for future runs.
+
+    ClarificationRequest:
+      type: object
+      description: A specific segment of the document that the LLM needs clarification on.
+      required: [segment, question]
+      properties:
+        segment:
+          type: string
+          description: The portion of the text that is unclear.
+        question:
+          type: string
+          description: What the LLM is asking about this segment.
+
+    # — Context library ————————————————————————————————————————————————————————
+
+    ContextEntry:
+      type: object
+      description: A named reusable context snippet from the context library.
+      required: [name, text]
+      properties:
+        name:
+          type: string
+          description: Unique display name for this context entry.
+        text:
+          type: string
+          description: The context text that will be injected into LLM prompts.
+
+    # — Request bodies —————————————————————————————————————————————————————————
+
+    UpdateTitleBody:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+          description: New title for the document.
+
+    SaveContextBody:
+      type: object
+      properties:
+        document_context:
+          type: string
+          default: ''
+          description: Free-text context to attach to the document.
+
+    SaveContextEntryBody:
+      type: object
+      required: [name, text]
+      properties:
+        name:
+          type: string
+          description: Unique name for this context entry.
+        text:
+          type: string
+          description: Context text content.
+
+    ApproveBody:
+      type: object
+      properties:
+        edited_text:
+          type: string
+          default: ''
+          description: |
+            Optional edited version of the LLM output. If provided and the current
+            stage has a single output field, this replaces the LLM's text before advancing.
+
+    ClarifyBody:
+      type: object
+      properties:
+        answers:
+          type: object
+          description: Map of clarification request index (as string) → answer text.
+          additionalProperties:
+            type: string
+          default: {}
+        free_prompt:
+          type: string
+          default: ''
+          description: Free-form follow-up instruction sent alongside the answers.
+        edited_text:
+          type: string
+          default: ''
+          description: Optional replacement for the LLM's previous output.
+
+    # — Query ——————————————————————————————————————————————————————————————————
+
+    QueryRequest:
+      type: object
+      description: RAG chat request body.
+      required: [messages]
+      properties:
+        messages:
+          type: array
+          description: Conversation history. The last `user` message is used for vector search.
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+        context:
+          type: string
+          default: ''
+          description: Optional free-text context injected into the system prompt alongside retrieved notes.
+        top_k:
+          type: integer
+          default: 5
+          minimum: 1
+          maximum: 20
+          description: Number of vector search results to retrieve per turn.
+
+    ChatMessage:
+      type: object
+      description: A single message in a chat conversation.
+      required: [role, content]
+      properties:
+        role:
+          type: string
+          enum: [user, assistant]
+          description: Who sent this message.
+        content:
+          type: string
+          description: Message text.
+
+    SourceDoc:
+      type: object
+      description: A document retrieved from the vector store as a RAG source.
+      required: [doc_id, title, score]
+      properties:
+        doc_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        summary:
+          type: string
+        date_month:
+          type: string
+          description: YYYY-MM month label for the document.
+        score:
+          type: number
+          format: float
+          description: Cosine similarity score (0–1).

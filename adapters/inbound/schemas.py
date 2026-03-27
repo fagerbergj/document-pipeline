@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Optional  # Any used by StageEvent.data
 from pydantic import BaseModel
 
 
@@ -116,7 +116,20 @@ class SaveContextEntryBody(BaseModel):
     text: str
 
 
+class ChatMessage(BaseModel):
+    role: str  # "user" | "assistant"
+    content: str
+
+
+class SourceDoc(BaseModel):
+    doc_id: str
+    title: str
+    summary: str = ""
+    date_month: str = ""
+    score: float
+
+
 class QueryRequest(BaseModel):
-    messages: list[dict[str, Any]]
+    messages: list[ChatMessage]
     context: str = ""
     top_k: int = 5

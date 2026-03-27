@@ -5,6 +5,6 @@ export default defineConfig({
   input: '../openapi.json',
   output: {
     path: 'src/generated',
-    format: 'prettier',
+    postProcess: ['prettier'],
   },
 })
