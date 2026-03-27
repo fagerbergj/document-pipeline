@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import rehypeRaw from 'rehype-raw'
 import { api } from '../api'
 import StatusBadge from '../components/StatusBadge'
 import LoadingSpinner from '../components/LoadingSpinner'
@@ -228,7 +229,7 @@ function ArtifactFields({ fields }: { fields: Record<string, string> }) {
           </div>
           {isMarkdown(value) && !raw ? (
             <div className="prose prose-sm prose-gray max-w-none bg-gray-50 border border-gray-100 rounded-lg px-4 py-3 max-h-96 overflow-y-auto">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{value.replace(/<!--[\s\S]*?-->/g, '')}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{value.replace(/<!--[\s\S]*?-->/g, '')}</ReactMarkdown>
             </div>
           ) : (
             <pre className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2 text-xs font-mono whitespace-pre-wrap max-h-96 overflow-y-auto">{value}</pre>

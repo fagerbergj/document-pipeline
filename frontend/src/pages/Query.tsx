@@ -2,6 +2,7 @@ import { useState, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import rehypeRaw from 'rehype-raw'
 import { api } from '../api'
 import type { ContextEntry } from '../types'
 
@@ -212,7 +213,7 @@ export default function Query() {
         <div>
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Answer</h2>
           <div className="rounded-md border border-gray-200 bg-white px-5 py-4 prose prose-sm max-w-none">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{answer || ' '}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{answer || ' '}</ReactMarkdown>
             {loading && phase === 'answering' && (
               <span className="inline-block w-1.5 h-4 bg-gray-400 animate-pulse ml-0.5 align-middle" />
             )}
