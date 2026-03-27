@@ -35,8 +35,6 @@ stages:
         type: text
     start_if:
       context_provided: true
-    continue_if:
-      - confidence: high
 
   - name: embed
     type: embed
