@@ -451,27 +451,29 @@ async def delete_context_entry(request: Request, name: str):
 
 @router.post("/query")
 async def query_knowledge_base(request: Request):
-    """RAG query: embed → search Qdrant → stream LLM answer as SSE."""
+    """RAG chat: embed latest user message → search Qdrant → stream LLM reply as SSE."""
     from adapters.outbound import ollama as _ollama
     from adapters.outbound import qdrant as _qdrant
 
     body = await request.json()
-    query: str = (body.get("query") or "").strip()
+    # messages: [{role: "user"|"assistant", content: str}]
+    messages: list[dict] = body.get("messages") or []
     context: str = (body.get("context") or "").strip()
     top_k: int = int(body.get("top_k") or 5)
 
-    if not query:
-        return JSONResponse({"error": "query is required"}, status_code=400)
+    # Latest user message is the one to embed + search
+    user_messages = [m for m in messages if m.get("role") == "user"]
+    if not user_messages:
+        return JSONResponse({"error": "no user message provided"}, status_code=400)
+    latest_query = user_messages[-1].get("content", "").strip()
 
     ollama_base_url: str = request.app.state.ollama_base_url
     config = request.app.state.pipeline
 
-    # Resolve embed + query models from config/env
     embed_stage = next((s for s in config.stages if s.type == "embed"), None)
     embed_model: str = (embed_stage.model if embed_stage else None) or _os.environ.get("EMBED_MODEL", "nomic-embed-text:v1.5")
     query_model: str = _os.environ.get("QUERY_MODEL") or _os.environ.get("CLARIFY_MODEL", "qwen3:4b")
 
-    # Resolve Qdrant config from first embed destination
     qdrant_url: str = ""
     qdrant_collection: str = "remarkable"
     qdrant_api_key: str | None = None
@@ -484,9 +486,9 @@ async def query_knowledge_base(request: Request):
                 break
 
     async def generate():
-        # 1. Embed the query
+        # 1. Embed the latest user message
         try:
-            query_vector = await _ollama.generate_embed(ollama_base_url, embed_model, query)
+            query_vector = await _ollama.generate_embed(ollama_base_url, embed_model, latest_query)
         except Exception as exc:
             yield f"event: error\ndata: {_json.dumps({'error': str(exc)})}\n\n"
             return
@@ -499,7 +501,7 @@ async def query_knowledge_base(request: Request):
             except Exception as exc:
                 logger.warning("Qdrant search failed: %s", exc)
 
-        # 3. Emit sources event
+        # 3. Emit sources
         source_summaries = [
             {
                 "doc_id": s.get("doc_id", ""),
@@ -512,7 +514,7 @@ async def query_knowledge_base(request: Request):
         ]
         yield f"event: sources\ndata: {_json.dumps(source_summaries)}\n\n"
 
-        # 4. Build RAG prompt
+        # 4. Build system message with RAG context (refreshed each turn)
         notes_block = ""
         for s in sources:
             title = s.get("title") or "Untitled"
@@ -521,18 +523,22 @@ async def query_knowledge_base(request: Request):
             header = f"Title: {title}" + (f" ({date})" if date else "")
             notes_block += f"---\n{header}\n{text}\n\n"
 
-        ctx_block = f"\nAdditional context provided by the user:\n{context}\n" if context else ""
-        notes_section = f"\nRetrieved notes:\n{notes_block}" if notes_block else "\n(No notes were found in the knowledge base.)\n"
-        prompt = (
-            "You are a helpful assistant with access to a personal notes knowledge base.\n"
-            "Answer the question based on the retrieved notes below. "
-            "If the notes don't contain enough information to answer, say so.\n"
+        ctx_block = f"\nAdditional context:\n{context}\n" if context else ""
+        notes_section = f"\nRetrieved notes (most relevant to the latest question):\n{notes_block}" if notes_block else "\n(No matching notes found.)\n"
+        system_content = (
+            "You are a helpful assistant with access to a personal notes knowledge base. "
+            "Answer based on the retrieved notes. If they don't contain enough information, say so."
             f"{ctx_block}"
             f"{notes_section}"
-            f"\nQuestion: {query}\n"
         )
 
-        # 5. Stream LLM response
+        chat_messages = [{"role": "system", "content": system_content}] + [
+            {"role": m["role"], "content": m["content"]}
+            for m in messages
+            if m.get("role") in ("user", "assistant") and m.get("content")
+        ]
+
+        # 5. Stream chat response
         state = {"stopped": False}
         token_queue: asyncio.Queue = asyncio.Queue()
 
@@ -544,8 +550,8 @@ async def query_knowledge_base(request: Request):
 
         async def run_llm():
             try:
-                await _ollama.generate_text(
-                    ollama_base_url, query_model, prompt, "",
+                await _ollama.chat_stream(
+                    ollama_base_url, query_model, chat_messages,
                     is_stopped=is_stopped_fn,
                     on_chunk=on_chunk,
                 )

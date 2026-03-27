@@ -73,6 +73,47 @@ async def generate_text(
     return "".join(chunks).strip()
 
 
+async def chat_stream(
+    base_url: str,
+    model: str,
+    messages: list[dict],
+    is_stopped=None,
+    on_chunk=None,
+) -> str:
+    """Stream a chat completion from Ollama /api/chat.
+
+    messages: list of {"role": "system"|"user"|"assistant", "content": str}
+    is_stopped: optional async callable () -> bool, checked every 20 chunks.
+    on_chunk: optional async callable (str) called with each token.
+    """
+    chunks: list[str] = []
+    check_interval = 20
+    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, read=600.0)) as client:
+        async with client.stream(
+            "POST",
+            f"{base_url}/api/chat",
+            json={"model": model, "messages": messages, "stream": True},
+        ) as resp:
+            if resp.is_error:
+                await resp.aread()
+                logger.error("Ollama chat error %s: %s", resp.status_code, resp.text[:200])
+            resp.raise_for_status()
+            async for line in resp.aiter_lines():
+                if line:
+                    data = json.loads(line)
+                    chunk = (data.get("message") or {}).get("content", "")
+                    chunks.append(chunk)
+                    if on_chunk and chunk:
+                        await on_chunk(chunk)
+                    if data.get("done"):
+                        break
+                    if is_stopped and len(chunks) % check_interval == 0:
+                        if await is_stopped():
+                            logger.info("chat_stream: stop detected after %d chunks", len(chunks))
+                            raise GenerationCancelled()
+    return "".join(chunks).strip()
+
+
 async def generate_embed(base_url: str, model: str, text: str) -> list[float]:
     async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.post(
