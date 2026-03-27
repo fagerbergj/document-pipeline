@@ -18,6 +18,13 @@ export default function Sidebar() {
   const selectedStages = (searchParams.get('stages') ?? '').split(',').filter(Boolean)
   const selectedStates = (searchParams.get('states') ?? '').split(',').filter(Boolean)
 
+  // Fetch pipeline stages (source of truth for stage list)
+  const { data: pipelineDetail } = useQuery({
+    queryKey: ['pipeline'],
+    queryFn: () => api.pipeline(),
+    staleTime: Infinity,
+  })
+
   // Fetch all jobs (finite dataset) and aggregate counts client-side
   const { data: jobsPage } = useQuery({
     queryKey: ['jobs-all'],
@@ -26,15 +33,14 @@ export default function Sidebar() {
   })
 
   const jobs = jobsPage?.data ?? []
+  const pipelineStages = pipelineDetail?.stages ?? []
 
   // Aggregate counts from jobs list
   const stateCounts: Record<string, number> = {}
   const stageCounts: Record<string, number> = {}
-  const stageNames: string[] = []
   for (const job of jobs) {
     stateCounts[job.stage_state] = (stateCounts[job.stage_state] ?? 0) + 1
     stageCounts[job.current_stage] = (stageCounts[job.current_stage] ?? 0) + 1
-    if (!stageNames.includes(job.current_stage)) stageNames.push(job.current_stage)
   }
 
   function toggleStage(s: string) {
@@ -117,23 +123,23 @@ export default function Sidebar() {
           </div>
 
           {/* Stage filter */}
-          {stageNames.length > 0 && (
+          {pipelineStages.length > 0 && (
             <div>
               <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
                 Stage {selectedStages.length > 0 && <span className="ml-1 text-blue-400">({selectedStages.length})</span>}
               </div>
               <div className="space-y-1">
-                {stageNames.map(s => {
-                  const active = selectedStages.includes(s)
-                  const n = stageCounts[s] ?? 0
+                {pipelineStages.map(s => {
+                  const active = selectedStages.includes(s.name)
+                  const n = stageCounts[s.name] ?? 0
                   return (
-                    <button key={s} onClick={() => toggleStage(s)}
+                    <button key={s.name} onClick={() => toggleStage(s.name)}
                       className={`w-full flex items-center justify-between px-2 py-1.5 rounded text-sm transition-colors ${active ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800/50'}`}>
                       <div className="flex items-center gap-2">
                         <span className={`w-3 h-3 rounded border flex-shrink-0 flex items-center justify-center ${active ? 'bg-blue-500 border-blue-500' : 'border-gray-600'}`}>
                           {active && <span className="text-white text-[8px] leading-none">✓</span>}
                         </span>
-                        <span className="font-mono text-xs">{s}</span>
+                        <span className="font-mono text-xs">{s.name}</span>
                       </div>
                       {n > 0 && <span className="text-xs text-gray-500">{n}</span>}
                     </button>

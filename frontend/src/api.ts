@@ -4,6 +4,7 @@
  * SSE streaming endpoints use raw fetch since they need manual stream handling.
  */
 import {
+  getPipelineApiV1PipelinesPipelineIdGet,
   getDocumentApiV1DocumentsDocIdGet,
   patchDocumentApiV1DocumentsDocIdPatch,
   deleteDocumentApiV1DocumentsDocIdDelete,
@@ -43,6 +44,10 @@ async function unwrap<T>(call: Promise<{ data?: T; error?: unknown }>): Promise<
 }
 
 export const api = {
+  // ── Pipelines ─────────────────────────────────────────────────────────────
+  pipeline: (id = 'pipeline') =>
+    unwrap(getPipelineApiV1PipelinesPipelineIdGet({ path: { pipeline_id: id } })),
+
   // ── Documents ─────────────────────────────────────────────────────────────
   document: (id: string) =>
     unwrap(getDocumentApiV1DocumentsDocIdGet({ path: { doc_id: id } })),

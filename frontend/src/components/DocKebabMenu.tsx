@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useMutation } from '@tanstack/react-query'
 import { api } from '../api'
 
@@ -24,10 +25,20 @@ export default function DocKebabMenu({
   buttonClassName,
 }: DocKebabMenuProps) {
   const [open, setOpen] = useState(false)
+  const [menuPos, setMenuPos] = useState({ top: 0, right: 0 })
   const [fetchedStages, setFetchedStages] = useState<{ name: string }[] | null>(null)
-  const ref = useRef<HTMLDivElement>(null)
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const btnRef = useRef<HTMLButtonElement>(null)
 
   const replayStages = providedStages ?? fetchedStages ?? []
+
+  function openMenu() {
+    if (btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect()
+      setMenuPos({ top: r.bottom + 4, right: window.innerWidth - r.right })
+    }
+    setOpen(true)
+  }
 
   useEffect(() => {
     if (!open || providedStages !== undefined || fetchedStages !== null) return
@@ -36,7 +47,7 @@ export default function DocKebabMenu({
 
   useEffect(() => {
     function handler(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
@@ -44,20 +55,26 @@ export default function DocKebabMenu({
 
   const done = (cb: () => void) => { setOpen(false); cb() }
 
-  const stopMut   = useMutation({ mutationFn: () => api.postJobEvent(docId, { type: 'stop' }),              onSuccess: () => done(onSuccess) })
-  const retryMut  = useMutation({ mutationFn: () => api.postJobEvent(docId, { type: 'retry' }),             onSuccess: () => done(onSuccess) })
+  const stopMut   = useMutation({ mutationFn: () => api.postJobEvent(docId, { type: 'stop' }),               onSuccess: () => done(onSuccess) })
+  const retryMut  = useMutation({ mutationFn: () => api.postJobEvent(docId, { type: 'retry' }),              onSuccess: () => done(onSuccess) })
   const replayMut = useMutation({ mutationFn: (s: string) => api.postJobEvent(docId, { type: 'replay', stage: s }), onSuccess: () => done(onSuccess) })
-  const deleteMut = useMutation({ mutationFn: () => api.deleteDocument(docId),                              onSuccess: () => done(onDelete) })
+  const deleteMut = useMutation({ mutationFn: () => api.deleteDocument(docId),                               onSuccess: () => done(onDelete) })
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={wrapRef} className="relative">
       <button
-        onClick={() => setOpen(o => !o)}
-        className={buttonClassName ?? 'w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors text-lg leading-none'}>
+        ref={btnRef}
+        onClick={() => open ? setOpen(false) : openMenu()}
+        className={buttonClassName ?? 'w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors text-lg leading-none'}
+      >
         ⋯
       </button>
-      {open && (
-        <div className="absolute right-0 top-9 w-48 bg-white border border-gray-200 rounded-xl shadow-lg z-20 overflow-hidden">
+
+      {open && createPortal(
+        <div
+          style={{ position: 'fixed', top: menuPos.top, right: menuPos.right, zIndex: 9999 }}
+          className="w-48 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden"
+        >
           {state === 'running' && (
             <button onClick={() => stopMut.mutate()}
               className="w-full text-left px-4 py-2.5 text-sm text-amber-700 hover:bg-amber-50">
@@ -93,7 +110,8 @@ export default function DocKebabMenu({
             className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50">
             Delete
           </button>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )
