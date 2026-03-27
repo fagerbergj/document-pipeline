@@ -9,6 +9,15 @@ import aiosqlite
 
 from core.domain.document import Document
 
+_CREATE_CONTEXTS = """
+CREATE TABLE IF NOT EXISTS contexts (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    text TEXT NOT NULL,
+    created_at TEXT NOT NULL
+)
+"""
+
 _CREATE_DOCUMENTS = """
 CREATE TABLE IF NOT EXISTS documents (
     id TEXT PRIMARY KEY,
@@ -21,6 +30,7 @@ CREATE TABLE IF NOT EXISTS documents (
     date_month TEXT,
     png_path TEXT,
     duplicate_of TEXT REFERENCES documents(id),
+    context_ref TEXT REFERENCES contexts(id) ON DELETE SET NULL,
     stage_data TEXT NOT NULL DEFAULT '{}'
 )
 """
@@ -70,12 +80,22 @@ class Database:
         self._conn = await aiosqlite.connect(self._path)
         self._conn.row_factory = aiosqlite.Row
         await self._conn.execute("PRAGMA journal_mode=WAL")
+        await self._conn.execute("PRAGMA foreign_keys=ON")
+        await self._conn.execute(_CREATE_CONTEXTS)
         await self._conn.execute(_CREATE_DOCUMENTS)
         await self._conn.execute(_CREATE_STAGE_EVENTS)
         await self._conn.execute(_CREATE_DOCUMENT_DESTINATIONS)
         await self._conn.execute(_CREATE_KEY_VALUE)
         for idx in _INDEXES:
             await self._conn.execute(idx)
+        # Migration: add context_ref column if this is an existing DB
+        try:
+            await self._conn.execute(
+                "ALTER TABLE documents ADD COLUMN"
+                " context_ref TEXT REFERENCES contexts(id) ON DELETE SET NULL"
+            )
+        except Exception:
+            pass  # column already exists
         await self._conn.commit()
 
     async def close(self):
@@ -94,6 +114,7 @@ class Database:
             date_month=row["date_month"],
             png_path=row["png_path"],
             duplicate_of=row["duplicate_of"],
+            context_ref=row["context_ref"],
             stage_data=json.loads(row["stage_data"] or "{}"),
         )
 
@@ -108,12 +129,13 @@ class Database:
         await self._conn.execute(
             """INSERT INTO documents
                (id, content_hash, created_at, updated_at, current_stage, stage_state,
-                title, date_month, png_path, duplicate_of, stage_data)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                title, date_month, png_path, duplicate_of, context_ref, stage_data)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 doc.id, doc.content_hash, doc.created_at, doc.updated_at,
                 doc.current_stage, doc.stage_state, doc.title, doc.date_month,
-                doc.png_path, doc.duplicate_of, json.dumps(doc.stage_data),
+                doc.png_path, doc.duplicate_of, doc.context_ref,
+                json.dumps(doc.stage_data),
             ),
         )
         await self._conn.commit()
@@ -122,12 +144,12 @@ class Database:
         await self._conn.execute(
             """UPDATE documents SET
                updated_at=?, current_stage=?, stage_state=?,
-               title=?, date_month=?, png_path=?, duplicate_of=?, stage_data=?
+               title=?, date_month=?, png_path=?, duplicate_of=?, context_ref=?, stage_data=?
                WHERE id=?""",
             (
                 doc.updated_at, doc.current_stage, doc.stage_state,
                 doc.title, doc.date_month, doc.png_path, doc.duplicate_of,
-                json.dumps(doc.stage_data), doc.id,
+                doc.context_ref, json.dumps(doc.stage_data), doc.id,
             ),
         )
         await self._conn.commit()
@@ -373,19 +395,45 @@ class Database:
         )
         await self._conn.commit()
 
-    async def context_backfill_ids(self, key: str) -> None:
-        """Assign UUIDs to any context entries that are missing one."""
-        raw = await self.kv_get(key)
-        if not raw:
-            return
-        try:
-            entries = json.loads(raw)
-        except Exception:
-            return
-        changed = False
-        for entry in entries:
-            if "id" not in entry:
-                entry["id"] = str(uuid.uuid4())
-                changed = True
-        if changed:
-            await self.kv_set(key, json.dumps(entries, ensure_ascii=False))
+    async def list_contexts(self) -> list[dict]:
+        async with self._conn.execute(
+            "SELECT id, name, text FROM contexts ORDER BY created_at ASC"
+        ) as cur:
+            return [{"id": r["id"], "name": r["name"], "text": r["text"]} for r in await cur.fetchall()]
+
+    async def create_context_entry(self, name: str, text: str) -> dict:
+        entry_id = str(uuid.uuid4())
+        import datetime as _dt
+        now = _dt.datetime.utcnow().isoformat() + "Z"
+        await self._conn.execute(
+            "INSERT INTO contexts (id, name, text, created_at) VALUES (?, ?, ?, ?)",
+            (entry_id, name, text, now),
+        )
+        await self._conn.commit()
+        return {"id": entry_id, "name": name, "text": text}
+
+    async def update_context_entry(
+        self, context_id: str, name: Optional[str] = None, text: Optional[str] = None
+    ) -> Optional[dict]:
+        sets, params = [], []
+        if name is not None:
+            sets.append("name = ?"); params.append(name)
+        if text is not None:
+            sets.append("text = ?"); params.append(text)
+        if sets:
+            params.append(context_id)
+            await self._conn.execute(
+                f"UPDATE contexts SET {', '.join(sets)} WHERE id=?", params
+            )
+            await self._conn.commit()
+        async with self._conn.execute(
+            "SELECT id, name, text FROM contexts WHERE id=?", (context_id,)
+        ) as cur:
+            row = await cur.fetchone()
+            return {"id": row["id"], "name": row["name"], "text": row["text"]} if row else None
+
+    async def delete_context_entry(self, context_id: str) -> bool:
+        async with self._conn.execute("DELETE FROM contexts WHERE id=?", (context_id,)) as cur:
+            deleted = cur.rowcount > 0
+        await self._conn.commit()
+        return deleted

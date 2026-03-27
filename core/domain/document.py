@@ -16,6 +16,7 @@ class Document:
     date_month: Optional[str] = None
     png_path: Optional[str] = None
     duplicate_of: Optional[str] = None
+    context_ref: Optional[str] = None
     stage_data: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:

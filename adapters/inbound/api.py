@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json as _json
 import os as _os
-import uuid as _uuid
 from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Optional
@@ -26,8 +25,6 @@ from adapters.inbound.schemas import (
 
 router = APIRouter(prefix="/api/v1")
 
-_CTX_LIB_KEY = "context_library"
-
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -41,24 +38,10 @@ def _clean_context_updates(val: str) -> str:
     return "" if v.lower() in _NULL else v
 
 
-async def _load_contexts(db) -> list[dict]:
-    raw = await db.kv_get(_CTX_LIB_KEY)
-    if not raw:
-        return []
-    try:
-        return _json.loads(raw)
-    except Exception:
-        return []
-
-
-async def _save_contexts(db, entries: list[dict]) -> None:
-    await db.kv_set(_CTX_LIB_KEY, _json.dumps(entries, ensure_ascii=False))
-
-
 def _build_doc_detail(doc, config) -> dict:
     """Pure document data: title, context, artifacts."""
     document_context = doc.stage_data.get("_ingest", {}).get("document_context", "")
-    context_ref = doc.stage_data.get("_ingest", {}).get("context_ref") or None
+    context_ref = doc.context_ref
 
     stage_displays = []
     for s in config.stages:
@@ -284,15 +267,15 @@ async def patch_document(request: Request, doc_id: str, body: PatchDocumentBody)
     if body.title is not None and body.title.strip():
         updated = replace(updated, title=body.title.strip(), updated_at=now_str)
 
-    if body.document_context is not None or body.context_ref is not None:
+    if body.document_context is not None:
         stage_data = dict(updated.stage_data)
         ingest = dict(stage_data.get("_ingest", {}))
-        if body.document_context is not None:
-            ingest["document_context"] = body.document_context.strip()
-        if body.context_ref is not None:
-            ingest["context_ref"] = body.context_ref or None
+        ingest["document_context"] = body.document_context.strip()
         stage_data["_ingest"] = ingest
         updated = replace(updated, stage_data=stage_data, updated_at=now_str)
+
+    if body.context_ref is not None:
+        updated = replace(updated, context_ref=body.context_ref or None, updated_at=now_str)
 
     if updated is not doc:
         await db.update(updated)
@@ -503,9 +486,8 @@ async def post_job_event(request: Request, doc_id: str, body: JobEventBody):
         ingest = dict(stage_data.get("_ingest", {}))
         if body.document_context is not None:
             ingest["document_context"] = body.document_context.strip()
-        if body.context_ref is not None:
-            ingest["context_ref"] = body.context_ref or None
         stage_data["_ingest"] = ingest
+        new_context_ref = (body.context_ref or None) if body.context_ref is not None else doc.context_ref
 
         stage_def = config.get_stage(doc.current_stage)
         sdata = stage_data.get(doc.current_stage, {})
@@ -516,7 +498,8 @@ async def post_job_event(request: Request, doc_id: str, body: JobEventBody):
         new_state = doc.stage_state
         if doc.stage_state == "waiting" and not has_output:
             new_state = "pending"
-        updated = replace(doc, stage_data=stage_data, stage_state=new_state, updated_at=now_str)
+        updated = replace(doc, stage_data=stage_data, context_ref=new_context_ref,
+                          stage_state=new_state, updated_at=now_str)
         await db.update(updated)
         await db.append_event(doc_id, doc.current_stage, "context_set", now_str)
         return _build_job_detail(updated, config)
@@ -533,75 +516,38 @@ async def post_job_event(request: Request, doc_id: str, body: JobEventBody):
 # ── Contexts ───────────────────────────────────────────────────────────────────
 
 @router.get("/contexts", response_model=PaginatedContexts, tags=["Contexts"])
-async def list_contexts(
-    request: Request,
-    pageSize: int = Query(default=50, ge=1, le=200),
-    pageToken: Optional[str] = Query(default=None),
-):
+async def list_contexts(request: Request):
     db = request.app.state.db
-    await db.context_backfill_ids(_CTX_LIB_KEY)
-    entries = await _load_contexts(db)
-
-    # Simple in-memory pagination (context list is small)
-    after_id: Optional[str] = None
-    if pageToken:
-        token = decode_page_token(pageToken)
-        after_id = token.get("id") if token else None
-
-    if after_id:
-        try:
-            start = next(i for i, e in enumerate(entries) if e.get("id") == after_id) + 1
-            entries = entries[start:]
-        except StopIteration:
-            entries = []
-
-    has_more = len(entries) > pageSize
-    page = entries[:pageSize]
-    next_token = None
-    if has_more and page:
-        last = page[-1]
-        next_token = encode_page_token(None, last.get("id", ""))
-
-    return {"data": page, "nextPageToken": next_token}
+    entries = await db.list_contexts()
+    return {"data": entries, "nextPageToken": None}
 
 
 @router.post("/contexts", response_model=ContextEntry, tags=["Contexts"])
 async def create_context(request: Request, body: CreateContextBody):
     db = request.app.state.db
-    await db.context_backfill_ids(_CTX_LIB_KEY)
-    entries = await _load_contexts(db)
-    new_entry = {"id": str(_uuid.uuid4()), "name": body.name.strip(), "text": body.text.strip()}
-    entries.append(new_entry)
-    await _save_contexts(db, entries)
-    return new_entry
+    entry = await db.create_context_entry(body.name.strip(), body.text.strip())
+    return entry
 
 
 @router.patch("/contexts/{context_id}", response_model=ContextEntry, tags=["Contexts"])
 async def update_context(request: Request, context_id: str, body: UpdateContextBody):
     db = request.app.state.db
-    await db.context_backfill_ids(_CTX_LIB_KEY)
-    entries = await _load_contexts(db)
-    entry = next((e for e in entries if e.get("id") == context_id), None)
+    entry = await db.update_context_entry(
+        context_id,
+        name=body.name.strip() if body.name is not None else None,
+        text=body.text.strip() if body.text is not None else None,
+    )
     if entry is None:
         return JSONResponse({"error": "not found"}, status_code=404)
-    if body.name is not None:
-        entry["name"] = body.name.strip()
-    if body.text is not None:
-        entry["text"] = body.text.strip()
-    await _save_contexts(db, entries)
     return entry
 
 
 @router.delete("/contexts/{context_id}", response_model=OkResponse, tags=["Contexts"])
 async def delete_context(request: Request, context_id: str):
     db = request.app.state.db
-    await db.context_backfill_ids(_CTX_LIB_KEY)
-    entries = await _load_contexts(db)
-    original_len = len(entries)
-    entries = [e for e in entries if e.get("id") != context_id]
-    if len(entries) == original_len:
+    deleted = await db.delete_context_entry(context_id)
+    if not deleted:
         return JSONResponse({"error": "not found"}, status_code=404)
-    await _save_contexts(db, entries)
     return {"ok": True}
 
 
