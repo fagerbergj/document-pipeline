@@ -95,8 +95,10 @@ async def _find_file(client: httpx.AsyncClient, headers: dict, filename: str) ->
     resp = await client.get("/api/v1/files/", headers=headers)
     if resp.is_error:
         return None
-    for f in resp.json():
-        if f.get("filename") == filename:
+    data = resp.json()
+    files = data if isinstance(data, list) else data.get("files", [])
+    for f in files:
+        if isinstance(f, dict) and f.get("filename") == filename:
             return f
     return None
 
