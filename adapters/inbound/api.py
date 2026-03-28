@@ -94,15 +94,25 @@ def _build_job_detail(doc, config) -> dict:
 
     start_if = (stage_def.start_if or {}) if stage_def else {}
     has_context = bool(document_context or doc.context_ref)
+
+    # A stage that will be skipped (e.g. OCR for text files) shouldn't show context prompts
+    skip_if = (stage_def.skip_if or {}) if stage_def else {}
+    will_skip = (
+        "file_type" in skip_if and
+        doc.stage_data.get("_ingest", {}).get("file_type", "") in skip_if["file_type"]
+    )
+
     context_required = bool(
-        doc.stage_state in ("waiting", "pending")
+        not will_skip
+        and doc.stage_state in ("waiting", "pending")
         and stage_def is not None
         and not has_llm_output
         and (stage_def.require_context or start_if.get("context_provided"))
         and not has_context
     )
-    needs_context = (
-        doc.stage_state in ("waiting", "pending")
+    needs_context = bool(
+        not will_skip
+        and doc.stage_state in ("waiting", "pending")
         and stage_def is not None
         and (start_if.get("context_provided") or stage_def.require_context)
         and not has_context
@@ -168,8 +178,14 @@ def _doc_summary(doc, config) -> dict:
     document_context = doc.stage_data.get("_ingest", {}).get("document_context", "")
     has_context = bool(document_context or doc.context_ref)
     start_if = (stage_def.start_if or {}) if stage_def else {}
-    needs_context = (
-        doc.stage_state in ("waiting", "pending")
+    skip_if = (stage_def.skip_if or {}) if stage_def else {}
+    will_skip = (
+        "file_type" in skip_if and
+        doc.stage_data.get("_ingest", {}).get("file_type", "") in skip_if["file_type"]
+    )
+    needs_context = bool(
+        not will_skip
+        and doc.stage_state in ("waiting", "pending")
         and stage_def is not None
         and (start_if.get("context_provided") or stage_def.require_context)
         and not has_context
@@ -188,8 +204,14 @@ def _job_summary(doc, config) -> dict:
     document_context = doc.stage_data.get("_ingest", {}).get("document_context", "")
     has_context = bool(document_context or doc.context_ref)
     start_if = (stage_def.start_if or {}) if stage_def else {}
-    needs_context = (
-        doc.stage_state in ("waiting", "pending")
+    skip_if = (stage_def.skip_if or {}) if stage_def else {}
+    will_skip = (
+        "file_type" in skip_if and
+        doc.stage_data.get("_ingest", {}).get("file_type", "") in skip_if["file_type"]
+    )
+    needs_context = bool(
+        not will_skip
+        and doc.stage_state in ("waiting", "pending")
         and stage_def is not None
         and (start_if.get("context_provided") or stage_def.require_context)
         and not has_context
