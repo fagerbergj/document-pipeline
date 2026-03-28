@@ -522,11 +522,14 @@ function ContextUpdatesSection({ label, description, current, proposed, onSave, 
   onRefresh: () => void
 }) {
   const [edited, setEdited] = useState(proposed)
+  const [dismissed, setDismissed] = useState(false)
 
   const saveMut = useMutation({
     mutationFn: () => onSave(edited),
     onSuccess: onRefresh,
   })
+
+  if (dismissed) return null
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4">
@@ -535,10 +538,16 @@ function ContextUpdatesSection({ label, description, current, proposed, onSave, 
           <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Review — {label}</div>
           <div className="text-xs text-gray-400 mt-0.5">{description}</div>
         </div>
-        <button onClick={() => saveMut.mutate()} disabled={saveMut.isPending}
-          className="px-4 py-1.5 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
-          {saveMut.isSuccess ? 'Saved' : 'Accept'}
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => saveMut.mutate()} disabled={saveMut.isPending}
+            className="px-4 py-1.5 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
+            {saveMut.isSuccess ? 'Saved' : 'Accept'}
+          </button>
+          <button onClick={() => setDismissed(true)}
+            className="px-4 py-1.5 text-sm font-medium border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">
+            Reject
+          </button>
+        </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div>
