@@ -114,12 +114,14 @@ async def chat_stream(
     return "".join(chunks).strip()
 
 
-async def generate_embed(base_url: str, model: str, text: str) -> list[float]:
+async def generate_embed(
+    base_url: str, model: str, text: str, image_bytes: bytes | None = None
+) -> list[float]:
+    payload: dict = {"model": model, "input": text or " "}
+    if image_bytes:
+        payload["images"] = [base64.b64encode(image_bytes).decode()]
     async with httpx.AsyncClient(timeout=300.0) as client:
-        resp = await client.post(
-            f"{base_url}/api/embed",
-            json={"model": model, "input": text},
-        )
+        resp = await client.post(f"{base_url}/api/embed", json=payload)
         if resp.is_error:
             logger.error("Ollama embed error %s: %s", resp.status_code, resp.text[:200])
         resp.raise_for_status()

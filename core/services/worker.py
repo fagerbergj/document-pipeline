@@ -326,15 +326,34 @@ async def _run_embed(
         dtype = dest.get("type")
 
         if dtype == "qdrant":
-            vector = await generate_embed(ollama_base_url, stage.model, input_text)
+            text_vector = await generate_embed(ollama_base_url, stage.model, input_text)
+
+            image_vector = None
+            if dest.get("embed_image") and doc.png_path:
+                image_model = dest.get("image_model") or stage.model
+                try:
+                    image_bytes = Path(doc.png_path).read_bytes()
+                    image_vector = await generate_embed(
+                        ollama_base_url, image_model, "", image_bytes=image_bytes
+                    )
+                    logger.info("Image embed ok for %s (model=%s)", doc.id[:8], image_model)
+                except Exception as exc:
+                    logger.warning(
+                        "Image embed failed for %s, continuing text-only: %s",
+                        doc.id[:8], exc,
+                    )
+            elif dest.get("embed_image") and not doc.png_path:
+                logger.warning("embed_image=true but doc %s has no image", doc.id[:8])
+
             payload = {"doc_id": doc.id, "text": input_text, **metadata}
             await _qdrant.upsert(
                 dest.get("url", ""),
                 dest.get("collection", "remarkable"),
                 doc.id,
-                vector,
+                text_vector,
                 payload,
                 dest.get("api_key") or None,
+                image_vector=image_vector,
             )
             await db.append_event(
                 doc.id, stage.name, "synced", now_str, {"destination": "qdrant"}
