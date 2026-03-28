@@ -59,10 +59,13 @@ export default function DocKebabMenu({
 
   const done = (cb: () => void) => { setOpen(false); cb() }
 
-  const stopMut   = useMutation({ mutationFn: () => api.postJobEvent(docId, { type: 'stop' }),               onSuccess: () => done(onSuccess) })
-  const retryMut  = useMutation({ mutationFn: () => api.postJobEvent(docId, { type: 'retry' }),              onSuccess: () => done(onSuccess) })
-  const replayMut = useMutation({ mutationFn: (s: string) => api.postJobEvent(docId, { type: 'replay', stage: s }), onSuccess: () => done(onSuccess) })
-  const deleteMut = useMutation({ mutationFn: () => api.deleteDocument(docId),                               onSuccess: () => done(onDelete) })
+  const [mutError, setMutError] = useState<string | null>(null)
+  const onErr = (e: unknown) => setMutError(e instanceof Error ? e.message : String(e))
+
+  const stopMut   = useMutation({ mutationFn: () => api.postJobEvent(docId, { type: 'stop' }),               onSuccess: () => done(onSuccess), onError: onErr })
+  const retryMut  = useMutation({ mutationFn: () => api.postJobEvent(docId, { type: 'retry' }),              onSuccess: () => done(onSuccess), onError: onErr })
+  const replayMut = useMutation({ mutationFn: (s: string) => api.postJobEvent(docId, { type: 'replay', stage: s }), onSuccess: () => done(onSuccess), onError: onErr })
+  const deleteMut = useMutation({ mutationFn: () => api.deleteDocument(docId),                               onSuccess: () => done(onDelete), onError: onErr })
 
   return (
     <div ref={wrapRef} className="relative">
@@ -80,6 +83,9 @@ export default function DocKebabMenu({
           style={{ position: 'fixed', top: menuPos.top, right: menuPos.right, zIndex: 9999 }}
           className="w-48 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden"
         >
+          {mutError && (
+            <div className="px-3 py-2 text-xs text-red-600 bg-red-50 border-b border-red-100">{mutError}</div>
+          )}
           {state === 'running' && (
             <button onClick={() => stopMut.mutate()}
               className="w-full text-left px-4 py-2.5 text-sm text-amber-700 hover:bg-amber-50">

@@ -397,16 +397,20 @@ function ReviewSection({ doc, review, onRefresh }: {
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [freePrompt, setFreePrompt] = useState('')
 
+  const [mutError, setMutError] = useState<string | null>(null)
+
   const approveMut = useMutation({
     mutationFn: () => api.postJobEvent(doc.id, {
       type: 'approve',
       edited_text: review.is_single_output ? editedText : undefined,
     }),
-    onSuccess: onRefresh,
+    onSuccess: () => { setMutError(null); onRefresh() },
+    onError: (e: unknown) => setMutError(e instanceof Error ? e.message : String(e)),
   })
   const rejectMut = useMutation({
     mutationFn: () => api.postJobEvent(doc.id, { type: 'reject' }),
-    onSuccess: onRefresh,
+    onSuccess: () => { setMutError(null); onRefresh() },
+    onError: (e: unknown) => setMutError(e instanceof Error ? e.message : String(e)),
   })
   const clarifyMut = useMutation({
     mutationFn: () => api.postJobEvent(doc.id, {
@@ -415,7 +419,8 @@ function ReviewSection({ doc, review, onRefresh }: {
       free_prompt: freePrompt,
       edited_text: review.is_single_output ? editedText : undefined,
     }),
-    onSuccess: onRefresh,
+    onSuccess: () => { setMutError(null); onRefresh() },
+    onError: (e: unknown) => setMutError(e instanceof Error ? e.message : String(e)),
   })
 
   const confidenceColor = review.confidence === 'high'
@@ -468,6 +473,9 @@ function ReviewSection({ doc, review, onRefresh }: {
             className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-y focus:outline-none focus:ring-2 focus:ring-blue-200" />
         </div>
 
+        {mutError && (
+          <div className="mb-3 text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{mutError}</div>
+        )}
         <div className="flex gap-2">
           <button onClick={() => approveMut.mutate()} disabled={busy}
             className="px-4 py-1.5 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">

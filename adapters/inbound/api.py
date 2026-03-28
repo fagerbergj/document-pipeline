@@ -461,7 +461,7 @@ async def post_job_event(request: Request, doc_id: str, body: JobEventBody):
 
     # ── approve ────────────────────────────────────────────────────────────────
     if event_type == "approve":
-        edited_text = body.edited_text.strip()
+        edited_text = (body.edited_text or '').strip()
         stage_def = config.get_stage(doc.current_stage)
         if edited_text and stage_def and stage_def.output:
             stage_data = dict(doc.stage_data)
@@ -480,9 +480,9 @@ async def post_job_event(request: Request, doc_id: str, body: JobEventBody):
 
     # ── clarify ────────────────────────────────────────────────────────────────
     if event_type == "clarify":
-        answers = body.answers
-        free_prompt = body.free_prompt.strip()
-        edited_text = body.edited_text.strip()
+        answers = body.answers or {}
+        free_prompt = (body.free_prompt or '').strip()
+        edited_text = (body.edited_text or '').strip()
         stage_name = doc.current_stage
         existing_requests = (doc.stage_data.get(stage_name) or {}).get("clarification_requests", [])
         clarification_responses = [
