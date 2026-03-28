@@ -15,14 +15,16 @@ export default function Document() {
   const qc = useQueryClient()
   const navigate = useNavigate()
 
-  const { data: doc, isLoading: docLoading } = useQuery({
+  const { data: doc, isLoading: docLoading, error: docError } = useQuery({
     queryKey: ['document', id],
     queryFn: () => api.document(id!),
+    retry: 1,
   })
 
-  const { data: job, isLoading: jobLoading } = useQuery({
+  const { data: job, isLoading: jobLoading, error: jobError } = useQuery({
     queryKey: ['job', id],
     queryFn: () => api.job(id!),
+    retry: 1,
   })
 
   const { data: eventsPage } = useQuery({
@@ -46,11 +48,20 @@ export default function Document() {
       <LoadingSpinner />
     </div>
   )
-  if (!doc || !job) return (
-    <div className="flex items-center justify-center h-full py-24 text-gray-400">
-      Document not found
-    </div>
-  )
+  if (!doc || !job) {
+    const err = docError ?? jobError
+    const errMsg = err instanceof Error
+      ? err.message
+      : err
+      ? (typeof err === 'object' ? JSON.stringify(err) : String(err))
+      : null
+    return (
+      <div className="flex flex-col items-center justify-center h-full py-24 gap-2 text-gray-400">
+        <div>{errMsg ? 'Failed to load document' : 'Document not found'}</div>
+        {errMsg && <div className="text-xs font-mono text-red-500 max-w-lg text-center break-all">{errMsg}</div>}
+      </div>
+    )
+  }
 
   const errorEvents = (eventsPage?.data ?? []).filter((e: JobEventRecord) => e.event_type === 'failed')
 

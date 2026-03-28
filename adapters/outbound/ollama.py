@@ -115,7 +115,7 @@ async def chat_stream(
 
 
 async def generate_embed(base_url: str, model: str, text: str) -> list[float]:
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    async with httpx.AsyncClient(timeout=300.0) as client:
         resp = await client.post(
             f"{base_url}/api/embed",
             json={"model": model, "input": text},

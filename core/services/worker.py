@@ -297,6 +297,15 @@ async def _run_embed(
             f"Embed stage '{stage.name}': no text found for input '{stage.input}'"
         )
 
+    # Truncate to ~32k chars — nomic-embed-text context limit is 8192 tokens (~4 chars/token)
+    _MAX_EMBED_CHARS = 32_000
+    if len(input_text) > _MAX_EMBED_CHARS:
+        logger.warning(
+            "Doc %s: input_text truncated from %d to %d chars for embedding",
+            doc.id[:8], len(input_text), _MAX_EMBED_CHARS,
+        )
+        input_text = input_text[:_MAX_EMBED_CHARS]
+
     # Collect metadata
     all_data: dict = {}
     for sd in doc.stage_data.values():

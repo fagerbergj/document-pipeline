@@ -291,12 +291,17 @@ async def upload_document(
 
 @router.get("/documents/{doc_id}", response_model=DocumentDetail, tags=["Documents"])
 async def get_document(request: Request, doc_id: str):
+    import logging as _log
     db = request.app.state.db
     config = request.app.state.pipeline
     doc = await db.get(doc_id)
     if doc is None:
         return JSONResponse({"error": "not found"}, status_code=404)
-    return _build_doc_detail(doc, config)
+    try:
+        return _build_doc_detail(doc, config)
+    except Exception as exc:
+        _log.getLogger(__name__).exception("get_document failed for %s", doc_id)
+        return JSONResponse({"error": f"build failed: {exc}"}, status_code=500)
 
 
 @router.patch("/documents/{doc_id}", response_model=DocumentDetail, tags=["Documents"])
@@ -376,12 +381,17 @@ async def list_jobs(
 
 @router.get("/documents/{doc_id}/jobs", response_model=JobDetail, tags=["Jobs"])
 async def get_job(request: Request, doc_id: str):
+    import logging as _log
     db = request.app.state.db
     config = request.app.state.pipeline
     doc = await db.get(doc_id)
     if doc is None:
         return JSONResponse({"error": "not found"}, status_code=404)
-    return _build_job_detail(doc, config)
+    try:
+        return _build_job_detail(doc, config)
+    except Exception as exc:
+        _log.getLogger(__name__).exception("get_job failed for %s", doc_id)
+        return JSONResponse({"error": f"build failed: {exc}"}, status_code=500)
 
 
 @router.get("/documents/{doc_id}/jobs/stream", tags=["Jobs"])
