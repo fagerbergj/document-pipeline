@@ -11,7 +11,6 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from adapters.inbound.api import router as api_v1_router
-from adapters.inbound.webhook import router as webhook_router
 from adapters.outbound.sqlite import Database
 from core.domain.pipeline import PipelineConfig
 from core.services.worker import run_worker
@@ -58,7 +57,6 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="document-pipeline", lifespan=lifespan, openapi_version="3.1.0")
-app.include_router(webhook_router)
 app.include_router(api_v1_router)
 
 # Serve React app (only if built dist exists)
@@ -68,6 +66,6 @@ if _FRONTEND_DIST.exists():
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def serve_spa(full_path: str):
-        # API and webhook routes are already registered, this catches everything else
+        # API routes are already registered, this catches everything else
         index = _FRONTEND_DIST / "index.html"
         return FileResponse(str(index))

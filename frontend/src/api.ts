@@ -16,6 +16,11 @@ import {
   createContextApiV1ContextsPost,
   updateContextApiV1ContextsContextIdPatch,
   deleteContextApiV1ContextsContextIdDelete,
+  listChatSessionsApiV1ChatsGet,
+  createChatSessionApiV1ChatsPost,
+  getChatSessionApiV1ChatsSessionIdGet,
+  patchChatSessionApiV1ChatsSessionIdPatch,
+  deleteChatSessionApiV1ChatsSessionIdDelete,
 } from './generated'
 
 export type {
@@ -36,6 +41,41 @@ export type {
   ReplayStage,
   JobEventRecord,
 } from './generated'
+
+export interface ChatSessionSummary {
+  id: string
+  title: string
+  context: string
+  top_k: number
+  created_at: string
+  updated_at: string
+  message_count: number
+}
+
+export interface SourceDoc {
+  doc_id: string
+  title: string
+  summary: string
+  date_month: string
+  score: number
+}
+
+export interface ChatMessageRecord {
+  id: number
+  role: 'user' | 'assistant'
+  content: string
+  sources?: SourceDoc[] | null
+  created_at: string
+}
+
+export interface ChatSessionDetail extends ChatSessionSummary {
+  messages: ChatMessageRecord[]
+}
+
+export interface PaginatedChatSessions {
+  data: ChatSessionSummary[]
+  next_before_id?: string | null
+}
 
 async function unwrap<T>(call: Promise<{ data?: T; error?: unknown }>): Promise<T> {
   const { data, error } = await call
@@ -117,17 +157,28 @@ export const api = {
     return json
   },
 
-  // ── Chat (SSE — manual fetch needed for streaming) ────────────────────────
-  chatStream: (
-    messages: { role: string; content: string }[],
-    context: string,
-    topK: number,
-    signal?: AbortSignal,
-  ): Promise<Response> =>
-    fetch('/api/v1/chats', {
+  // ── Chat sessions ─────────────────────────────────────────────────────────
+  listChatSessions: (params?: { page_size?: number; before_id?: string }) =>
+    unwrap(listChatSessionsApiV1ChatsGet({ query: { page_size: params?.page_size, before_id: params?.before_id } })) as Promise<PaginatedChatSessions>,
+
+  createChatSession: (opts?: { context?: string; top_k?: number }) =>
+    unwrap(createChatSessionApiV1ChatsPost({ body: { context: opts?.context ?? '', top_k: opts?.top_k ?? 5 } })) as Promise<ChatSessionSummary>,
+
+  getChatSession: (sessionId: string) =>
+    unwrap(getChatSessionApiV1ChatsSessionIdGet({ path: { session_id: sessionId } })) as Promise<ChatSessionDetail>,
+
+  patchChatSession: (sessionId: string, patch: { title?: string | null; context?: string | null; top_k?: number | null }) =>
+    unwrap(patchChatSessionApiV1ChatsSessionIdPatch({ path: { session_id: sessionId }, body: patch })) as Promise<ChatSessionSummary>,
+
+  deleteChatSession: (sessionId: string) =>
+    unwrap(deleteChatSessionApiV1ChatsSessionIdDelete({ path: { session_id: sessionId } })),
+
+  // ── Chat message streaming (SSE — manual fetch needed) ────────────────────
+  sendMessage: (sessionId: string, content: string, signal?: AbortSignal): Promise<Response> =>
+    fetch(`/api/v1/chats/${sessionId}/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages, context, top_k: topK }),
+      body: JSON.stringify({ content }),
       signal,
     }),
 }

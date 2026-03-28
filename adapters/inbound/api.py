@@ -19,7 +19,8 @@ from adapters.inbound.schemas import (
     PaginatedJobEvents, PaginatedJobs, PaginatedPipelines,
     PatchDocumentBody, PipelineDetail, PipelineStageConfig, PipelineSummary,
     ProvideContextEvent, ReplayEvent, RejectEvent, RetryEvent, StopEvent,
-    ChatRequest, UpdateContextBody,
+    UpdateContextBody,
+    CreateChatSessionBody, PatchChatSessionBody, SendMessageBody,
     decode_page_token, encode_page_token,
 )
 
@@ -598,20 +599,88 @@ async def delete_context(request: Request, context_id: str):
 
 # ── Chat (RAG) ─────────────────────────────────────────────────────────────────
 
+@router.get("/chats", tags=["Chat"])
+async def list_chat_sessions(
+    request: Request,
+    page_size: int = Query(default=20, ge=1, le=100),
+    before_id: Optional[str] = Query(default=None),
+):
+    db = request.app.state.db
+    sessions = await db.list_chat_sessions(page_size=page_size, before_id=before_id)
+    next_before_id = sessions[-1]["id"] if len(sessions) == page_size else None
+    return {"data": sessions, "next_before_id": next_before_id}
+
+
 @router.post("/chats", tags=["Chat"])
-async def create_chat(request: Request, body: ChatRequest):
-    """RAG chat: embed latest user message → search Qdrant → stream LLM reply as SSE."""
+async def create_chat_session(request: Request, body: CreateChatSessionBody):
+    db = request.app.state.db
+    session = await db.create_chat_session(
+        context=body.context or "",
+        top_k=body.top_k if body.top_k is not None else 5,
+    )
+    return session
+
+
+@router.get("/chats/{session_id}", tags=["Chat"])
+async def get_chat_session(request: Request, session_id: str):
+    db = request.app.state.db
+    session = await db.get_chat_session(session_id)
+    if session is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    messages = await db.list_chat_messages(session_id)
+    return {**session, "messages": messages}
+
+
+@router.patch("/chats/{session_id}", tags=["Chat"])
+async def patch_chat_session(request: Request, session_id: str, body: PatchChatSessionBody):
+    db = request.app.state.db
+    session = await db.get_chat_session(session_id)
+    if session is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    kwargs = {}
+    if body.title is not None:
+        kwargs["title"] = body.title
+    if body.context is not None:
+        kwargs["context"] = body.context
+    if body.top_k is not None:
+        kwargs["top_k"] = body.top_k
+    if kwargs:
+        kwargs["updated_at"] = _now()
+    updated = await db.update_chat_session(session_id, **kwargs)
+    return updated
+
+
+@router.delete("/chats/{session_id}", tags=["Chat"])
+async def delete_chat_session(request: Request, session_id: str):
+    db = request.app.state.db
+    deleted = await db.delete_chat_session(session_id)
+    if not deleted:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return JSONResponse(None, status_code=204)
+
+
+@router.post("/chats/{session_id}/messages", tags=["Chat"])
+async def send_chat_message(request: Request, session_id: str, body: SendMessageBody):
     from adapters.outbound import ollama as _ollama
     from adapters.outbound import qdrant as _qdrant
 
-    messages = [m.model_dump(mode='json') for m in body.messages]
-    context = body.context.strip()
-    top_k = body.top_k
+    db = request.app.state.db
+    session = await db.get_chat_session(session_id)
+    if session is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
 
-    user_messages = [m for m in messages if m.get("role") == "user"]
-    if not user_messages:
-        return JSONResponse({"error": "no user message provided"}, status_code=400)
-    latest_query = user_messages[-1].get("content", "").strip()
+    context = session["context"]
+    top_k = session["top_k"]
+    content = body.content.strip()
+
+    history = await db.list_chat_messages(session_id)
+    await db.append_chat_message(session_id, "user", content)
+
+    if not session["title"]:
+        derived_title = content[:60].strip()
+        await db.update_chat_session(session_id, title=derived_title, updated_at=_now())
+    else:
+        await db.update_chat_session(session_id, updated_at=_now())
 
     ollama_base_url: str = request.app.state.ollama_base_url
     config = request.app.state.pipeline
@@ -632,96 +701,107 @@ async def create_chat(request: Request, body: ChatRequest):
                 break
 
     async def generate():
+        buffer: list[str] = []
+        final_sources: list[dict] = []
         try:
-            query_vector = await _ollama.generate_embed(ollama_base_url, embed_model, latest_query)
-        except Exception as exc:
-            yield f"event: error\ndata: {_json.dumps({'error': str(exc)})}\n\n"
-            return
-
-        sources: list[dict] = []
-        if qdrant_url:
             try:
-                sources = await _qdrant.search(qdrant_url, qdrant_collection, query_vector, top_k, qdrant_api_key)
-            except Exception:
-                pass
-
-        source_summaries = [
-            {
-                "doc_id": s.get("doc_id", ""),
-                "title": s.get("title") or "Untitled",
-                "summary": s.get("summary", ""),
-                "date_month": s.get("date_month", ""),
-                "score": round(s.get("score", 0.0), 3),
-            }
-            for s in sources
-        ]
-        yield f"event: sources\ndata: {_json.dumps(source_summaries)}\n\n"
-
-        notes_block = ""
-        for s in sources:
-            title = s.get("title") or "Untitled"
-            date = s.get("date_month", "")
-            text = s.get("text", s.get("summary", ""))
-            header = f"Title: {title}" + (f" ({date})" if date else "")
-            notes_block += f"---\n{header}\n{text}\n\n"
-
-        ctx_block = f"\nAdditional context:\n{context}\n" if context else ""
-        notes_section = f"\nRetrieved notes:\n{notes_block}" if notes_block else "\n(No matching notes found.)\n"
-        system_content = (
-            "You are a helpful assistant with access to a personal notes knowledge base. "
-            "Answer based on the retrieved notes. If they don't contain enough information, say so."
-            f"{ctx_block}"
-            f"{notes_section}"
-        )
-
-        chat_messages = [{"role": "system", "content": system_content}] + [
-            {"role": m["role"], "content": m["content"]}
-            for m in messages
-            if m.get("role") in ("user", "assistant") and m.get("content")
-        ]
-
-        state = {"stopped": False}
-        token_queue: asyncio.Queue = asyncio.Queue()
-
-        async def on_chunk(token: str):
-            await token_queue.put(token)
-
-        async def is_stopped_fn():
-            return state["stopped"]
-
-        async def run_llm():
-            try:
-                await _ollama.chat_stream(
-                    ollama_base_url, query_model, chat_messages,
-                    is_stopped=is_stopped_fn, on_chunk=on_chunk,
-                )
+                query_vector = await _ollama.generate_embed(ollama_base_url, embed_model, content)
             except Exception as exc:
-                await token_queue.put(("__error__", str(exc)))
-            finally:
-                await token_queue.put(None)
+                yield f"event: error\ndata: {_json.dumps({'error': str(exc)})}\n\n"
+                return
 
-        llm_task = asyncio.create_task(run_llm())
-        try:
-            while True:
-                if await request.is_disconnected():
-                    state["stopped"] = True
-                    break
+            sources: list[dict] = []
+            if qdrant_url:
                 try:
-                    item = await asyncio.wait_for(token_queue.get(), timeout=30.0)
-                except asyncio.TimeoutError:
-                    yield ": ping\n\n"
-                    continue
-                if item is None:
-                    break
-                if isinstance(item, tuple) and item[0] == "__error__":
-                    yield f"event: error\ndata: {_json.dumps({'error': item[1]})}\n\n"
-                    break
-                yield f"event: token\ndata: {_json.dumps({'text': item})}\n\n"
-        finally:
-            state["stopped"] = True
-            llm_task.cancel()
+                    sources = await _qdrant.search(qdrant_url, qdrant_collection, query_vector, top_k, qdrant_api_key)
+                except Exception:
+                    pass
 
-        yield f"event: done\ndata: {{}}\n\n"
+            source_summaries = [
+                {
+                    "doc_id": s.get("doc_id", ""),
+                    "title": s.get("title") or "Untitled",
+                    "summary": s.get("summary", ""),
+                    "date_month": s.get("date_month", ""),
+                    "score": round(s.get("score", 0.0), 3),
+                }
+                for s in sources
+            ]
+            final_sources = source_summaries
+            yield f"event: sources\ndata: {_json.dumps(source_summaries)}\n\n"
+
+            notes_block = ""
+            for s in sources:
+                title = s.get("title") or "Untitled"
+                date = s.get("date_month", "")
+                text = s.get("text", s.get("summary", ""))
+                header = f"Title: {title}" + (f" ({date})" if date else "")
+                notes_block += f"---\n{header}\n{text}\n\n"
+
+            ctx_block = f"\nAdditional context:\n{context}\n" if context else ""
+            notes_section = f"\nRetrieved notes:\n{notes_block}" if notes_block else "\n(No matching notes found.)\n"
+            system_content = (
+                "You are a helpful assistant with access to a personal notes knowledge base. "
+                "Answer based on the retrieved notes. If they don't contain enough information, say so."
+                f"{ctx_block}"
+                f"{notes_section}"
+            )
+
+            chat_messages = [{"role": "system", "content": system_content}] + [
+                {"role": m["role"], "content": m["content"]}
+                for m in history
+                if m.get("role") in ("user", "assistant") and m.get("content")
+            ] + [{"role": "user", "content": content}]
+
+            state = {"stopped": False}
+            token_queue: asyncio.Queue = asyncio.Queue()
+
+            async def on_chunk(token: str):
+                await token_queue.put(token)
+
+            async def is_stopped_fn():
+                return state["stopped"]
+
+            async def run_llm():
+                try:
+                    await _ollama.chat_stream(
+                        ollama_base_url, query_model, chat_messages,
+                        is_stopped=is_stopped_fn, on_chunk=on_chunk,
+                    )
+                except Exception as exc:
+                    await token_queue.put(("__error__", str(exc)))
+                finally:
+                    await token_queue.put(None)
+
+            llm_task = asyncio.create_task(run_llm())
+            try:
+                while True:
+                    if await request.is_disconnected():
+                        state["stopped"] = True
+                        break
+                    try:
+                        item = await asyncio.wait_for(token_queue.get(), timeout=30.0)
+                    except asyncio.TimeoutError:
+                        yield ": ping\n\n"
+                        continue
+                    if item is None:
+                        break
+                    if isinstance(item, tuple) and item[0] == "__error__":
+                        yield f"event: error\ndata: {_json.dumps({'error': item[1]})}\n\n"
+                        break
+                    buffer.append(item)
+                    yield f"event: token\ndata: {_json.dumps({'text': item})}\n\n"
+            finally:
+                state["stopped"] = True
+                llm_task.cancel()
+
+            yield f"event: done\ndata: {{}}\n\n"
+        finally:
+            if buffer:
+                await db.append_chat_message(
+                    session_id, "assistant", "".join(buffer),
+                    sources=final_sources if final_sources else None,
+                )
 
     return StreamingResponse(
         generate(),

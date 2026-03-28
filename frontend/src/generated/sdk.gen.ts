@@ -2,7 +2,7 @@
 
 import { type Client, formDataBodySerializer, type Options as Options2, type TDataShape } from './client';
 import { client } from './client.gen';
-import type { CreateChatApiV1ChatsPostData, CreateChatApiV1ChatsPostErrors, CreateChatApiV1ChatsPostResponses, CreateContextApiV1ContextsPostData, CreateContextApiV1ContextsPostErrors, CreateContextApiV1ContextsPostResponses, DeleteContextApiV1ContextsContextIdDeleteData, DeleteContextApiV1ContextsContextIdDeleteErrors, DeleteContextApiV1ContextsContextIdDeleteResponses, DeleteDocumentApiV1DocumentsDocIdDeleteData, DeleteDocumentApiV1DocumentsDocIdDeleteErrors, DeleteDocumentApiV1DocumentsDocIdDeleteResponses, GetDocumentApiV1DocumentsDocIdGetData, GetDocumentApiV1DocumentsDocIdGetErrors, GetDocumentApiV1DocumentsDocIdGetResponses, GetDocumentImageApiV1DocumentsDocIdImageGetData, GetDocumentImageApiV1DocumentsDocIdImageGetErrors, GetDocumentImageApiV1DocumentsDocIdImageGetResponses, GetJobApiV1DocumentsDocIdJobsGetData, GetJobApiV1DocumentsDocIdJobsGetErrors, GetJobApiV1DocumentsDocIdJobsGetResponses, GetPipelineApiV1PipelinesPipelineIdGetData, GetPipelineApiV1PipelinesPipelineIdGetErrors, GetPipelineApiV1PipelinesPipelineIdGetResponses, JobTokenStreamApiV1DocumentsDocIdJobsStreamGetData, JobTokenStreamApiV1DocumentsDocIdJobsStreamGetErrors, JobTokenStreamApiV1DocumentsDocIdJobsStreamGetResponses, ListContextsApiV1ContextsGetData, ListContextsApiV1ContextsGetResponses, ListDocumentsApiV1DocumentsGetData, ListDocumentsApiV1DocumentsGetErrors, ListDocumentsApiV1DocumentsGetResponses, ListJobEventsApiV1DocumentsDocIdJobsEventsGetData, ListJobEventsApiV1DocumentsDocIdJobsEventsGetErrors, ListJobEventsApiV1DocumentsDocIdJobsEventsGetResponses, ListJobsApiV1JobsGetData, ListJobsApiV1JobsGetErrors, ListJobsApiV1JobsGetResponses, ListPipelinesApiV1PipelinesGetData, ListPipelinesApiV1PipelinesGetResponses, PatchDocumentApiV1DocumentsDocIdPatchData, PatchDocumentApiV1DocumentsDocIdPatchErrors, PatchDocumentApiV1DocumentsDocIdPatchResponses, PostJobEventApiV1DocumentsDocIdJobsEventsPostData, PostJobEventApiV1DocumentsDocIdJobsEventsPostErrors, PostJobEventApiV1DocumentsDocIdJobsEventsPostResponses, UpdateContextApiV1ContextsContextIdPatchData, UpdateContextApiV1ContextsContextIdPatchErrors, UpdateContextApiV1ContextsContextIdPatchResponses, UploadDocumentApiV1DocumentsPostData, UploadDocumentApiV1DocumentsPostErrors, UploadDocumentApiV1DocumentsPostResponses, WebhookApiV1RemarkableWebhookPostData, WebhookApiV1RemarkableWebhookPostResponses, WebhookWebhookPostData, WebhookWebhookPostResponses } from './types.gen';
+import type { CreateChatSessionApiV1ChatsPostData, CreateChatSessionApiV1ChatsPostErrors, CreateChatSessionApiV1ChatsPostResponses, CreateContextApiV1ContextsPostData, CreateContextApiV1ContextsPostErrors, CreateContextApiV1ContextsPostResponses, DeleteChatSessionApiV1ChatsSessionIdDeleteData, DeleteChatSessionApiV1ChatsSessionIdDeleteErrors, DeleteChatSessionApiV1ChatsSessionIdDeleteResponses, DeleteContextApiV1ContextsContextIdDeleteData, DeleteContextApiV1ContextsContextIdDeleteErrors, DeleteContextApiV1ContextsContextIdDeleteResponses, DeleteDocumentApiV1DocumentsDocIdDeleteData, DeleteDocumentApiV1DocumentsDocIdDeleteErrors, DeleteDocumentApiV1DocumentsDocIdDeleteResponses, GetChatSessionApiV1ChatsSessionIdGetData, GetChatSessionApiV1ChatsSessionIdGetErrors, GetChatSessionApiV1ChatsSessionIdGetResponses, GetDocumentApiV1DocumentsDocIdGetData, GetDocumentApiV1DocumentsDocIdGetErrors, GetDocumentApiV1DocumentsDocIdGetResponses, GetDocumentImageApiV1DocumentsDocIdImageGetData, GetDocumentImageApiV1DocumentsDocIdImageGetErrors, GetDocumentImageApiV1DocumentsDocIdImageGetResponses, GetJobApiV1DocumentsDocIdJobsGetData, GetJobApiV1DocumentsDocIdJobsGetErrors, GetJobApiV1DocumentsDocIdJobsGetResponses, GetPipelineApiV1PipelinesPipelineIdGetData, GetPipelineApiV1PipelinesPipelineIdGetErrors, GetPipelineApiV1PipelinesPipelineIdGetResponses, JobTokenStreamApiV1DocumentsDocIdJobsStreamGetData, JobTokenStreamApiV1DocumentsDocIdJobsStreamGetErrors, JobTokenStreamApiV1DocumentsDocIdJobsStreamGetResponses, ListChatSessionsApiV1ChatsGetData, ListChatSessionsApiV1ChatsGetErrors, ListChatSessionsApiV1ChatsGetResponses, ListContextsApiV1ContextsGetData, ListContextsApiV1ContextsGetResponses, ListDocumentsApiV1DocumentsGetData, ListDocumentsApiV1DocumentsGetErrors, ListDocumentsApiV1DocumentsGetResponses, ListJobEventsApiV1DocumentsDocIdJobsEventsGetData, ListJobEventsApiV1DocumentsDocIdJobsEventsGetErrors, ListJobEventsApiV1DocumentsDocIdJobsEventsGetResponses, ListJobsApiV1JobsGetData, ListJobsApiV1JobsGetErrors, ListJobsApiV1JobsGetResponses, ListPipelinesApiV1PipelinesGetData, ListPipelinesApiV1PipelinesGetResponses, PatchChatSessionApiV1ChatsSessionIdPatchData, PatchChatSessionApiV1ChatsSessionIdPatchErrors, PatchChatSessionApiV1ChatsSessionIdPatchResponses, PatchDocumentApiV1DocumentsDocIdPatchData, PatchDocumentApiV1DocumentsDocIdPatchErrors, PatchDocumentApiV1DocumentsDocIdPatchResponses, PostJobEventApiV1DocumentsDocIdJobsEventsPostData, PostJobEventApiV1DocumentsDocIdJobsEventsPostErrors, PostJobEventApiV1DocumentsDocIdJobsEventsPostResponses, SendChatMessageApiV1ChatsSessionIdMessagesPostData, SendChatMessageApiV1ChatsSessionIdMessagesPostErrors, SendChatMessageApiV1ChatsSessionIdMessagesPostResponses, UpdateContextApiV1ContextsContextIdPatchData, UpdateContextApiV1ContextsContextIdPatchErrors, UpdateContextApiV1ContextsContextIdPatchResponses, UploadDocumentApiV1DocumentsPostData, UploadDocumentApiV1DocumentsPostErrors, UploadDocumentApiV1DocumentsPostResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -17,28 +17,6 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
      */
     meta?: Record<string, unknown>;
 };
-
-/**
- * Webhook
- *
- * Receives a document send from the reMarkable tablet via rmfakecloud.
- * multipart/form-data with:
- * - data:       JSON string with document metadata
- * - attachment: rendered PNG of the current sheet
- * Returns immediately; OCR runs asynchronously.
- */
-export const webhookWebhookPost = <ThrowOnError extends boolean = false>(options?: Options<WebhookWebhookPostData, ThrowOnError>) => (options?.client ?? client).post<WebhookWebhookPostResponses, unknown, ThrowOnError>({ url: '/webhook', ...options });
-
-/**
- * Webhook
- *
- * Receives a document send from the reMarkable tablet via rmfakecloud.
- * multipart/form-data with:
- * - data:       JSON string with document metadata
- * - attachment: rendered PNG of the current sheet
- * Returns immediately; OCR runs asynchronously.
- */
-export const webhookApiV1RemarkableWebhookPost = <ThrowOnError extends boolean = false>(options?: Options<WebhookApiV1RemarkableWebhookPostData, ThrowOnError>) => (options?.client ?? client).post<WebhookApiV1RemarkableWebhookPostResponses, unknown, ThrowOnError>({ url: '/api/v1/remarkable/webhook', ...options });
 
 /**
  * List Pipelines
@@ -164,12 +142,49 @@ export const updateContextApiV1ContextsContextIdPatch = <ThrowOnError extends bo
 });
 
 /**
- * Create Chat
- *
- * RAG chat: embed latest user message → search Qdrant → stream LLM reply as SSE.
+ * List Chat Sessions
  */
-export const createChatApiV1ChatsPost = <ThrowOnError extends boolean = false>(options: Options<CreateChatApiV1ChatsPostData, ThrowOnError>) => (options.client ?? client).post<CreateChatApiV1ChatsPostResponses, CreateChatApiV1ChatsPostErrors, ThrowOnError>({
+export const listChatSessionsApiV1ChatsGet = <ThrowOnError extends boolean = false>(options?: Options<ListChatSessionsApiV1ChatsGetData, ThrowOnError>) => (options?.client ?? client).get<ListChatSessionsApiV1ChatsGetResponses, ListChatSessionsApiV1ChatsGetErrors, ThrowOnError>({ url: '/api/v1/chats', ...options });
+
+/**
+ * Create Chat Session
+ */
+export const createChatSessionApiV1ChatsPost = <ThrowOnError extends boolean = false>(options: Options<CreateChatSessionApiV1ChatsPostData, ThrowOnError>) => (options.client ?? client).post<CreateChatSessionApiV1ChatsPostResponses, CreateChatSessionApiV1ChatsPostErrors, ThrowOnError>({
     url: '/api/v1/chats',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Delete Chat Session
+ */
+export const deleteChatSessionApiV1ChatsSessionIdDelete = <ThrowOnError extends boolean = false>(options: Options<DeleteChatSessionApiV1ChatsSessionIdDeleteData, ThrowOnError>) => (options.client ?? client).delete<DeleteChatSessionApiV1ChatsSessionIdDeleteResponses, DeleteChatSessionApiV1ChatsSessionIdDeleteErrors, ThrowOnError>({ url: '/api/v1/chats/{session_id}', ...options });
+
+/**
+ * Get Chat Session
+ */
+export const getChatSessionApiV1ChatsSessionIdGet = <ThrowOnError extends boolean = false>(options: Options<GetChatSessionApiV1ChatsSessionIdGetData, ThrowOnError>) => (options.client ?? client).get<GetChatSessionApiV1ChatsSessionIdGetResponses, GetChatSessionApiV1ChatsSessionIdGetErrors, ThrowOnError>({ url: '/api/v1/chats/{session_id}', ...options });
+
+/**
+ * Patch Chat Session
+ */
+export const patchChatSessionApiV1ChatsSessionIdPatch = <ThrowOnError extends boolean = false>(options: Options<PatchChatSessionApiV1ChatsSessionIdPatchData, ThrowOnError>) => (options.client ?? client).patch<PatchChatSessionApiV1ChatsSessionIdPatchResponses, PatchChatSessionApiV1ChatsSessionIdPatchErrors, ThrowOnError>({
+    url: '/api/v1/chats/{session_id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Send Chat Message
+ */
+export const sendChatMessageApiV1ChatsSessionIdMessagesPost = <ThrowOnError extends boolean = false>(options: Options<SendChatMessageApiV1ChatsSessionIdMessagesPostData, ThrowOnError>) => (options.client ?? client).post<SendChatMessageApiV1ChatsSessionIdMessagesPostResponses, SendChatMessageApiV1ChatsSessionIdMessagesPostErrors, ThrowOnError>({
+    url: '/api/v1/chats/{session_id}/messages',
     ...options,
     headers: {
         'Content-Type': 'application/json',

@@ -63,10 +63,33 @@ CREATE TABLE IF NOT EXISTS key_value (
 )
 """
 
+_CREATE_CHAT_SESSIONS = """
+CREATE TABLE IF NOT EXISTS chat_sessions (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL DEFAULT '',
+    context TEXT NOT NULL DEFAULT '',
+    top_k INTEGER NOT NULL DEFAULT 5,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+)
+"""
+
+_CREATE_CHAT_MESSAGES = """
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    sources TEXT,
+    created_at TEXT NOT NULL
+)
+"""
+
 _INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_documents_stage ON documents(current_stage, stage_state)",
     "CREATE INDEX IF NOT EXISTS idx_documents_hash ON documents(content_hash)",
     "CREATE INDEX IF NOT EXISTS idx_events_document ON stage_events(document_id, stage, event_type)",
+    "CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id, id ASC)",
 ]
 
 
@@ -86,6 +109,8 @@ class Database:
         await self._conn.execute(_CREATE_STAGE_EVENTS)
         await self._conn.execute(_CREATE_DOCUMENT_DESTINATIONS)
         await self._conn.execute(_CREATE_KEY_VALUE)
+        await self._conn.execute(_CREATE_CHAT_SESSIONS)
+        await self._conn.execute(_CREATE_CHAT_MESSAGES)
         for idx in _INDEXES:
             await self._conn.execute(idx)
         # Migration: add context_ref column if this is an existing DB
@@ -437,3 +462,119 @@ class Database:
             deleted = cur.rowcount > 0
         await self._conn.commit()
         return deleted
+
+    async def create_chat_session(self, context: str, top_k: int) -> dict:
+        import datetime as _dt
+        session_id = str(uuid.uuid4())
+        now = _dt.datetime.utcnow().isoformat() + "Z"
+        await self._conn.execute(
+            "INSERT INTO chat_sessions (id, title, context, top_k, created_at, updated_at)"
+            " VALUES (?, '', ?, ?, ?, ?)",
+            (session_id, context, top_k, now, now),
+        )
+        await self._conn.commit()
+        return {"id": session_id, "title": "", "context": context, "top_k": top_k,
+                "created_at": now, "updated_at": now, "message_count": 0}
+
+    async def get_chat_session(self, session_id: str) -> Optional[dict]:
+        async with self._conn.execute(
+            "SELECT * FROM chat_sessions WHERE id=?", (session_id,)
+        ) as cur:
+            row = await cur.fetchone()
+            if not row:
+                return None
+        async with self._conn.execute(
+            "SELECT COUNT(*) FROM chat_messages WHERE session_id=?", (session_id,)
+        ) as cur:
+            count_row = await cur.fetchone()
+            message_count = count_row[0] if count_row else 0
+        return {
+            "id": row["id"], "title": row["title"], "context": row["context"],
+            "top_k": row["top_k"], "created_at": row["created_at"], "updated_at": row["updated_at"],
+            "message_count": message_count,
+        }
+
+    async def list_chat_sessions(
+        self, page_size: int = 20, before_id: Optional[str] = None
+    ) -> list[dict]:
+        params: list = []
+        where = ""
+        if before_id is not None:
+            async with self._conn.execute(
+                "SELECT created_at FROM chat_sessions WHERE id=?", (before_id,)
+            ) as cur:
+                ref = await cur.fetchone()
+            if ref:
+                where = " WHERE (created_at, id) < (?, ?)"
+                params = [ref["created_at"], before_id]
+        sql = (
+            "SELECT id, title, context, top_k, created_at, updated_at,"
+            " (SELECT COUNT(*) FROM chat_messages WHERE session_id = chat_sessions.id) as message_count"
+            f" FROM chat_sessions{where} ORDER BY created_at DESC, id DESC LIMIT ?"
+        )
+        params.append(page_size)
+        async with self._conn.execute(sql, params) as cur:
+            rows = await cur.fetchall()
+        return [
+            {
+                "id": r["id"], "title": r["title"], "context": r["context"],
+                "top_k": r["top_k"], "created_at": r["created_at"], "updated_at": r["updated_at"],
+                "message_count": r["message_count"],
+            }
+            for r in rows
+        ]
+
+    async def update_chat_session(self, session_id: str, **kwargs) -> Optional[dict]:
+        allowed = {"title", "context", "top_k", "updated_at"}
+        sets, params = [], []
+        for k, v in kwargs.items():
+            if k in allowed:
+                sets.append(f"{k} = ?")
+                params.append(v)
+        if sets:
+            params.append(session_id)
+            await self._conn.execute(
+                f"UPDATE chat_sessions SET {', '.join(sets)} WHERE id=?", params
+            )
+            await self._conn.commit()
+        return await self.get_chat_session(session_id)
+
+    async def delete_chat_session(self, session_id: str) -> bool:
+        async with self._conn.execute("DELETE FROM chat_sessions WHERE id=?", (session_id,)) as cur:
+            deleted = cur.rowcount > 0
+        await self._conn.commit()
+        return deleted
+
+    async def append_chat_message(
+        self, session_id: str, role: str, content: str, sources: Optional[list] = None
+    ) -> dict:
+        import datetime as _dt
+        now = _dt.datetime.utcnow().isoformat() + "Z"
+        sources_json = json.dumps(sources) if sources is not None else None
+        async with self._conn.execute(
+            "INSERT INTO chat_messages (session_id, role, content, sources, created_at)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (session_id, role, content, sources_json, now),
+        ) as cur:
+            row_id = cur.lastrowid
+        await self._conn.commit()
+        return {
+            "id": row_id, "role": role, "content": content,
+            "sources": sources, "created_at": now,
+        }
+
+    async def list_chat_messages(self, session_id: str) -> list[dict]:
+        async with self._conn.execute(
+            "SELECT id, role, content, sources, created_at FROM chat_messages"
+            " WHERE session_id=? ORDER BY id ASC",
+            (session_id,),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [
+            {
+                "id": r["id"], "role": r["role"], "content": r["content"],
+                "sources": json.loads(r["sources"]) if r["sources"] else None,
+                "created_at": r["created_at"],
+            }
+            for r in rows
+        ]

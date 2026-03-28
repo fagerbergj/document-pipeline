@@ -2,18 +2,15 @@ openapi: 3.1.0
 
 info:
   title: document-pipeline
-  version: 0.1.0
+  version: 0.2.0
   description: |
-    Ingests handwritten notes from a reMarkable tablet, runs them through a
-    configurable OCR → clarify → classify → embed pipeline, and stores the
-    results in a vector database for RAG queries.
+    Ingests documents through a configurable OCR → clarify → classify → embed pipeline,
+    and stores the results in a vector database for RAG queries.
 
     Documents move through pipeline stages asynchronously. The frontend polls
     for state changes and streams live LLM output via Server-Sent Events.
 
 tags:
-  - name: Ingest
-    description: Webhook endpoint for reMarkable tablet push notifications.
   - name: Pipelines
     description: Pipeline configuration — stage names, types, and models.
   - name: Documents
@@ -26,68 +23,6 @@ tags:
     description: RAG chat over the embedded knowledge base.
 
 paths:
-
-  # ── Ingest ──────────────────────────────────────────────────────────────────
-
-  /webhook:
-    post:
-      tags: [Ingest]
-      summary: Receive document from reMarkable (deprecated)
-      description: |
-        **Deprecated** — use `/api/v1/remarkable/webhook` instead.
-
-        Receives a document pushed by rmfakecloud from the reMarkable tablet.
-        Kept for backwards compatibility.
-      operationId: receiveWebhookLegacy
-      deprecated: true
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              properties:
-                data:
-                  type: string
-                  description: JSON-encoded document metadata from rmfakecloud.
-                attachment:
-                  type: string
-                  format: binary
-                  description: PNG image of the reMarkable sheet.
-      responses:
-        '200':
-          description: Document accepted (or silently skipped as a duplicate).
-
-  /api/v1/remarkable/webhook:
-    post:
-      tags: [Ingest]
-      summary: Receive document from reMarkable
-      description: |
-        Receives a document pushed by rmfakecloud from the reMarkable tablet.
-        Expects `multipart/form-data` with two fields:
-        - `data`: JSON string containing document metadata and destination names.
-        - `attachment`: rendered PNG of the current sheet.
-
-        The document is persisted immediately and OCR runs asynchronously.
-        Returns 200 as soon as the file is saved (or if it is a duplicate).
-      operationId: receiveWebhook
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              properties:
-                data:
-                  type: string
-                  description: JSON-encoded document metadata from rmfakecloud.
-                attachment:
-                  type: string
-                  format: binary
-                  description: PNG image of the reMarkable sheet.
-      responses:
-        '200':
-          description: Document accepted (or silently skipped as a duplicate).
 
   # ── Pipelines ────────────────────────────────────────────────────────────────
 
@@ -463,33 +398,132 @@ paths:
   # ── Chat ─────────────────────────────────────────────────────────────────────
 
   /api/v1/chats:
+    get:
+      tags: [Chat]
+      summary: List chat sessions
+      operationId: listChatSessions
+      parameters:
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: before_id
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paginated list of chat sessions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedChatSessions'
     post:
       tags: [Chat]
-      summary: Start a RAG chat
-      description: |
-        Embeds the latest user message, searches the Qdrant vector store for
-        relevant notes, builds a system prompt from the retrieved context, and
-        streams the LLM response back as Server-Sent Events.
-
-        SSE event types:
-        - `sources`: JSON array of `SourceDoc` objects retrieved from the vector store.
-        - `token`: `{"text": "..."}` — one LLM output token.
-        - `done`: `{}` — generation complete.
-        - `error`: `{"error": "..."}` — something went wrong.
-      operationId: startChat
+      summary: Create a new chat session
+      operationId: createChatSession
       requestBody:
-        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ChatRequest'
+              $ref: '#/components/schemas/CreateChatSessionBody'
       responses:
         '200':
-          description: SSE stream of sources, tokens, and completion events.
+          description: Newly created chat session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatSessionSummary'
+
+  /api/v1/chats/{session_id}:
+    get:
+      tags: [Chat]
+      summary: Get chat session with messages
+      operationId: getChatSession
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Chat session detail including full message history.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatSessionDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Chat]
+      summary: Update chat session title, context, or top_k
+      operationId: patchChatSession
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchChatSessionBody'
+      responses:
+        '200':
+          description: Updated chat session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatSessionSummary'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Chat]
+      summary: Delete a chat session and all its messages
+      operationId: deleteChatSession
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Session deleted.
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/chats/{session_id}/messages:
+    post:
+      tags: [Chat]
+      summary: Send a message and stream the RAG-augmented reply
+      operationId: sendChatMessage
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendMessageBody'
+      responses:
+        '200':
+          description: SSE stream of token events followed by a done event.
           content:
             text/event-stream:
               schema:
                 type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
 
 components:
 
@@ -606,6 +640,7 @@ components:
       properties:
         ok:
           type: boolean
+          description: Always true on success.
 
     # — Pipelines ——————————————————————————————————————————————————————————————
 
@@ -647,15 +682,19 @@ components:
       properties:
         id:
           type: string
+          description: Pipeline identifier (filename stem).
         name:
           type: string
+          description: Human-readable pipeline name.
         stages:
           type: array
+          description: Ordered list of stage configurations.
           items:
             $ref: '#/components/schemas/PipelineStageConfig'
 
     PaginatedPipelines:
       type: object
+      description: Paginated list of pipeline summaries.
       required: [data]
       properties:
         data:
@@ -665,6 +704,7 @@ components:
         nextPageToken:
           type: string
           nullable: true
+          description: Opaque cursor; pass as `pageToken` on next request. Null when no more pages.
 
     # — Documents ——————————————————————————————————————————————————————————————
 
@@ -687,9 +727,11 @@ components:
         created_at:
           type: string
           format: date-time
+          description: ISO 8601 creation timestamp.
         updated_at:
           type: string
           format: date-time
+          description: ISO 8601 last-updated timestamp.
 
     DocumentDetail:
       type: object
@@ -699,9 +741,11 @@ components:
         id:
           type: string
           format: uuid
+          description: Unique document identifier.
         title:
           type: string
           nullable: true
+          description: Human-readable document title.
         document_context:
           type: string
           description: Free-text context attached by the user to guide LLM stages.
@@ -720,12 +764,15 @@ components:
         created_at:
           type: string
           format: date-time
+          description: ISO 8601 creation timestamp.
         updated_at:
           type: string
           format: date-time
+          description: ISO 8601 last-updated timestamp.
 
     PaginatedDocuments:
       type: object
+      description: Paginated list of document summaries.
       required: [data]
       properties:
         data:
@@ -735,6 +782,7 @@ components:
         nextPageToken:
           type: string
           nullable: true
+          description: Opaque cursor; pass as `pageToken` on next request. Null when no more pages.
 
     StageDisplay:
       type: object
@@ -760,22 +808,27 @@ components:
         doc_id:
           type: string
           format: uuid
+          description: UUID of the document this job belongs to.
         title:
           type: string
           nullable: true
           description: Denormalized document title.
         current_stage:
           type: string
+          description: Name of the stage the document is currently in.
         stage_state:
           $ref: '#/components/schemas/StageState'
         needs_context:
           type: boolean
+          description: True if the current stage is blocked waiting for context input.
         created_at:
           type: string
           format: date-time
+          description: ISO 8601 creation timestamp.
         updated_at:
           type: string
           format: date-time
+          description: ISO 8601 last-updated timestamp.
 
     JobDetail:
       type: object
@@ -785,8 +838,10 @@ components:
         doc_id:
           type: string
           format: uuid
+          description: UUID of the document this job belongs to.
         current_stage:
           type: string
+          description: Name of the stage the document is currently in.
         stage_state:
           $ref: '#/components/schemas/StageState'
         needs_context:
@@ -807,6 +862,7 @@ components:
 
     PaginatedJobs:
       type: object
+      description: Paginated list of job summaries.
       required: [data]
       properties:
         data:
@@ -816,6 +872,7 @@ components:
         nextPageToken:
           type: string
           nullable: true
+          description: Opaque cursor; pass as `pageToken` on next request. Null when no more pages.
 
     JobEventRecord:
       type: object
@@ -828,17 +885,22 @@ components:
         timestamp:
           type: string
           format: date-time
+          description: ISO 8601 timestamp of when the event was recorded.
         stage:
           type: string
+          description: Pipeline stage name at time of event.
         event_type:
           type: string
+          description: Type of event (e.g. `approved`, `completed`, `error`).
         data:
           type: object
           nullable: true
           additionalProperties: true
+          description: Optional event payload.
 
     PaginatedJobEvents:
       type: object
+      description: Paginated list of job events in chronological order.
       required: [data]
       properties:
         data:
@@ -848,7 +910,7 @@ components:
         nextPageToken:
           type: string
           nullable: true
-          description: Page token to pass on the next request to fetch subsequent events.
+          description: Opaque cursor; pass as `pageToken` on next request. Null when no more pages.
 
     ReplayStage:
       type: object
@@ -857,6 +919,7 @@ components:
       properties:
         name:
           type: string
+          description: Pipeline stage name.
 
     ReviewDetail:
       type: object
@@ -877,131 +940,168 @@ components:
       properties:
         stage_name:
           type: string
+          description: Name of the stage awaiting review.
         input_field:
           type: string
           nullable: true
+          description: Source field name fed into the LLM prompt.
         output_field:
           type: string
           nullable: true
+          description: Field name where the LLM output is stored.
         input_text:
           type: string
+          description: The text sent to the LLM.
         output_text:
           type: string
+          description: The LLM's output awaiting approval.
         is_single_output:
           type: boolean
+          description: True when the stage writes a single output field.
         confidence:
           type: string
+          description: LLM-reported confidence in the output.
         qa_rounds:
           type: integer
+          description: Number of clarification rounds completed so far.
         clarification_requests:
           type: array
+          description: Questions the LLM raised that need answers before it can proceed.
           items:
             $ref: '#/components/schemas/ClarificationRequest'
         document_context_update:
           type: string
+          description: Suggested update to the document's context field, proposed by the LLM.
         linked_context_update:
           type: string
+          description: Suggested update to the linked context entry, proposed by the LLM.
         context_ref:
           type: string
           nullable: true
+          description: UUID of the linked context entry, if any.
 
     ClarificationRequest:
       type: object
+      description: A question the LLM raised about a specific text segment.
       required: [segment, question]
       properties:
         segment:
           type: string
+          description: The text segment that prompted the question.
         question:
           type: string
+          description: The clarification question to present to the user.
 
     # — Job event bodies (discriminated union) ——————————————————————————————————
 
     ApproveEvent:
       type: object
+      description: Advance the stage to the next, optionally replacing the LLM output with edited text.
       required: [type]
       properties:
         type:
           type: string
           enum: [approve]
+          description: Event discriminator.
         edited_text:
           type: string
           default: ''
+          description: Replacement text for the LLM output. Empty string keeps the original.
 
     RejectEvent:
       type: object
+      description: Discard the LLM output and reset the stage to pending.
       required: [type]
       properties:
         type:
           type: string
           enum: [reject]
+          description: Event discriminator.
 
     ClarifyEvent:
       type: object
+      description: Provide clarification answers or a free prompt and retry the stage.
       required: [type]
       properties:
         type:
           type: string
           enum: [clarify]
+          description: Event discriminator.
         answers:
           type: object
           additionalProperties:
             type: string
           default: {}
+          description: Map of question text to answer text for each clarification request.
         free_prompt:
           type: string
           default: ''
+          description: Additional instruction appended to the retry prompt.
         edited_text:
           type: string
           default: ''
+          description: Optionally replace the existing output before retrying.
 
     RetryEvent:
       type: object
+      description: Reset the stage from error or waiting back to pending.
       required: [type]
       properties:
         type:
           type: string
           enum: [retry]
+          description: Event discriminator.
 
     StopEvent:
       type: object
+      description: Force the stage into the error state.
       required: [type]
       properties:
         type:
           type: string
           enum: [stop]
+          description: Event discriminator.
 
     ReplayEvent:
       type: object
+      description: Rewind the document to a previously completed stage.
       required: [type, stage]
       properties:
         type:
           type: string
           enum: [replay]
+          description: Event discriminator.
         stage:
           type: string
           description: Name of the pipeline stage to rewind to.
 
     ProvideContextEvent:
       type: object
+      description: Supply context to unblock a stage that is waiting for it.
       required: [type]
       properties:
         type:
           type: string
           enum: [provide_context]
+          description: Event discriminator.
         document_context:
           type: string
           default: ''
+          description: Free-text context to attach to the document.
         context_ref:
           type: string
           nullable: true
+          description: UUID of a saved context entry to link.
 
     ClearErrorsEvent:
       type: object
+      description: Remove all failed events from the job's event history.
       required: [type]
       properties:
         type:
           type: string
           enum: [clear_errors]
+          description: Event discriminator.
 
     JobEventBody:
       description: Discriminated union of all job state-transition event types.
@@ -1046,6 +1146,7 @@ components:
 
     PaginatedContexts:
       type: object
+      description: Paginated list of context entries.
       required: [data]
       properties:
         data:
@@ -1055,25 +1156,32 @@ components:
         nextPageToken:
           type: string
           nullable: true
+          description: Opaque cursor; pass as `pageToken` on next request. Null when no more pages.
 
     CreateContextBody:
       type: object
+      description: Payload for creating a new context entry.
       required: [name, text]
       properties:
         name:
           type: string
+          description: Human-readable name for this context entry.
         text:
           type: string
+          description: The context text injected into LLM prompts.
 
     UpdateContextBody:
       type: object
+      description: Fields to update on a context entry. Omitted fields are unchanged.
       properties:
         name:
           type: string
           nullable: true
+          description: Updated name. Null leaves unchanged.
         text:
           type: string
           nullable: true
+          description: Updated context text. Null leaves unchanged.
 
     # — Documents request bodies ————————————————————————————————————————————————
 
@@ -1084,44 +1192,17 @@ components:
         title:
           type: string
           nullable: true
+          description: Updated document title. Null clears the title.
         document_context:
           type: string
           nullable: true
+          description: Free-text context to attach to the document. Null clears it.
         context_ref:
           type: string
           nullable: true
           description: UUID of a context entry to link, or null to unlink.
 
     # — Chat ———————————————————————————————————————————————————————————————————
-
-    ChatMessage:
-      type: object
-      required: [role, content]
-      properties:
-        role:
-          type: string
-          enum: [user, assistant]
-        content:
-          type: string
-
-    ChatRequest:
-      type: object
-      required: [messages]
-      properties:
-        messages:
-          type: array
-          items:
-            $ref: '#/components/schemas/ChatMessage'
-        context:
-          type: string
-          default: ''
-          description: Optional free-text context injected into the system prompt.
-        top_k:
-          type: integer
-          default: 5
-          minimum: 1
-          maximum: 20
-          description: Number of vector search results to retrieve per turn.
 
     SourceDoc:
       type: object
@@ -1131,11 +1212,14 @@ components:
         doc_id:
           type: string
           format: uuid
+          description: UUID of the source document.
         title:
           type: string
+          description: Document title.
         summary:
           type: string
           default: ''
+          description: Brief summary of the document's content.
         date_month:
           type: string
           default: ''
@@ -1143,3 +1227,142 @@ components:
         score:
           type: number
           format: float
+          description: Vector similarity score.
+
+    ChatSessionSummary:
+      type: object
+      description: Lightweight chat session representation used in list views.
+      required: [id, title, context, top_k, created_at, updated_at, message_count]
+      properties:
+        id:
+          type: string
+          description: Session UUID.
+        title:
+          type: string
+          description: Auto-derived from the first user message (first 60 chars).
+        context:
+          type: string
+          description: Optional freeform context injected into every system prompt.
+        top_k:
+          type: integer
+          description: Number of Qdrant results to retrieve per query.
+        created_at:
+          type: string
+          description: ISO 8601 creation timestamp.
+        updated_at:
+          type: string
+          description: ISO 8601 last-updated timestamp.
+        message_count:
+          type: integer
+          description: Total number of messages in the session.
+
+    ChatSessionDetail:
+      type: object
+      description: Full chat session including all message history.
+      required: [id, title, context, top_k, created_at, updated_at, messages]
+      properties:
+        id:
+          type: string
+          description: Session UUID.
+        title:
+          type: string
+          description: Auto-derived from the first user message (first 60 chars).
+        context:
+          type: string
+          description: Optional freeform context injected into every system prompt.
+        top_k:
+          type: integer
+          description: Number of Qdrant results to retrieve per query.
+        created_at:
+          type: string
+          description: ISO 8601 creation timestamp.
+        updated_at:
+          type: string
+          description: ISO 8601 last-updated timestamp.
+        messages:
+          type: array
+          description: All messages in the session in chronological order.
+          items:
+            $ref: '#/components/schemas/ChatMessageRecord'
+
+    ChatMessageRecord:
+      type: object
+      description: A single message turn in a chat session.
+      required: [id, role, content, created_at]
+      properties:
+        id:
+          type: integer
+          description: Auto-increment row ID; defines message ordering.
+        role:
+          type: string
+          description: Message author.
+          enum: [user, assistant]
+        content:
+          type: string
+          description: Message text.
+        sources:
+          type: array
+          nullable: true
+          description: Retrieved source documents (only set on assistant messages).
+          items:
+            $ref: '#/components/schemas/SourceDoc'
+        created_at:
+          type: string
+          description: ISO 8601 creation timestamp.
+
+    CreateChatSessionBody:
+      type: object
+      description: Options for creating a new chat session.
+      properties:
+        context:
+          type: string
+          default: ''
+          description: Optional freeform context injected into every system prompt.
+        top_k:
+          type: integer
+          default: 5
+          minimum: 1
+          maximum: 20
+          description: Number of Qdrant results to retrieve per query.
+
+    PatchChatSessionBody:
+      type: object
+      description: Fields to update on an existing chat session. Omitted fields are unchanged.
+      properties:
+        title:
+          type: string
+          nullable: true
+          description: Override the auto-derived title.
+        context:
+          type: string
+          nullable: true
+          description: Optional freeform context injected into every system prompt.
+        top_k:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 20
+          description: Number of Qdrant results to retrieve per query.
+
+    SendMessageBody:
+      type: object
+      description: A new user message to send to the chat session.
+      required: [content]
+      properties:
+        content:
+          type: string
+          description: The user's message text.
+
+    PaginatedChatSessions:
+      type: object
+      description: Paginated list of chat sessions ordered by most recently updated.
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatSessionSummary'
+        next_before_id:
+          type: string
+          nullable: true
+          description: Pass as `before_id` to fetch the next page. Null when no more pages.

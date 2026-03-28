@@ -10,10 +10,14 @@ export type ClientOptions = {
 export type ApproveEvent = {
     /**
      * Type
+     *
+     * Event discriminator.
      */
     type: 'approve';
     /**
      * Edited Text
+     *
+     * Replacement text for the LLM output. Empty string keeps the original.
      */
     edited_text?: string | null;
 };
@@ -41,48 +45,19 @@ export type BodyUploadDocumentApiV1DocumentsPost = {
 };
 
 /**
- * ChatMessage
- */
-export type ChatMessage = {
-    role: Role;
-    /**
-     * Content
-     */
-    content: string;
-};
-
-/**
- * ChatRequest
- */
-export type ChatRequest = {
-    /**
-     * Messages
-     */
-    messages: Array<ChatMessage>;
-    /**
-     * Context
-     *
-     * Optional free-text context injected into the system prompt.
-     */
-    context?: string | null;
-    /**
-     * Top K
-     *
-     * Number of vector search results to retrieve per turn.
-     */
-    top_k?: number | null;
-};
-
-/**
  * ClarificationRequest
  */
 export type ClarificationRequest = {
     /**
      * Segment
+     *
+     * The text segment that prompted the question.
      */
     segment: string;
     /**
      * Question
+     *
+     * The clarification question to present to the user.
      */
     question: string;
 };
@@ -93,20 +68,28 @@ export type ClarificationRequest = {
 export type ClarifyEvent = {
     /**
      * Type
+     *
+     * Event discriminator.
      */
     type: 'clarify';
     /**
      * Answers
+     *
+     * Map of question text to answer text for each clarification request.
      */
     answers?: {
         [key: string]: string;
     } | null;
     /**
      * Free Prompt
+     *
+     * Additional instruction appended to the retry prompt.
      */
     free_prompt?: string | null;
     /**
      * Edited Text
+     *
+     * Optionally replace the existing output before retrying.
      */
     edited_text?: string | null;
 };
@@ -117,6 +100,8 @@ export type ClarifyEvent = {
 export type ClearErrorsEvent = {
     /**
      * Type
+     *
+     * Event discriminator.
      */
     type: 'clear_errors';
 };
@@ -146,15 +131,37 @@ export type ContextEntry = {
 };
 
 /**
+ * CreateChatSessionBody
+ */
+export type CreateChatSessionBody = {
+    /**
+     * Context
+     *
+     * Optional freeform context injected into every system prompt.
+     */
+    context?: string | null;
+    /**
+     * Top K
+     *
+     * Number of Qdrant results to retrieve per query.
+     */
+    top_k?: number | null;
+};
+
+/**
  * CreateContextBody
  */
 export type CreateContextBody = {
     /**
      * Name
+     *
+     * Human-readable name for this context entry.
      */
     name: string;
     /**
      * Text
+     *
+     * The context text injected into LLM prompts.
      */
     text: string;
 };
@@ -165,10 +172,14 @@ export type CreateContextBody = {
 export type DocumentDetail = {
     /**
      * Id
+     *
+     * Unique document identifier.
      */
     id: string;
     /**
      * Title
+     *
+     * Human-readable document title.
      */
     title?: string | null;
     /**
@@ -197,10 +208,14 @@ export type DocumentDetail = {
     stage_displays: Array<StageDisplay>;
     /**
      * Created At
+     *
+     * ISO 8601 creation timestamp.
      */
     created_at: string;
     /**
      * Updated At
+     *
+     * ISO 8601 last-updated timestamp.
      */
     updated_at: string;
 };
@@ -229,10 +244,14 @@ export type DocumentSummary = {
     needs_context: boolean;
     /**
      * Created At
+     *
+     * ISO 8601 creation timestamp.
      */
     created_at: string;
     /**
      * Updated At
+     *
+     * ISO 8601 last-updated timestamp.
      */
     updated_at: string;
 };
@@ -253,10 +272,14 @@ export type HttpValidationError = {
 export type JobDetail = {
     /**
      * Doc Id
+     *
+     * UUID of the document this job belongs to.
      */
     doc_id: string;
     /**
      * Current Stage
+     *
+     * Name of the stage the document is currently in.
      */
     current_stage: string;
     stage_state: StageState;
@@ -296,18 +319,26 @@ export type JobEventRecord = {
     id: number;
     /**
      * Timestamp
+     *
+     * ISO 8601 timestamp of when the event was recorded.
      */
     timestamp: string;
     /**
      * Stage
+     *
+     * Pipeline stage name at time of event.
      */
     stage: string;
     /**
      * Event Type
+     *
+     * Type of event (e.g. `approved`, `completed`, `error`).
      */
     event_type: string;
     /**
      * Data
+     *
+     * Optional event payload.
      */
     data?: {
         [key: string]: unknown;
@@ -320,6 +351,8 @@ export type JobEventRecord = {
 export type JobSummary = {
     /**
      * Doc Id
+     *
+     * UUID of the document this job belongs to.
      */
     doc_id: string;
     /**
@@ -330,19 +363,27 @@ export type JobSummary = {
     title?: string | null;
     /**
      * Current Stage
+     *
+     * Name of the stage the document is currently in.
      */
     current_stage: string;
     stage_state: StageState;
     /**
      * Needs Context
+     *
+     * True if the current stage is blocked waiting for context input.
      */
     needs_context: boolean;
     /**
      * Created At
+     *
+     * ISO 8601 creation timestamp.
      */
     created_at: string;
     /**
      * Updated At
+     *
+     * ISO 8601 last-updated timestamp.
      */
     updated_at: string;
 };
@@ -353,6 +394,8 @@ export type JobSummary = {
 export type OkResponse = {
     /**
      * Ok
+     *
+     * Always true on success.
      */
     ok: boolean;
 };
@@ -367,6 +410,8 @@ export type PaginatedContexts = {
     data: Array<ContextEntry>;
     /**
      * Nextpagetoken
+     *
+     * Opaque cursor; pass as `pageToken` on next request. Null when no more pages.
      */
     nextPageToken?: string | null;
 };
@@ -381,6 +426,8 @@ export type PaginatedDocuments = {
     data: Array<DocumentSummary>;
     /**
      * Nextpagetoken
+     *
+     * Opaque cursor; pass as `pageToken` on next request. Null when no more pages.
      */
     nextPageToken?: string | null;
 };
@@ -396,7 +443,7 @@ export type PaginatedJobEvents = {
     /**
      * Nextpagetoken
      *
-     * Pass as `afterId` on the next request to fetch subsequent events.
+     * Opaque cursor; pass as `pageToken` on next request. Null when no more pages.
      */
     nextPageToken?: string | null;
 };
@@ -411,6 +458,8 @@ export type PaginatedJobs = {
     data: Array<JobSummary>;
     /**
      * Nextpagetoken
+     *
+     * Opaque cursor; pass as `pageToken` on next request. Null when no more pages.
      */
     nextPageToken?: string | null;
 };
@@ -425,8 +474,34 @@ export type PaginatedPipelines = {
     data: Array<PipelineSummary>;
     /**
      * Nextpagetoken
+     *
+     * Opaque cursor; pass as `pageToken` on next request. Null when no more pages.
      */
     nextPageToken?: string | null;
+};
+
+/**
+ * PatchChatSessionBody
+ */
+export type PatchChatSessionBody = {
+    /**
+     * Title
+     *
+     * Override the auto-derived title.
+     */
+    title?: string | null;
+    /**
+     * Context
+     *
+     * Optional freeform context injected into every system prompt.
+     */
+    context?: string | null;
+    /**
+     * Top K
+     *
+     * Number of Qdrant results to retrieve per query.
+     */
+    top_k?: number | null;
 };
 
 /**
@@ -435,10 +510,14 @@ export type PaginatedPipelines = {
 export type PatchDocumentBody = {
     /**
      * Title
+     *
+     * Updated document title. Null clears the title.
      */
     title?: string | null;
     /**
      * Document Context
+     *
+     * Free-text context to attach to the document. Null clears it.
      */
     document_context?: string | null;
     /**
@@ -455,14 +534,20 @@ export type PatchDocumentBody = {
 export type PipelineDetail = {
     /**
      * Id
+     *
+     * Pipeline identifier (filename stem).
      */
     id: string;
     /**
      * Name
+     *
+     * Human-readable pipeline name.
      */
     name: string;
     /**
      * Stages
+     *
+     * Ordered list of stage configurations.
      */
     stages: Array<PipelineStageConfig>;
 };
@@ -521,14 +606,20 @@ export type PipelineSummary = {
 export type ProvideContextEvent = {
     /**
      * Type
+     *
+     * Event discriminator.
      */
     type: 'provide_context';
     /**
      * Document Context
+     *
+     * Free-text context to attach to the document.
      */
     document_context?: string | null;
     /**
      * Context Ref
+     *
+     * UUID of a saved context entry to link.
      */
     context_ref?: string | null;
 };
@@ -539,6 +630,8 @@ export type ProvideContextEvent = {
 export type RejectEvent = {
     /**
      * Type
+     *
+     * Event discriminator.
      */
     type: 'reject';
 };
@@ -549,6 +642,8 @@ export type RejectEvent = {
 export type ReplayEvent = {
     /**
      * Type
+     *
+     * Event discriminator.
      */
     type: 'replay';
     /**
@@ -565,6 +660,8 @@ export type ReplayEvent = {
 export type ReplayStage = {
     /**
      * Name
+     *
+     * Pipeline stage name.
      */
     name: string;
 };
@@ -575,6 +672,8 @@ export type ReplayStage = {
 export type RetryEvent = {
     /**
      * Type
+     *
+     * Event discriminator.
      */
     type: 'retry';
 };
@@ -585,58 +684,89 @@ export type RetryEvent = {
 export type ReviewDetail = {
     /**
      * Stage Name
+     *
+     * Name of the stage awaiting review.
      */
     stage_name: string;
     /**
      * Input Field
+     *
+     * Source field name fed into the LLM prompt.
      */
     input_field?: string | null;
     /**
      * Output Field
+     *
+     * Field name where the LLM output is stored.
      */
     output_field?: string | null;
     /**
      * Input Text
+     *
+     * The text sent to the LLM.
      */
     input_text: string;
     /**
      * Output Text
+     *
+     * The LLM's output awaiting approval.
      */
     output_text: string;
     /**
      * Is Single Output
+     *
+     * True when the stage writes a single output field.
      */
     is_single_output: boolean;
     /**
      * Confidence
+     *
+     * LLM-reported confidence in the output.
      */
     confidence: string;
     /**
      * Qa Rounds
+     *
+     * Number of clarification rounds completed so far.
      */
     qa_rounds: number;
     /**
      * Clarification Requests
+     *
+     * Questions the LLM raised that need answers before it can proceed.
      */
     clarification_requests: Array<ClarificationRequest>;
     /**
      * Document Context Update
+     *
+     * Suggested update to the document's context field, proposed by the LLM.
      */
     document_context_update: string;
     /**
      * Linked Context Update
+     *
+     * Suggested update to the linked context entry, proposed by the LLM.
      */
     linked_context_update: string;
     /**
      * Context Ref
+     *
+     * UUID of the linked context entry, if any.
      */
     context_ref?: string | null;
 };
 
 /**
- * Role
+ * SendMessageBody
  */
-export type Role = 'user' | 'assistant';
+export type SendMessageBody = {
+    /**
+     * Content
+     *
+     * The user's message text.
+     */
+    content: string;
+};
 
 /**
  * StageDisplay
@@ -669,6 +799,8 @@ export type StageState = 'pending' | 'running' | 'waiting' | 'error' | 'done';
 export type StopEvent = {
     /**
      * Type
+     *
+     * Event discriminator.
      */
     type: 'stop';
 };
@@ -679,10 +811,14 @@ export type StopEvent = {
 export type UpdateContextBody = {
     /**
      * Name
+     *
+     * Updated name. Null leaves unchanged.
      */
     name?: string | null;
     /**
      * Text
+     *
+     * Updated context text. Null leaves unchanged.
      */
     text?: string | null;
 };
@@ -703,34 +839,6 @@ export type ValidationError = {
      * Error Type
      */
     type: string;
-};
-
-export type WebhookWebhookPostData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/webhook';
-};
-
-export type WebhookWebhookPostResponses = {
-    /**
-     * Successful Response
-     */
-    200: unknown;
-};
-
-export type WebhookApiV1RemarkableWebhookPostData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/api/v1/remarkable/webhook';
-};
-
-export type WebhookApiV1RemarkableWebhookPostResponses = {
-    /**
-     * Successful Response
-     */
-    200: unknown;
 };
 
 export type ListPipelinesApiV1PipelinesGetData = {
@@ -1261,23 +1369,167 @@ export type UpdateContextApiV1ContextsContextIdPatchResponses = {
 
 export type UpdateContextApiV1ContextsContextIdPatchResponse = UpdateContextApiV1ContextsContextIdPatchResponses[keyof UpdateContextApiV1ContextsContextIdPatchResponses];
 
-export type CreateChatApiV1ChatsPostData = {
-    body: ChatRequest;
+export type ListChatSessionsApiV1ChatsGetData = {
+    body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Page Size
+         */
+        page_size?: number;
+        /**
+         * Before Id
+         */
+        before_id?: string | null;
+    };
     url: '/api/v1/chats';
 };
 
-export type CreateChatApiV1ChatsPostErrors = {
+export type ListChatSessionsApiV1ChatsGetErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type CreateChatApiV1ChatsPostError = CreateChatApiV1ChatsPostErrors[keyof CreateChatApiV1ChatsPostErrors];
+export type ListChatSessionsApiV1ChatsGetError = ListChatSessionsApiV1ChatsGetErrors[keyof ListChatSessionsApiV1ChatsGetErrors];
 
-export type CreateChatApiV1ChatsPostResponses = {
+export type ListChatSessionsApiV1ChatsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type CreateChatSessionApiV1ChatsPostData = {
+    body: CreateChatSessionBody;
+    path?: never;
+    query?: never;
+    url: '/api/v1/chats';
+};
+
+export type CreateChatSessionApiV1ChatsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateChatSessionApiV1ChatsPostError = CreateChatSessionApiV1ChatsPostErrors[keyof CreateChatSessionApiV1ChatsPostErrors];
+
+export type CreateChatSessionApiV1ChatsPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type DeleteChatSessionApiV1ChatsSessionIdDeleteData = {
+    body?: never;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/api/v1/chats/{session_id}';
+};
+
+export type DeleteChatSessionApiV1ChatsSessionIdDeleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteChatSessionApiV1ChatsSessionIdDeleteError = DeleteChatSessionApiV1ChatsSessionIdDeleteErrors[keyof DeleteChatSessionApiV1ChatsSessionIdDeleteErrors];
+
+export type DeleteChatSessionApiV1ChatsSessionIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type GetChatSessionApiV1ChatsSessionIdGetData = {
+    body?: never;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/api/v1/chats/{session_id}';
+};
+
+export type GetChatSessionApiV1ChatsSessionIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetChatSessionApiV1ChatsSessionIdGetError = GetChatSessionApiV1ChatsSessionIdGetErrors[keyof GetChatSessionApiV1ChatsSessionIdGetErrors];
+
+export type GetChatSessionApiV1ChatsSessionIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type PatchChatSessionApiV1ChatsSessionIdPatchData = {
+    body: PatchChatSessionBody;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/api/v1/chats/{session_id}';
+};
+
+export type PatchChatSessionApiV1ChatsSessionIdPatchErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PatchChatSessionApiV1ChatsSessionIdPatchError = PatchChatSessionApiV1ChatsSessionIdPatchErrors[keyof PatchChatSessionApiV1ChatsSessionIdPatchErrors];
+
+export type PatchChatSessionApiV1ChatsSessionIdPatchResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type SendChatMessageApiV1ChatsSessionIdMessagesPostData = {
+    body: SendMessageBody;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/api/v1/chats/{session_id}/messages';
+};
+
+export type SendChatMessageApiV1ChatsSessionIdMessagesPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SendChatMessageApiV1ChatsSessionIdMessagesPostError = SendChatMessageApiV1ChatsSessionIdMessagesPostErrors[keyof SendChatMessageApiV1ChatsSessionIdMessagesPostErrors];
+
+export type SendChatMessageApiV1ChatsSessionIdMessagesPostResponses = {
     /**
      * Successful Response
      */

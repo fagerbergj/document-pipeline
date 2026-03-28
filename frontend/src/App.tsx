@@ -17,7 +17,7 @@ export default function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/documents/:id" element={<Document />} />
           <Route path="/contexts" element={<Contexts />} />
-          <Route path="/chat" element={<Chat />} />
+          <Route path="/chat/:sessionId?" element={<Chat />} />
           <Route path="/query" element={<Navigate to="/chat" replace />} />
         </Routes>
       </div>
