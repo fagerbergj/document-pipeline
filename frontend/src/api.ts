@@ -101,6 +101,22 @@ export const api = {
   deleteContext: (id: string) =>
     unwrap(deleteContextApiV1ContextsContextIdDelete({ path: { context_id: id } })),
 
+  // ── Upload (FormData — bypasses generated client) ─────────────────────────
+  uploadDocument: async (
+    file: File,
+    opts?: { title?: string; document_context?: string; context_ref?: string },
+  ) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    if (opts?.title) fd.append('title', opts.title)
+    if (opts?.document_context) fd.append('document_context', opts.document_context)
+    if (opts?.context_ref) fd.append('context_ref', opts.context_ref)
+    const res = await fetch('/api/v1/documents', { method: 'POST', body: fd })
+    const json = await res.json()
+    if (!res.ok) throw Object.assign(new Error(json.error ?? 'Upload failed'), { status: res.status, body: json })
+    return json
+  },
+
   // ── Chat (SSE — manual fetch needed for streaming) ────────────────────────
   chatStream: (
     messages: { role: string; content: string }[],

@@ -19,6 +19,28 @@ export type ApproveEvent = {
 };
 
 /**
+ * Body_upload_document_api_v1_documents_post
+ */
+export type BodyUploadDocumentApiV1DocumentsPost = {
+    /**
+     * File
+     */
+    file: Blob | File;
+    /**
+     * Title
+     */
+    title?: string | null;
+    /**
+     * Document Context
+     */
+    document_context?: string | null;
+    /**
+     * Context Ref
+     */
+    context_ref?: string | null;
+};
+
+/**
  * ChatMessage
  */
 export type ChatMessage = {
@@ -802,6 +824,31 @@ export type ListDocumentsApiV1DocumentsGetResponses = {
 };
 
 export type ListDocumentsApiV1DocumentsGetResponse = ListDocumentsApiV1DocumentsGetResponses[keyof ListDocumentsApiV1DocumentsGetResponses];
+
+export type UploadDocumentApiV1DocumentsPostData = {
+    body: BodyUploadDocumentApiV1DocumentsPost;
+    path?: never;
+    query?: never;
+    url: '/api/v1/documents';
+};
+
+export type UploadDocumentApiV1DocumentsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UploadDocumentApiV1DocumentsPostError = UploadDocumentApiV1DocumentsPostErrors[keyof UploadDocumentApiV1DocumentsPostErrors];
+
+export type UploadDocumentApiV1DocumentsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: JobDetail;
+};
+
+export type UploadDocumentApiV1DocumentsPostResponse = UploadDocumentApiV1DocumentsPostResponses[keyof UploadDocumentApiV1DocumentsPostResponses];
 
 export type DeleteDocumentApiV1DocumentsDocIdDeleteData = {
     body?: never;

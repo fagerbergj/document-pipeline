@@ -5,6 +5,7 @@ import { api } from '../api'
 import StatusBadge from '../components/StatusBadge'
 import LoadingSpinner from '../components/LoadingSpinner'
 import DocKebabMenu from '../components/DocKebabMenu'
+import UploadModal from '../components/UploadModal'
 
 type SortKey = 'pipeline' | 'title_asc' | 'title_desc' | 'created_asc' | 'created_desc'
 
@@ -54,9 +55,11 @@ export default function Dashboard() {
 
   const updatedTime = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : ''
   const activeFilters = [stages, states].filter(Boolean).length
+  const [showUpload, setShowUpload] = useState(false)
 
   return (
     <div className="h-full">
+      {showUpload && <UploadModal onClose={() => setShowUpload(false)} />}
       {/* Header bar */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-white">
         <div className="flex items-center gap-3">
@@ -67,7 +70,15 @@ export default function Dashboard() {
             </span>
           )}
         </div>
-        <span className="text-xs text-gray-400">Updated {updatedTime}</span>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowUpload(true)}
+            className="px-3 py-1.5 text-sm font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-700 transition-colors"
+          >
+            Upload
+          </button>
+          <span className="text-xs text-gray-400">Updated {updatedTime}</span>
+        </div>
       </div>
 
       {/* Table */}

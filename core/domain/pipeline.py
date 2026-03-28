@@ -34,6 +34,7 @@ class StageDefinition:
     metadata_fields: Optional[list] = None
     start_if: Optional[dict] = None
     continue_if: Optional[list] = None
+    skip_if: Optional[dict] = None
     max_concurrent: Optional[int] = None
     vision: bool = False
 
@@ -62,6 +63,7 @@ class PipelineConfig:
                 metadata_fields=s.get("metadata_fields"),
                 start_if=s.get("start_if"),
                 continue_if=s.get("continue_if"),
+                skip_if=s.get("skip_if"),
                 max_concurrent=s.get("max_concurrent"),
                 vision=s.get("vision", False),
             )

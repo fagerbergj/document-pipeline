@@ -33,9 +33,19 @@ def _check_start_if(doc: Document, stage: StageDefinition) -> bool:
     rules = stage.start_if or {}
     # backward compat: require_context maps to start_if.context_provided
     if stage.require_context or rules.get("context_provided"):
-        if not doc.stage_data.get("_ingest", {}).get("document_context"):
+        ingest = doc.stage_data.get("_ingest", {})
+        if not ingest.get("document_context") and not doc.context_ref:
             return False
     return True
+
+
+def _check_skip_if(doc: Document, stage: StageDefinition) -> bool:
+    """Return True if the stage should be skipped based on document metadata."""
+    rules = stage.skip_if or {}
+    if "file_type" in rules:
+        file_type = doc.stage_data.get("_ingest", {}).get("file_type", "")
+        return file_type in rules["file_type"]
+    return False
 
 
 def _check_continue_if(stage_data: dict, stage: StageDefinition) -> bool:
@@ -367,6 +377,28 @@ async def _process_document(
 
     try:
         if stage.type == "computer_vision":
+            if _check_skip_if(doc, stage):
+                # Text file — bypass vision model, use raw_text as output
+                raw_text = doc.stage_data.get("_ingest", {}).get("raw_text", "")
+                output_field = (
+                    stage.outputs[0]["field"] if stage.outputs
+                    else stage.output or "ocr_raw"
+                )
+                stage_data = {**doc.stage_data, stage.name: {output_field: raw_text}}
+                title = _extract_title(doc.stage_data.get("_ingest", {}), raw_text) or doc.title
+                now_str = datetime.now(timezone.utc).isoformat()
+                updated = replace(doc, stage_data=stage_data, title=title)
+                next_stage = config.next_stage(stage.name)
+                updated = (
+                    advance(updated, next_stage.name, now_str)
+                    if next_stage
+                    else set_done(updated, now_str)
+                )
+                await db.update(updated)
+                await db.append_event(doc.id, stage.name, "skipped", now_str)
+                logger.info("Doc %s — skipped %s (text upload)", doc.id[:8], stage.name)
+                return
+
             stage_data, title, png_path = await _run_ocr(
                 doc, stage, filesystem, ollama_base_url
             )

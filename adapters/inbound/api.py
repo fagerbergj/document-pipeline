@@ -7,7 +7,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, File, Form, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from core.services import review as review_service
@@ -244,6 +244,46 @@ async def list_documents(
         page_size=pageSize, page_token=token,
     )
     return {"data": [_doc_summary(d, config) for d in docs], "nextPageToken": next_token}
+
+
+@router.post("/documents", response_model=JobDetail, status_code=201, tags=["Documents"])
+async def upload_document(
+    request: Request,
+    file: UploadFile = File(...),
+    title: Optional[str] = Form(None),
+    document_context: Optional[str] = Form(None),
+    context_ref: Optional[str] = Form(None),
+):
+    from core.services.ingest import ingest_upload, SUPPORTED_TYPES
+    from adapters.outbound import filesystem as _fs
+    db = request.app.state.db
+    config = request.app.state.pipeline
+    vault_path = request.app.state.vault_path
+
+    filename = file.filename or "upload"
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext not in SUPPORTED_TYPES:
+        return JSONResponse(
+            {"error": f"Unsupported file type '.{ext}'. Supported: {', '.join(sorted(SUPPORTED_TYPES))}"},
+            status_code=400,
+        )
+
+    file_bytes = await file.read()
+    doc = await ingest_upload(
+        file_bytes=file_bytes,
+        filename=filename,
+        file_type=ext,
+        title=title or None,
+        document_context=document_context or "",
+        context_ref=context_ref or None,
+        db=db,
+        vault_path=vault_path,
+        filesystem=_fs,
+    )
+    if doc is None:
+        return JSONResponse({"error": "Duplicate file — document already exists"}, status_code=409)
+
+    return _build_job_detail(doc, config)
 
 
 @router.get("/documents/{doc_id}", response_model=DocumentDetail, tags=["Documents"])

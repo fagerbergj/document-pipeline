@@ -1,6 +1,8 @@
 stages:
   - name: ocr
     type: computer_vision
+    skip_if:
+      file_type: [txt, md]
     max_concurrent: 1
     model: ${OCR_MODEL}
     prompt: prompts/ocr.txt

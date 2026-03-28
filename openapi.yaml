@@ -147,6 +147,50 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PaginatedDocuments'
+    post:
+      tags: [Documents]
+      summary: Upload a document
+      description: Upload a .txt, .md, or image file to create a new document. Text files skip the OCR stage.
+      operationId: uploadDocument
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                title:
+                  type: string
+                  nullable: true
+                document_context:
+                  type: string
+                  nullable: true
+                context_ref:
+                  type: string
+                  nullable: true
+      responses:
+        '201':
+          description: Document created. Returns initial job detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobDetail'
+        '400':
+          description: Unsupported file type.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Duplicate file — document already exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /api/v1/documents/{doc_id}:
     parameters:
