@@ -94,7 +94,7 @@ def _build_job_detail(doc, config) -> dict:
 
     start_if = (stage_def.start_if or {}) if stage_def else {}
     has_context = bool(document_context or doc.context_ref)
-    context_required = (
+    context_required = bool(
         doc.stage_state in ("waiting", "pending")
         and stage_def is not None
         and not has_llm_output
