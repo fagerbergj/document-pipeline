@@ -386,6 +386,9 @@ async def _process_document(
                 )
                 stage_data = {**doc.stage_data, stage.name: {output_field: raw_text}}
                 title = _extract_title(doc.stage_data.get("_ingest", {}), raw_text) or doc.title
+                fresh = await db.get(doc.id)
+                if fresh and fresh.title:
+                    title = fresh.title
                 now_str = datetime.now(timezone.utc).isoformat()
                 updated = replace(doc, stage_data=stage_data, title=title)
                 next_stage = config.next_stage(stage.name)
@@ -404,6 +407,10 @@ async def _process_document(
             )
             if await _was_stopped(doc.id, db):
                 return
+            # Re-fetch to pick up any title the user set while OCR was running
+            fresh = await db.get(doc.id)
+            if fresh and fresh.title:
+                title = fresh.title
             now_str = datetime.now(timezone.utc).isoformat()
             updated = replace(
                 doc, stage_data=stage_data, title=title, png_path=png_path

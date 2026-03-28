@@ -165,12 +165,13 @@ def _build_job_detail(doc, config) -> dict:
 def _doc_summary(doc, config) -> dict:
     stage_def = config.get_stage(doc.current_stage)
     document_context = doc.stage_data.get("_ingest", {}).get("document_context", "")
+    has_context = bool(document_context or doc.context_ref)
     start_if = (stage_def.start_if or {}) if stage_def else {}
     needs_context = (
         doc.stage_state in ("waiting", "pending")
         and stage_def is not None
         and (start_if.get("context_provided") or stage_def.require_context)
-        and not document_context
+        and not has_context
     )
     return {
         "id": doc.id,
@@ -184,12 +185,13 @@ def _doc_summary(doc, config) -> dict:
 def _job_summary(doc, config) -> dict:
     stage_def = config.get_stage(doc.current_stage)
     document_context = doc.stage_data.get("_ingest", {}).get("document_context", "")
+    has_context = bool(document_context or doc.context_ref)
     start_if = (stage_def.start_if or {}) if stage_def else {}
     needs_context = (
         doc.stage_state in ("waiting", "pending")
         and stage_def is not None
         and (start_if.get("context_provided") or stage_def.require_context)
-        and not document_context
+        and not has_context
     )
     return {
         "doc_id": doc.id,
