@@ -30,14 +30,6 @@ export default function Document() {
     retry: 1,
   })
 
-  // All jobs for this document (for replay UI)
-  const { data: jobsPage } = useQuery({
-    queryKey: ['jobs-for-doc', id],
-    queryFn: () => api.jobs({ document_id: id! }),
-    enabled: !!id,
-  })
-  const allJobs = jobsPage?.data ?? []
-
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['document', id] })
     qc.invalidateQueries({ queryKey: ['job', jobId] })
@@ -78,6 +70,9 @@ export default function Document() {
             <StatusBadge state={job.status} />
           </>
         )}
+        {job && job.options?.embed !== undefined && (
+          <JobOptionsMenu job={job} onRefresh={refresh} />
+        )}
         <DocKebabMenu
           docId={doc.id}
           onDelete={handleDelete}
@@ -98,12 +93,6 @@ export default function Document() {
         )}
         {(doc.artifacts?.length ?? 0) > 0 && (
           <ArtifactsSection doc={doc} />
-        )}
-        {job && job.options?.embed !== undefined && (
-          <EmbedImageSection job={job} onRefresh={refresh} />
-        )}
-        {allJobs.length > 0 && (
-          <JobsSection jobs={allJobs} currentJobId={jobId ?? undefined} onRefresh={refresh} />
         )}
       </div>
     </div>
@@ -603,66 +592,53 @@ function ErrorSection({ job, onRefresh }: { job: JobDetail; onRefresh: () => voi
   )
 }
 
-function EmbedImageSection({ job, onRefresh }: { job: JobDetail; onRefresh: () => void }) {
+function JobOptionsMenu({ job, onRefresh }: { job: JobDetail; onRefresh: () => void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
   const embedImage = job.options?.embed?.embed_image ?? false
   const mut = useMutation({
     mutationFn: () => api.updateJob(job.id, { options: { embed: { embed_image: !embedImage } } }),
-    onSuccess: onRefresh,
+    onSuccess: () => { onRefresh(); setOpen(false) },
   })
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4">
-      <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Image embedding</div>
-      <div className="flex items-center gap-3">
-        <button
-          onClick={() => mut.mutate()}
-          disabled={mut.isPending}
-          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-50 ${
-            embedImage ? 'bg-blue-600' : 'bg-gray-200'
-          }`}
-        >
-          <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
-            embedImage ? 'translate-x-4' : 'translate-x-1'
-          }`} />
-        </button>
-        <span className="text-sm text-gray-600">
-          {embedImage ? 'Embed image for visual search' : 'Text only (no image embedding)'}
-        </span>
-      </div>
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(o => !o)}
+        title="Job options"
+        className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors text-base"
+      >
+        ⚙
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-xl shadow-lg p-3 z-20">
+          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Job options</div>
+          <label className="flex items-center gap-3 cursor-pointer">
+            <button
+              onClick={() => mut.mutate()}
+              disabled={mut.isPending}
+              className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+                embedImage ? 'bg-blue-600' : 'bg-gray-200'
+              }`}
+            >
+              <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                embedImage ? 'translate-x-4' : 'translate-x-1'
+              }`} />
+            </button>
+            <span className="text-sm text-gray-700">Embed image</span>
+          </label>
+        </div>
+      )}
     </div>
   )
 }
 
-function JobsSection({ jobs, currentJobId, onRefresh }: {
-  jobs: { id: string; stage: string; status: string; updated_at: string }[]
-  currentJobId?: string
-  onRefresh: () => void
-}) {
-  const replayMut = useMutation({
-    mutationFn: (jobId: string) => api.putJobStatus(jobId, 'pending'),
-    onSuccess: onRefresh,
-  })
-
-  const doneJobs = jobs.filter(j => j.status === 'done')
-  if (doneJobs.length === 0) return null
-
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4">
-      <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Replay from stage</div>
-      <div className="flex flex-wrap gap-2">
-        {doneJobs.map(j => (
-          <button key={j.id}
-            onClick={() => {
-              if (confirm(`Replay from ${j.stage}? This will reset this and all downstream stages.`))
-                replayMut.mutate(j.id)
-            }}
-            className={`px-3 py-1.5 text-xs font-mono font-medium border rounded-lg hover:bg-gray-50 transition-colors ${
-              j.id === currentJobId ? 'border-blue-300 text-blue-700' : 'border-gray-200 text-gray-700'
-            }`}>
-            {j.stage}
-          </button>
-        ))}
-      </div>
-    </div>
-  )
-}
