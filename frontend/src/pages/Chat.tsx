@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
-import { api, type ChatSessionSummary, type SourceDoc } from '../api'
+import { api, type ChatSummary, type SourceDoc } from '../api'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -26,15 +26,15 @@ function relativeDate(iso: string): string {
 }
 
 export default function Chat() {
-  const { sessionId: urlSessionId } = useParams<{ sessionId?: string }>()
+  const { chatId: urlChatId } = useParams<{ chatId?: string }>()
   const navigate = useNavigate()
 
-  const [sessions, setSessions] = useState<ChatSessionSummary[]>([])
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
+  const [chats, setChats] = useState<ChatSummary[]>([])
+  const [activeChatId, setActiveChatId] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
-  const [context, setContext] = useState('')
-  const [topK, setTopK] = useState(5)
+  const [systemPrompt, setSystemPrompt] = useState('')
+  const [maxSources, setMaxSources] = useState(5)
   const [showSettings, setShowSettings] = useState(false)
   const [streaming, setStreaming] = useState(false)
   const [error, setError] = useState('')
@@ -53,18 +53,18 @@ export default function Chat() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  const loadSessions = useCallback(async () => {
-    const result = await api.listChatSessions()
-    setSessions(result.data)
+  const loadChats = useCallback(async () => {
+    const result = await api.listChats()
+    setChats(result.data)
     return result.data
   }, [])
 
   useEffect(() => {
-    loadSessions().then(data => {
-      if (urlSessionId) {
-        setActiveSessionId(urlSessionId)
+    loadChats().then(data => {
+      if (urlChatId) {
+        setActiveChatId(urlChatId)
       } else if (data.length > 0) {
-        setActiveSessionId(data[0].id)
+        setActiveChatId(data[0].id)
         navigate(`/chat/${data[0].id}`, { replace: true })
       }
     })
@@ -72,14 +72,13 @@ export default function Chat() {
   }, [])
 
   useEffect(() => {
-    if (!activeSessionId) {
+    if (!activeChatId) {
       setMessages([])
       return
     }
-    api.getChatSession(activeSessionId).then(detail => {
-      const sess = sessions.find(s => s.id === activeSessionId)
-      setContext(detail.context)
-      setTopK(detail.top_k)
+    api.getChat(activeChatId).then(detail => {
+      setSystemPrompt(detail.system_prompt ?? '')
+      setMaxSources(detail.rag_retrieval?.max_sources ?? 5)
       setMessages(
         detail.messages.map(m => ({
           role: m.role as 'user' | 'assistant',
@@ -88,70 +87,74 @@ export default function Chat() {
           sourcesOpen: false,
         }))
       )
-      if (!sess) {
-        setSessions(prev => {
-          const exists = prev.find(s => s.id === activeSessionId)
-          if (exists) return prev
-          return [{ ...detail, message_count: detail.messages.length }, ...prev]
-        })
-      }
+      setChats(prev => {
+        const exists = prev.find(s => s.id === activeChatId)
+        if (exists) return prev
+        return [detail, ...prev]
+      })
     }).catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSessionId])
+  }, [activeChatId])
 
-  function activateSession(id: string) {
+  function activateChat(id: string) {
     if (streaming) abortRef.current?.abort()
-    setActiveSessionId(id)
+    setActiveChatId(id)
     navigate(`/chat/${id}`)
     setError('')
   }
 
   async function handleNewChat() {
-    const session = await api.createChatSession({ context: context.trim(), top_k: topK })
-    setSessions(prev => [session, ...prev])
-    setActiveSessionId(session.id)
+    const chat = await api.createChat({
+      system_prompt: systemPrompt.trim() || undefined,
+      rag_retrieval: { enabled: true, max_sources: maxSources },
+    })
+    setChats(prev => [chat, ...prev])
+    setActiveChatId(chat.id)
     setMessages([])
-    navigate(`/chat/${session.id}`)
+    navigate(`/chat/${chat.id}`)
     setError('')
   }
 
-  async function handleDeleteSession(id: string, e: React.MouseEvent) {
+  async function handleDeleteChat(id: string, e: React.MouseEvent) {
     e.stopPropagation()
-    await api.deleteChatSession(id)
-    setSessions(prev => prev.filter(s => s.id !== id))
-    if (activeSessionId === id) {
-      const remaining = sessions.filter(s => s.id !== id)
+    await api.deleteChat(id)
+    setChats(prev => prev.filter(s => s.id !== id))
+    if (activeChatId === id) {
+      const remaining = chats.filter(s => s.id !== id)
       if (remaining.length > 0) {
-        setActiveSessionId(remaining[0].id)
+        setActiveChatId(remaining[0].id)
         navigate(`/chat/${remaining[0].id}`)
       } else {
-        setActiveSessionId(null)
+        setActiveChatId(null)
         navigate('/chat')
         setMessages([])
       }
     }
   }
 
-  function scheduleSettingsPatch(newContext: string, newTopK: number) {
-    if (!activeSessionId) return
+  function scheduleSettingsPatch(newPrompt: string, newMaxSources: number) {
+    if (!activeChatId) return
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
-      api.patchChatSession(activeSessionId, { context: newContext, top_k: newTopK })
+      api.patchChat(activeChatId, {
+        system_prompt: newPrompt || null,
+        rag_retrieval: { enabled: true, max_sources: newMaxSources },
+      })
         .then(updated => {
-          setSessions(prev => prev.map(s => s.id === updated.id ? updated : s))
+          setChats(prev => prev.map(s => s.id === updated.id ? updated : s))
         })
         .catch(() => {})
     }, 800)
   }
 
-  function handleContextChange(val: string) {
-    setContext(val)
-    scheduleSettingsPatch(val, topK)
+  function handlePromptChange(val: string) {
+    setSystemPrompt(val)
+    scheduleSettingsPatch(val, maxSources)
   }
 
-  function handleTopKChange(val: number) {
-    setTopK(val)
-    scheduleSettingsPatch(context, val)
+  function handleMaxSourcesChange(val: number) {
+    setMaxSources(val)
+    scheduleSettingsPatch(systemPrompt, val)
   }
 
   function toggleSources(idx: number) {
@@ -185,7 +188,7 @@ export default function Chat() {
     e.preventDefault()
     const trimmed = input.trim()
     if (!trimmed || streaming) return
-    if (!activeSessionId) return
+    if (!activeChatId) return
 
     const userMessage: Message = { role: 'user', content: trimmed }
     const baseMessages = [...messages, userMessage]
@@ -202,7 +205,7 @@ export default function Chat() {
     abortRef.current = abort
 
     try {
-      const res = await api.sendMessage(activeSessionId, trimmed, abort.signal)
+      const res = await api.sendMessage(activeChatId, trimmed, abort.signal)
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
@@ -243,9 +246,7 @@ export default function Chat() {
         }
       }
 
-      await loadSessions().then(data => {
-        setSessions(data)
-      })
+      await loadChats().then(data => setChats(data))
     } catch (err: unknown) {
       if ((err as Error)?.name !== 'AbortError') {
         setError((err as Error)?.message || 'Request failed')
@@ -279,21 +280,21 @@ export default function Chat() {
           </button>
         </div>
         <div className="flex-1 overflow-y-auto">
-          {sessions.length === 0 && (
+          {chats.length === 0 && (
             <div className="text-xs text-gray-400 text-center py-6 px-3">No conversations yet</div>
           )}
-          {sessions.map(s => (
+          {chats.map(s => (
             <div
               key={s.id}
-              onClick={() => activateSession(s.id)}
-              className={`group relative flex flex-col px-3 py-2.5 cursor-pointer border-b border-gray-100 hover:bg-gray-50 transition-colors ${activeSessionId === s.id ? 'bg-blue-50' : ''}`}
+              onClick={() => activateChat(s.id)}
+              className={`group relative flex flex-col px-3 py-2.5 cursor-pointer border-b border-gray-100 hover:bg-gray-50 transition-colors ${activeChatId === s.id ? 'bg-blue-50' : ''}`}
             >
-              <span className={`text-sm truncate pr-6 ${activeSessionId === s.id ? 'text-blue-700 font-medium' : 'text-gray-800'}`}>
+              <span className={`text-sm truncate pr-6 ${activeChatId === s.id ? 'text-blue-700 font-medium' : 'text-gray-800'}`}>
                 {s.title || 'New chat'}
               </span>
               <span className="text-xs text-gray-400 mt-0.5">{relativeDate(s.updated_at)}</span>
               <button
-                onClick={e => handleDeleteSession(s.id, e)}
+                onClick={e => handleDeleteChat(s.id, e)}
                 className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition-opacity p-1 rounded"
               >
                 ×
@@ -308,8 +309,8 @@ export default function Chat() {
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 bg-white">
           <h1 className="text-base font-semibold text-gray-900">
-            {activeSessionId
-              ? (sessions.find(s => s.id === activeSessionId)?.title || 'New chat')
+            {activeChatId
+              ? (chats.find(s => s.id === activeChatId)?.title || 'New chat')
               : 'Chat'}
           </h1>
           <button
@@ -326,14 +327,14 @@ export default function Chat() {
             <div className="flex items-start gap-6">
               <div className="flex-1">
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-medium text-gray-600">Context <span className="text-gray-400">(optional)</span></label>
+                  <label className="text-xs font-medium text-gray-600">System prompt <span className="text-gray-400">(optional)</span></label>
                   {contextLibrary.length > 0 && (
                     <select
                       className="text-xs text-gray-500 border border-gray-200 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
                       defaultValue=""
                       onChange={e => {
                         const entry = contextLibrary.find(x => x.name === e.target.value)
-                        if (entry) handleContextChange(entry.text)
+                        if (entry) handlePromptChange(entry.text)
                       }}
                     >
                       <option value="">Load saved…</option>
@@ -347,18 +348,18 @@ export default function Chat() {
                   className="w-full rounded border border-gray-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                   rows={3}
                   placeholder="Add context to guide answers…"
-                  value={context}
-                  onChange={e => handleContextChange(e.target.value)}
+                  value={systemPrompt}
+                  onChange={e => handlePromptChange(e.target.value)}
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Sources</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Max sources</label>
                 <input
                   type="number"
                   min={1}
                   max={20}
-                  value={topK}
-                  onChange={e => handleTopKChange(Number(e.target.value))}
+                  value={maxSources}
+                  onChange={e => handleMaxSourcesChange(Number(e.target.value))}
                   className="w-14 rounded border border-gray-300 px-2 py-1.5 text-xs text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -368,12 +369,12 @@ export default function Chat() {
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
-          {!activeSessionId && (
+          {!activeChatId && (
             <div className="text-center text-gray-400 text-sm mt-20">
               Start a new chat or select a conversation
             </div>
           )}
-          {activeSessionId && messages.length === 0 && !streaming && (
+          {activeChatId && messages.length === 0 && !streaming && (
             <div className="text-center text-gray-400 text-sm mt-20">
               Ask a question about your notes
             </div>
@@ -438,7 +439,7 @@ export default function Chat() {
                         {msg.sources.map((s, si) => (
                           <Link
                             key={si}
-                            to={`/documents/${s.doc_id}`}
+                            to={`/documents/${s.document_id}`}
                             className="block rounded-lg border border-gray-200 bg-white px-4 py-2.5 hover:border-blue-300 hover:bg-blue-50 transition-colors"
                           >
                             <div className="flex items-start justify-between gap-2">
@@ -472,11 +473,11 @@ export default function Chat() {
             <textarea
               className="flex-1 rounded-xl border border-gray-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none disabled:opacity-50"
               rows={1}
-              placeholder={activeSessionId ? 'Ask something… (Enter to send, Shift+Enter for newline)' : 'Select or start a chat first'}
+              placeholder={activeChatId ? 'Ask something… (Enter to send, Shift+Enter for newline)' : 'Select or start a chat first'}
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              disabled={streaming || !activeSessionId}
+              disabled={streaming || !activeChatId}
             />
             {streaming ? (
               <button
@@ -489,7 +490,7 @@ export default function Chat() {
             ) : (
               <button
                 type="submit"
-                disabled={!input.trim() || !activeSessionId}
+                disabled={!input.trim() || !activeChatId}
                 className="px-4 py-3 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
               >
                 Send

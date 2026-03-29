@@ -46,23 +46,31 @@ async def ingest(
     date_month = now.strftime("%Y-%m")
     hash_prefix = content_hash[:8]
 
-    png_path = filesystem.save_png(vault_path, date_month, hash_prefix, image_bytes)
-    logger.info("Saved PNG: %s", png_path)
+    # Save source image as artifact
+    artifact_id = str(uuid.uuid4())
+    filename = f"{hash_prefix}.png"
+    filesystem.save_artifact(vault_path, artifact_id, filename, image_bytes)
+    png_path = str(Path(vault_path) / "artifacts" / artifact_id / filename)
+    logger.info("Saved source artifact: %s", png_path)
 
     doc = Document(
         id=str(uuid.uuid4()),
         content_hash=content_hash,
         created_at=now_str,
         updated_at=now_str,
-        current_stage="ocr",
-        stage_state="pending",
         title=_title_from_meta(meta_json, attachment_filename),
         date_month=date_month,
         png_path=png_path,
-        stage_data={"_ingest": {"meta": meta_json, "attachment_filename": attachment_filename}},
     )
 
     await db.insert(doc)
+    await db.insert_artifact(doc.id, filename, "image/png", None, now_str, artifact_id=artifact_id)
+    # Store ingest metadata in key-value for worker use
+    import json as _json
+    await db.kv_set(f"ingest_meta:{doc.id}", _json.dumps({
+        "meta": meta_json,
+        "attachment_filename": attachment_filename,
+    }))
     await db.append_event(doc.id, "webhook", "received", now_str)
     logger.info("Created document %s (hash: %s)", doc.id, hash_prefix)
     return doc
@@ -78,12 +86,11 @@ async def ingest_upload(
     filename: str,
     file_type: str,
     title: Optional[str],
-    document_context: str,
-    context_ref: Optional[str],
+    additional_context: str,
+    linked_contexts: list,
     db,
     vault_path: str,
     filesystem,
-    embed_image: bool = False,
 ) -> Optional[Document]:
     """Create a document from a direct upload. Returns None on duplicate."""
     content_hash = hashlib.sha256(file_bytes).hexdigest()
@@ -100,16 +107,19 @@ async def ingest_upload(
 
     png_path = None
     ingest_meta: dict = {"attachment_filename": filename}
+    source_artifact_id: Optional[str] = None
 
     if file_type in _IMAGE_TYPES:
-        png_path = filesystem.save_png(vault_path, date_month, hash_prefix, file_bytes)
-        logger.info("Saved PNG: %s", png_path)
+        source_artifact_id = str(uuid.uuid4())
+        artifact_filename = f"{hash_prefix}.png"
+        filesystem.save_artifact(vault_path, source_artifact_id, artifact_filename, file_bytes)
+        png_path = str(Path(vault_path) / "artifacts" / source_artifact_id / artifact_filename)
+        logger.info("Saved source artifact: %s", png_path)
     else:
         # Text file — store content for OCR-skip passthrough
         raw_text = file_bytes.decode("utf-8", errors="replace")
         ingest_meta["raw_text"] = raw_text
         ingest_meta["file_type"] = file_type
-        # Derive title from first non-empty line if not provided
         if not title:
             stem = Path(filename).stem
             if stem and stem.lower() not in _GENERIC_FILENAMES:
@@ -121,25 +131,27 @@ async def ingest_upload(
                         title = line
                         break
 
-    if document_context:
-        ingest_meta["document_context"] = document_context
-
     doc = Document(
         id=str(uuid.uuid4()),
         content_hash=content_hash,
         created_at=now_str,
         updated_at=now_str,
-        current_stage="ocr",
-        stage_state="pending",
         title=title,
         date_month=date_month,
         png_path=png_path,
-        context_ref=context_ref,
-        embed_image=embed_image,
-        stage_data={"_ingest": ingest_meta},
+        additional_context=additional_context or "",
+        linked_contexts=linked_contexts or [],
     )
 
     await db.insert(doc)
+    if source_artifact_id:
+        await db.insert_artifact(
+            doc.id, f"{hash_prefix}.png", "image/png", None, now_str,
+            artifact_id=source_artifact_id,
+        )
+    # Store ingest metadata for worker use
+    import json as _json
+    await db.kv_set(f"ingest_meta:{doc.id}", _json.dumps(ingest_meta))
     await db.append_event(doc.id, "upload", "received", now_str)
     logger.info("Created document %s via upload (hash: %s)", doc.id, hash_prefix)
     return doc

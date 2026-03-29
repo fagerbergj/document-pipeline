@@ -20,14 +20,14 @@ export default function Dashboard() {
   const qc = useQueryClient()
 
   const stages = searchParams.get('stages') ?? ''
-  const states = searchParams.get('states') ?? ''
+  const statuses = searchParams.get('statuses') ?? ''
   const sort = (searchParams.get('sort') ?? 'pipeline') as SortKey
 
   const { data: page, isLoading, dataUpdatedAt } = useQuery({
-    queryKey: ['jobs', stages, states, sort],
+    queryKey: ['jobs', stages, statuses, sort],
     queryFn: () => api.jobs({
       stages: stages || undefined,
-      states: states || undefined,
+      statuses: statuses || undefined,
       sort,
     }),
     refetchInterval: 10_000,
@@ -54,7 +54,7 @@ export default function Dashboard() {
   }
 
   const updatedTime = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : ''
-  const activeFilters = [stages, states].filter(Boolean).length
+  const activeFilters = [stages, statuses].filter(Boolean).length
   const [showUpload, setShowUpload] = useState(false)
 
   return (
@@ -110,32 +110,30 @@ export default function Dashboard() {
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {jobs.map(job => (
-                    <tr key={job.doc_id}
-                      onClick={() => navigate(`/documents/${job.doc_id}`)}
+                    <tr key={job.document_id}
+                      onClick={() => navigate(`/documents/${job.document_id}`)}
                       className="hover:bg-gray-50 transition-colors group cursor-pointer">
                       <td className="px-4 py-3">
                         <InlineTitle
-                          docId={job.doc_id}
+                          docId={job.document_id}
                           title={job.title ?? null}
                           onSaved={() => qc.invalidateQueries({ queryKey: ['jobs'] })}
                         />
-                        {job.needs_context && (
-                          <span className="ml-2 text-xs text-red-500 font-medium">⚠ needs context</span>
-                        )}
                       </td>
                       <td className="px-4 py-3">
-                        <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{job.current_stage}</span>
+                        <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{job.stage}</span>
                       </td>
                       <td className="px-4 py-3">
-                        <StatusBadge state={job.stage_state} />
+                        <StatusBadge state={job.status} />
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-400 hidden sm:table-cell">
                         {job.created_at.slice(0, 16).replace('T', ' ')}
                       </td>
                       <td className="px-2 py-3 text-right" onClick={e => e.stopPropagation()}>
                         <DocKebabMenu
-                          docId={job.doc_id}
-                          state={job.stage_state}
+                          docId={job.document_id}
+                          jobId={job.id}
+                          status={job.status}
                           onDelete={() => qc.invalidateQueries({ queryKey: ['jobs'] })}
                           onSuccess={() => qc.invalidateQueries({ queryKey: ['jobs'] })}
                           buttonClassName="w-7 h-7 flex items-center justify-center rounded text-gray-300 hover:text-gray-600 hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-all text-base leading-none"

@@ -5,10 +5,10 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
 import { api } from '../api'
+import type { DocumentDetail, JobDetail, Run, Artifact } from '../types'
 import StatusBadge from '../components/StatusBadge'
 import LoadingSpinner from '../components/LoadingSpinner'
 import DocKebabMenu from '../components/DocKebabMenu'
-import type { DocumentDetail, JobDetail, ClarificationRequest, JobEventRecord } from '../types'
 
 export default function Document() {
   const { id } = useParams<{ id: string }>()
@@ -23,23 +23,26 @@ export default function Document() {
 
   const jobId = doc?.current_job_id ?? null
 
-  const { data: job, isLoading: jobLoading, error: jobError } = useQuery({
+  const { data: job, isLoading: jobLoading } = useQuery({
     queryKey: ['job', jobId],
     queryFn: () => api.job(jobId!),
     enabled: !!jobId,
     retry: 1,
   })
 
-  const { data: eventsPage } = useQuery({
-    queryKey: ['job-events', jobId],
-    queryFn: () => api.jobEvents(jobId!),
-    enabled: !!jobId,
+  // All jobs for this document (for replay UI)
+  const { data: jobsPage } = useQuery({
+    queryKey: ['jobs-for-doc', id],
+    queryFn: () => api.jobs({ document_id: id! }),
+    enabled: !!id,
   })
+  const allJobs = jobsPage?.data ?? []
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['document', id] })
     qc.invalidateQueries({ queryKey: ['job', jobId] })
-    qc.invalidateQueries({ queryKey: ['job-events', jobId] })
+    qc.invalidateQueries({ queryKey: ['jobs-for-doc', id] })
+    qc.invalidateQueries({ queryKey: ['jobs'] })
   }
 
   const handleDelete = () => navigate('/')
@@ -51,13 +54,8 @@ export default function Document() {
       <LoadingSpinner />
     </div>
   )
-  if (!doc || (jobId && !job)) {
-    const err = docError ?? jobError
-    const errMsg = err instanceof Error
-      ? err.message
-      : err
-      ? (typeof err === 'object' ? JSON.stringify(err) : String(err))
-      : null
+  if (!doc) {
+    const errMsg = docError instanceof Error ? docError.message : null
     return (
       <div className="flex flex-col items-center justify-center h-full py-24 gap-2 text-gray-400">
         <div>{errMsg ? 'Failed to load document' : 'Document not found'}</div>
@@ -66,7 +64,7 @@ export default function Document() {
     )
   }
 
-  const errorEvents = (eventsPage?.data ?? []).filter((e: JobEventRecord) => e.event_type === 'failed')
+  const latestRun = job?.runs && job.runs.length > 0 ? job.runs[job.runs.length - 1] : null
 
   return (
     <div>
@@ -74,13 +72,16 @@ export default function Document() {
       <div className="sticky top-0 z-10 flex items-center gap-3 px-6 py-4 border-b border-gray-200 bg-white">
         <Link to="/" className="text-gray-400 hover:text-gray-600 text-sm">←</Link>
         <h1 className="text-base font-semibold text-gray-900 flex-1 truncate">{doc.title || '(untitled)'}</h1>
-        <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{job?.current_stage ?? '…'}</span>
-        <StatusBadge state={job?.stage_state ?? 'pending'} />
+        {job && (
+          <>
+            <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{job.stage}</span>
+            <StatusBadge state={job.status} />
+          </>
+        )}
         <DocKebabMenu
           docId={doc.id}
           jobId={job?.id}
-          state={job?.stage_state ?? 'pending'}
-          replayStages={job?.replay_stages}
+          status={job?.status ?? 'pending'}
           onDelete={handleDelete}
           onSuccess={refresh}
         />
@@ -89,15 +90,23 @@ export default function Document() {
       {/* Content */}
       <div className="p-6 space-y-4">
         <TitleSection doc={doc} onRefresh={refresh} />
-        <ContextSection doc={doc} job={job} onRefresh={refresh} />
-        {job?.stage_state === 'running' && <LiveLogSection jobId={job.id} onDone={refresh} />}
-        {job?.review && <ReviewSection jobId={job.id} doc={doc} review={job.review} onRefresh={refresh} />}
-        {(doc.has_image || doc.stage_displays.length > 0) && (
+        <ContextSection doc={doc} onRefresh={refresh} />
+        {job?.status === 'running' && <LiveLogSection jobId={job.id} onDone={refresh} />}
+        {job?.status === 'waiting' && latestRun && (
+          <ReviewSection job={job} run={latestRun} doc={doc} onRefresh={refresh} />
+        )}
+        {job?.status === 'error' && (
+          <ErrorSection job={job} onRefresh={refresh} />
+        )}
+        {(doc.artifacts?.length ?? 0) > 0 && (
           <ArtifactsSection doc={doc} />
         )}
-        {doc.has_image && job?.id && <EmbedImageSection job={job} onRefresh={refresh} />}
-        {errorEvents.length > 0 && <EventLogSection events={errorEvents} jobId={job?.id ?? ''} onCleared={refresh} />}
-        {(job?.replay_stages?.length ?? 0) > 0 && <ReplaySection jobId={job!.id} job={job!} onRefresh={refresh} />}
+        {job && job.options?.embed !== undefined && (
+          <EmbedImageSection job={job} onRefresh={refresh} />
+        )}
+        {allJobs.length > 0 && (
+          <JobsSection jobs={allJobs} currentJobId={jobId ?? undefined} onRefresh={refresh} />
+        )}
       </div>
     </div>
   )
@@ -126,55 +135,51 @@ function TitleSection({ doc, onRefresh }: { doc: DocumentDetail; onRefresh: () =
   )
 }
 
-function ContextSection({ doc, job, onRefresh }: { doc: DocumentDetail; job: JobDetail | undefined; onRefresh: () => void }) {
+function ContextSection({ doc, onRefresh }: { doc: DocumentDetail; onRefresh: () => void }) {
   const [editing, setEditing] = useState(false)
-  const [ctx, setCtx] = useState(doc.document_context ?? '')
-  const [contextRef, setContextRef] = useState<string>(doc.context_ref ?? '')
+  const [ctx, setCtx] = useState(doc.additional_context ?? '')
+  const [linkedIds, setLinkedIds] = useState<string[]>(doc.linked_contexts ?? [])
   const [entries, setEntries] = useState<{ id: string; name: string; text: string }[]>([])
 
-  const required = job?.context_required ?? false
-  const hasContext = !!(doc.context_ref || doc.document_context)
+  const hasContext = !!(doc.additional_context || (doc.linked_contexts?.length ?? 0) > 0)
 
   useEffect(() => {
-    if (editing || required || doc.context_ref) {
+    if (editing || hasContext) {
       api.contexts().then(p => setEntries(p.data ?? [])).catch(() => {})
     }
-  }, [editing, required, doc.context_ref])
+  }, [editing, hasContext])
 
   function openEdit() {
-    setCtx(doc.document_context ?? '')
-    setContextRef(doc.context_ref ?? '')
+    setCtx(doc.additional_context ?? '')
+    setLinkedIds(doc.linked_contexts ?? [])
     setEditing(true)
   }
 
-  const linkedEntry = entries.find(e => e.id === (editing ? contextRef : doc.context_ref))
-
   const saveMut = useMutation({
     mutationFn: () => api.updateDocument(doc.id, {
-      document_context: ctx || null,
-      context_ref: contextRef || null,
+      additional_context: ctx || null,
+      linked_contexts: linkedIds.length > 0 ? linkedIds : null,
     }),
     onSuccess: () => { onRefresh(); setEditing(false) },
   })
-  const runMut = useMutation({
-    mutationFn: () => api.postJobEvent(job!.id, {
-      type: 'provide_context',
-      document_context: ctx || undefined,
-      context_ref: contextRef || null,
-    }),
-    onSuccess: () => { onRefresh(); setEditing(false) },
-  })
+
+  function toggleLinked(id: string) {
+    setLinkedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  }
 
   // Collapsed pill when context is set and not editing
   if (hasContext && !editing) {
     const parts: string[] = []
-    if (doc.context_ref) {
-      const name = entries.find(e => e.id === doc.context_ref)?.name ?? `ref:${doc.context_ref.slice(0, 8)}…`
-      parts.push(`↗ ${name}`)
+    if ((doc.linked_contexts?.length ?? 0) > 0) {
+      const names = (doc.linked_contexts ?? []).map(id => {
+        const entry = entries.find(e => e.id === id)
+        return entry ? `↗ ${entry.name}` : `↗ ref:${id.slice(0, 8)}…`
+      })
+      parts.push(...names)
     }
-    if (doc.document_context) {
-      const preview = doc.document_context.split('\n')[0].slice(0, 48)
-      parts.push(preview + (doc.document_context.length > 48 || doc.document_context.includes('\n') ? '…' : ''))
+    if (doc.additional_context) {
+      const preview = doc.additional_context.split('\n')[0].slice(0, 48)
+      parts.push(preview + (doc.additional_context.length > 48 || doc.additional_context.includes('\n') ? '…' : ''))
     }
     return (
       <div className="flex items-center gap-2">
@@ -188,155 +193,157 @@ function ContextSection({ doc, job, onRefresh }: { doc: DocumentDetail; job: Job
     )
   }
 
-  const canSave = !!(contextRef || ctx.trim())
-
   return (
-    <div className={`bg-white rounded-xl border p-4 ${required ? 'border-red-300 ring-1 ring-red-200' : 'border-gray-200'}`}>
+    <div className="bg-white rounded-xl border border-gray-200 p-4">
       <div className="flex items-center justify-between mb-3">
-        <div className={`text-xs font-semibold uppercase tracking-wide ${required ? 'text-red-600' : 'text-gray-400'}`}>
-          Document context
-          {required && <span className="ml-1 font-normal normal-case text-red-500">— required to continue</span>}
-        </div>
+        <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Document context</div>
         {hasContext && (
           <button onClick={() => setEditing(false)} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
         )}
       </div>
 
-      {/* Saved context ref picker */}
-      <div className="mb-3">
-        <label className="block text-xs text-gray-500 mb-1">Saved context</label>
-        {entries.length > 0 ? (
-          <>
-            <div className="flex items-center gap-2">
-              <select
-                value={contextRef}
-                onChange={e => setContextRef(e.target.value)}
-                className="flex-1 text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-200"
-              >
-                <option value="">None</option>
-                {entries.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-              </select>
-              {contextRef && (
-                <button onClick={() => setContextRef('')} className="text-xs text-gray-400 hover:text-red-500">✕</button>
-              )}
-            </div>
-            {linkedEntry && (
-              <pre className="mt-1.5 text-xs text-gray-500 font-mono whitespace-pre-wrap line-clamp-2 px-1">{linkedEntry.text}</pre>
-            )}
-          </>
-        ) : (
-          <p className="text-xs text-gray-400">
-            No saved contexts —{' '}
-            <Link to="/contexts" className="text-blue-500 hover:underline">create one in Context Library</Link>
-          </p>
-        )}
-      </div>
+      {/* Linked contexts */}
+      {entries.length > 0 && (
+        <div className="mb-3">
+          <label className="block text-xs text-gray-500 mb-1">Linked contexts</label>
+          <div className="space-y-1">
+            {entries.map(e => (
+              <label key={e.id} className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={linkedIds.includes(e.id)}
+                  onChange={() => toggleLinked(e.id)}
+                  className="rounded border-gray-300"
+                />
+                <span className="text-sm text-gray-700">{e.name}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+      {entries.length === 0 && (
+        <div className="mb-3 text-xs text-gray-400">
+          No saved contexts —{' '}
+          <Link to="/contexts" className="text-blue-500 hover:underline">create one in Context Library</Link>
+        </div>
+      )}
 
-      {/* Free-text context */}
+      {/* Free-text additional context */}
       <div>
         <label className="block text-xs text-gray-500 mb-1">Additional context</label>
         <textarea value={ctx} onChange={e => setCtx(e.target.value)} rows={4}
-          className={`w-full text-sm font-mono border rounded-lg px-3 py-2 resize-y focus:outline-none focus:ring-2 ${required && !contextRef ? 'border-red-300 bg-red-50 focus:ring-red-200' : 'border-gray-200 focus:ring-blue-200'}`}
+          className="w-full text-sm font-mono border border-gray-200 rounded-lg px-3 py-2 resize-y focus:outline-none focus:ring-2 focus:ring-blue-200"
           placeholder="Describe this document — used by clarify, classify, and other stages…" />
       </div>
 
       <div className="flex gap-2 mt-3">
-        <button onClick={() => saveMut.mutate()} disabled={saveMut.isPending || !canSave}
+        <button onClick={() => saveMut.mutate()} disabled={saveMut.isPending}
           className="px-3 py-1.5 text-xs font-medium border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50">
           Save
         </button>
-        {required && (
-          <button onClick={() => runMut.mutate()} disabled={runMut.isPending || !canSave}
-            className="px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
-            Save &amp; run now
-          </button>
-        )}
       </div>
     </div>
   )
 }
 
-
 function ArtifactsSection({ doc }: { doc: DocumentDetail }) {
-  const tabs = [
-    ...(doc.has_image ? [{ id: 'image', label: 'Image' }] : []),
-    ...doc.stage_displays.map(sd => ({ id: sd.name, label: sd.name })),
-  ]
-  const [active, setActive] = useState(tabs[0]?.id ?? 'image')
-  const activeDisplay = doc.stage_displays.find(sd => sd.name === active)
+  const artifacts = doc.artifacts ?? []
+  const [activeId, setActiveId] = useState(artifacts[0]?.id ?? '')
+  const activeArtifact = artifacts.find(a => a.id === activeId)
 
-  if (tabs.length === 0) return null
+  if (artifacts.length === 0) return null
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
       <div className="flex border-b border-gray-100 overflow-x-auto">
-        {tabs.map(tab => (
-          <button key={tab.id} onClick={() => setActive(tab.id)}
+        {artifacts.map(a => (
+          <button key={a.id} onClick={() => setActiveId(a.id)}
             className={`px-4 py-2.5 text-xs font-medium whitespace-nowrap transition-colors border-b-2 -mb-px ${
-              active === tab.id
+              activeId === a.id
                 ? 'border-gray-900 text-gray-900'
                 : 'border-transparent text-gray-400 hover:text-gray-600'
             }`}>
-            {tab.label}
+            {a.filename}
           </button>
         ))}
       </div>
       <div className="p-4">
-        {active === 'image' && doc.has_image && (
-          <div>
-            <div className="flex justify-end mb-2">
-              <a href={`/api/v1/documents/${doc.id}/image`} target="_blank" rel="noreferrer"
-                className="text-xs text-gray-400 hover:text-gray-600">Open in new tab ↗</a>
-            </div>
-            <img src={`/api/v1/documents/${doc.id}/image`} alt="Original document"
-              className="max-w-full rounded-lg border border-gray-100" />
-          </div>
-        )}
-        {activeDisplay && (
-          <ArtifactFields fields={activeDisplay.fields} />
-        )}
+        {activeArtifact && <ArtifactViewer doc={doc} artifact={activeArtifact} />}
       </div>
     </div>
   )
 }
 
-function ArtifactFields({ fields }: { fields: Record<string, string> }) {
+function ArtifactViewer({ doc, artifact }: { doc: DocumentDetail; artifact: Artifact }) {
   const [raw, setRaw] = useState(false)
-  const isMarkdown = (v: string) => v.includes('\n') && /[#*`\-]/.test(v)
+  const url = `/api/v1/documents/${doc.id}/artifacts/${artifact.id}`
+
+  if (artifact.content_type.startsWith('image/')) {
+    return (
+      <div>
+        <div className="flex justify-end mb-2">
+          <a href={url} target="_blank" rel="noreferrer"
+            className="text-xs text-gray-400 hover:text-gray-600">Open in new tab ↗</a>
+        </div>
+        <img src={url} alt={artifact.filename}
+          className="max-w-full rounded-lg border border-gray-100" />
+      </div>
+    )
+  }
+
+  if (artifact.content_type.startsWith('text/')) {
+    return (
+      <TextArtifact url={url} filename={artifact.filename} raw={raw} onToggleRaw={() => setRaw(r => !r)} />
+    )
+  }
 
   return (
-    <div className="space-y-3">
-      {Object.entries(fields).map(([field, value]) => (
-        <div key={field}>
-          <div className="flex items-center justify-between mb-1">
-            {Object.keys(fields).length > 1
-              ? <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{field}</div>
-              : <div />}
-            <div className="flex items-center gap-3">
-              {isMarkdown(value) && (
-                <button onClick={() => setRaw(r => !r)} className="text-xs text-gray-400 hover:text-gray-600">
-                  {raw ? 'Rendered' : 'Raw'}
-                </button>
-              )}
-              <button onClick={() => {
-                const blob = new Blob([value], { type: 'text/plain' })
-                window.open(URL.createObjectURL(blob), '_blank')
-              }} className="text-xs text-gray-400 hover:text-gray-600">Open in new tab ↗</button>
-            </div>
-          </div>
-          {isMarkdown(value) && !raw ? (
-            <div className="prose prose-sm prose-gray max-w-none bg-gray-50 border border-gray-100 rounded-lg px-4 py-3 max-h-96 overflow-y-auto">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{value.replace(/<!--[\s\S]*?-->/g, '')}</ReactMarkdown>
-            </div>
-          ) : (
-            <pre className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2 text-xs font-mono whitespace-pre-wrap max-h-96 overflow-y-auto">{value}</pre>
-          )}
-        </div>
-      ))}
+    <div className="text-xs text-gray-500">
+      <a href={url} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">
+        Download {artifact.filename} ↗
+      </a>
     </div>
   )
 }
 
+function TextArtifact({ url, filename, raw, onToggleRaw }: {
+  url: string; filename: string; raw: boolean; onToggleRaw: () => void
+}) {
+  const [text, setText] = useState<string | null>(null)
+  useEffect(() => {
+    fetch(url).then(r => r.text()).then(setText).catch(() => setText('(error loading artifact)'))
+  }, [url])
+
+  const isMarkdown = text ? (text.includes('\n') && /[#*`\-]/.test(text)) : false
+
+  if (text === null) return <div className="text-xs text-gray-400">Loading…</div>
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{filename}</div>
+        <div className="flex items-center gap-3">
+          {isMarkdown && (
+            <button onClick={onToggleRaw} className="text-xs text-gray-400 hover:text-gray-600">
+              {raw ? 'Rendered' : 'Raw'}
+            </button>
+          )}
+          <button onClick={() => {
+            const blob = new Blob([text], { type: 'text/plain' })
+            window.open(URL.createObjectURL(blob), '_blank')
+          }} className="text-xs text-gray-400 hover:text-gray-600">Open in new tab ↗</button>
+        </div>
+      </div>
+      {isMarkdown && !raw ? (
+        <div className="prose prose-sm prose-gray max-w-none bg-gray-50 border border-gray-100 rounded-lg px-4 py-3 max-h-96 overflow-y-auto">
+          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{text.replace(/<!--[\s\S]*?-->/g, '')}</ReactMarkdown>
+        </div>
+      ) : (
+        <pre className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2 text-xs font-mono whitespace-pre-wrap max-h-96 overflow-y-auto">{text}</pre>
+      )}
+    </div>
+  )
+}
 
 function LiveLogSection({ jobId, onDone }: { jobId: string; onDone: () => void }) {
   const logRef = useRef<HTMLPreElement>(null)
@@ -377,118 +384,89 @@ function LiveLogSection({ jobId, onDone }: { jobId: string; onDone: () => void }
   )
 }
 
-function EventLogSection({ events, jobId, onCleared }: { events: JobEventRecord[]; jobId: string; onCleared: () => void }) {
-  const clearMut = useMutation({
-    mutationFn: () => api.postJobEvent(jobId, { type: 'clear_errors' }),
-    onSuccess: onCleared,
-  })
-
-  return (
-    <div className="bg-white rounded-xl border border-red-200 p-4">
-      <div className="flex items-center justify-between mb-3">
-        <div className="text-xs font-semibold text-red-500 uppercase tracking-wide">Error log</div>
-        <button onClick={() => clearMut.mutate()} disabled={clearMut.isPending}
-          className="text-xs text-gray-400 hover:text-red-500 transition-colors disabled:opacity-50">
-          Clear
-        </button>
-      </div>
-      <div className="space-y-2">
-        {events.map((e, i) => (
-          <div key={i} className="bg-red-50 border border-red-100 rounded-lg p-3 text-xs font-mono">
-            <div className="text-gray-400 mb-1">{e.timestamp.slice(0, 19).replace('T', ' ')} · {e.stage}</div>
-            <div className="text-red-700 whitespace-pre-wrap">{(e.data as { error?: string } | null)?.error ?? '(no detail)'}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function ReviewSection({ jobId, doc, review, onRefresh }: {
-  jobId: string
+function ReviewSection({ job, run, doc, onRefresh }: {
+  job: JobDetail
+  run: Run
   doc: DocumentDetail
-  review: NonNullable<JobDetail['review']>
   onRefresh: () => void
 }) {
-  const [editedText, setEditedText] = useState(review.output_text)
-  const [answers, setAnswers] = useState<Record<string, string>>({})
-  const [freePrompt, setFreePrompt] = useState('')
-
+  const [answers, setAnswers] = useState<Record<number, string>>({})
   const [mutError, setMutError] = useState<string | null>(null)
 
   const approveMut = useMutation({
-    mutationFn: () => api.postJobEvent(jobId, {
-      type: 'approve',
-      edited_text: review.is_single_output ? editedText : undefined,
-    }),
+    mutationFn: () => api.putJobStatus(job.id, 'done'),
     onSuccess: () => { setMutError(null); onRefresh() },
     onError: (e: unknown) => setMutError(e instanceof Error ? e.message : String(e)),
   })
   const rejectMut = useMutation({
-    mutationFn: () => api.postJobEvent(jobId, { type: 'reject' }),
+    mutationFn: () => api.putJobStatus(job.id, 'pending'),
     onSuccess: () => { setMutError(null); onRefresh() },
     onError: (e: unknown) => setMutError(e instanceof Error ? e.message : String(e)),
   })
   const clarifyMut = useMutation({
-    mutationFn: () => api.postJobEvent(jobId, {
-      type: 'clarify',
-      answers,
-      free_prompt: freePrompt,
-      edited_text: review.is_single_output ? editedText : undefined,
-    }),
+    mutationFn: async () => {
+      if (run.id && run.questions?.length) {
+        const updatedQuestions = run.questions.map((q, i) => ({
+          ...q,
+          answer: answers[i] ?? q.answer ?? null,
+        }))
+        await api.patchRun(job.id, run.id, { questions: updatedQuestions })
+      }
+      await api.putJobStatus(job.id, 'pending')
+    },
     onSuccess: () => { setMutError(null); onRefresh() },
     onError: (e: unknown) => setMutError(e instanceof Error ? e.message : String(e)),
   })
 
-  const confidenceColor = review.confidence === 'high'
+  const busy = approveMut.isPending || rejectMut.isPending || clarifyMut.isPending
+
+  const confidenceColor = run.confidence === 'high'
     ? 'bg-green-100 text-green-700'
-    : review.confidence === 'medium'
+    : run.confidence === 'medium'
     ? 'bg-blue-100 text-blue-700'
     : 'bg-red-100 text-red-700'
-
-  const busy = approveMut.isPending || rejectMut.isPending || clarifyMut.isPending
 
   return (
     <div className="space-y-4">
       <div className="bg-white rounded-xl border border-gray-200 p-4">
         <div className="flex flex-wrap items-center gap-2 mb-4">
-          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Review</div>
-          {review.confidence && (
-            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${confidenceColor}`}>{review.confidence} confidence</span>
-          )}
-          {review.qa_rounds > 0 && (
-            <span className="text-xs text-gray-400">{review.qa_rounds} Q&A round{review.qa_rounds !== 1 ? 's' : ''}</span>
-          )}
+          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Review — {job.stage}</div>
+          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${confidenceColor}`}>{run.confidence} confidence</span>
+          <span className="text-xs text-gray-400">run {(job.runs?.length ?? 1)} of {job.runs?.length ?? 1}</span>
         </div>
 
-        {review.is_single_output ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-            <div>
-              <div className="text-xs font-semibold text-gray-400 mb-1">Before ({review.input_field})</div>
-              <pre className="bg-gray-50 border border-gray-100 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap h-80 overflow-y-auto">{review.input_text}</pre>
-            </div>
-            <div>
-              <div className="text-xs font-semibold text-gray-400 mb-1">After ({review.output_field})</div>
-              <textarea value={editedText} onChange={e => setEditedText(e.target.value)}
-                className="w-full bg-gray-50 border border-gray-100 rounded-lg p-3 text-xs font-mono h-80 resize-none focus:outline-none focus:ring-2 focus:ring-blue-200" />
-            </div>
-          </div>
-        ) : (
+        {/* Outputs */}
+        {run.outputs?.length > 0 && (
           <div className="mb-4">
-            <pre className="bg-gray-50 border border-gray-100 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap max-h-80 overflow-y-auto">{review.output_text}</pre>
+            {run.outputs.map((out, i) => (
+              <div key={i} className="mb-3">
+                {out.field && <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">{out.field}</div>}
+                <pre className="bg-gray-50 border border-gray-100 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap max-h-80 overflow-y-auto">{out.text}</pre>
+              </div>
+            ))}
           </div>
         )}
 
-        {review.clarification_requests.length > 0 && (
-          <ClarificationForm requests={review.clarification_requests} answers={answers} onChange={setAnswers} />
+        {/* Clarification questions */}
+        {run.questions?.length > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
+            <div className="text-xs font-semibold text-amber-800 mb-2">Clarifications needed</div>
+            {run.questions.map((q, i) => (
+              <div key={i} className="mb-3">
+                <div className="text-xs text-gray-700 mb-1">
+                  <code className="bg-white border border-gray-200 px-1 py-0.5 rounded text-xs">{q.segment}</code>
+                  <span className="ml-1 text-gray-500">— {q.question}</span>
+                </div>
+                <input
+                  value={answers[i] ?? q.answer ?? ''}
+                  onChange={e => setAnswers(a => ({ ...a, [i]: e.target.value }))}
+                  placeholder="Your answer…"
+                  className="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                />
+              </div>
+            ))}
+          </div>
         )}
-
-        <div className="mb-4">
-          <label className="block text-xs font-medium text-gray-500 mb-1">Additional instructions</label>
-          <textarea value={freePrompt} onChange={e => setFreePrompt(e.target.value)} rows={2}
-            placeholder="e.g. 'focus on the meeting action items…'"
-            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-y focus:outline-none focus:ring-2 focus:ring-blue-200" />
-        </div>
 
         {mutError && (
           <div className="mb-3 text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{mutError}</div>
@@ -498,31 +476,33 @@ function ReviewSection({ jobId, doc, review, onRefresh }: {
             className="px-4 py-1.5 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
             Approve
           </button>
-          <button onClick={() => clarifyMut.mutate()} disabled={busy}
-            className="px-4 py-1.5 text-sm font-medium bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-50">
-            Re-run
-          </button>
+          {run.questions?.length > 0 && (
+            <button onClick={() => clarifyMut.mutate()} disabled={busy}
+              className="px-4 py-1.5 text-sm font-medium bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-50">
+              Re-run with answers
+            </button>
+          )}
           <button onClick={() => rejectMut.mutate()} disabled={busy}
             className="px-4 py-1.5 text-sm font-medium border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50">
-            Reject
+            Re-run
           </button>
         </div>
       </div>
 
-      {review.document_context_update?.trim() && (
-        <ContextUpdatesSection
-          label="Document context"
-          description="Per-document notes (this chapter)"
-          current={doc.document_context}
-          proposed={review.document_context_update.trim()}
-          onSave={(text) => api.updateDocument(doc.id, { document_context: text })}
+      {/* Context suggestions from LLM */}
+      {run.suggestions?.additional_context?.trim() && (
+        <ContextSuggestionSection
+          label="Additional context suggestion"
+          current={doc.additional_context}
+          proposed={run.suggestions.additional_context.trim()}
+          onSave={(text) => api.updateDocument(doc.id, { additional_context: text })}
           onRefresh={onRefresh}
         />
       )}
-      {review.linked_context_update?.trim() && review.context_ref && (
-        <LinkedContextUpdatesSection
-          contextRef={review.context_ref}
-          proposed={review.linked_context_update.trim()}
+      {run.suggestions?.linked_context?.trim() && run.suggestions.linked_context_id && (
+        <LinkedContextSuggestion
+          contextId={run.suggestions.linked_context_id}
+          proposed={run.suggestions.linked_context.trim()}
           onRefresh={onRefresh}
         />
       )}
@@ -530,9 +510,8 @@ function ReviewSection({ jobId, doc, review, onRefresh }: {
   )
 }
 
-function ContextUpdatesSection({ label, description, current, proposed, onSave, onRefresh }: {
+function ContextSuggestionSection({ label, current, proposed, onSave, onRefresh }: {
   label: string
-  description: string
   current?: string | null
   proposed: string
   onSave: (text: string) => Promise<unknown>
@@ -551,10 +530,7 @@ function ContextUpdatesSection({ label, description, current, proposed, onSave, 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4">
       <div className="flex items-center justify-between mb-4">
-        <div>
-          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Review — {label}</div>
-          <div className="text-xs text-gray-400 mt-0.5">{description}</div>
-        </div>
+        <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{label}</div>
         <div className="flex gap-2">
           <button onClick={() => saveMut.mutate()} disabled={saveMut.isPending}
             className="px-4 py-1.5 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
@@ -562,27 +538,27 @@ function ContextUpdatesSection({ label, description, current, proposed, onSave, 
           </button>
           <button onClick={() => setDismissed(true)}
             className="px-4 py-1.5 text-sm font-medium border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">
-            Reject
+            Dismiss
           </button>
         </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div>
           <div className="text-xs font-semibold text-gray-400 mb-1">Current</div>
-          <pre className="bg-gray-50 border border-gray-100 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap h-72 overflow-y-auto">{current || '(empty)'}</pre>
+          <pre className="bg-gray-50 border border-gray-100 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap h-48 overflow-y-auto">{current || '(empty)'}</pre>
         </div>
         <div>
           <div className="text-xs font-semibold text-gray-400 mb-1">Proposed — editable</div>
           <textarea value={edited} onChange={e => setEdited(e.target.value)}
-            className="w-full bg-gray-50 border border-gray-100 rounded-lg p-3 text-xs font-mono h-72 resize-none focus:outline-none focus:ring-2 focus:ring-blue-200" />
+            className="w-full bg-gray-50 border border-gray-100 rounded-lg p-3 text-xs font-mono h-48 resize-none focus:outline-none focus:ring-2 focus:ring-blue-200" />
         </div>
       </div>
     </div>
   )
 }
 
-function LinkedContextUpdatesSection({ contextRef, proposed, onRefresh }: {
-  contextRef: string
+function LinkedContextSuggestion({ contextId, proposed, onRefresh }: {
+  contextId: string
   proposed: string
   onRefresh: () => void
 }) {
@@ -591,48 +567,48 @@ function LinkedContextUpdatesSection({ contextRef, proposed, onRefresh }: {
     queryFn: () => api.contexts(),
     staleTime: 30_000,
   })
-  const entry = contextsPage?.data?.find(e => e.id === contextRef)
+  const entry = contextsPage?.data?.find(e => e.id === contextId)
 
   return (
-    <ContextUpdatesSection
-      label="Shared context"
-      description={entry ? `"${entry.name}" — collection-level notes (the book)` : 'Collection-level notes (the book)'}
+    <ContextSuggestionSection
+      label={entry ? `Linked context suggestion — "${entry.name}"` : 'Linked context suggestion'}
       current={entry?.text}
       proposed={proposed}
-      onSave={(text) => api.updateContext(contextRef, { text })}
+      onSave={(text) => api.updateContext(contextId, { text })}
       onRefresh={onRefresh}
     />
   )
 }
 
-function ClarificationForm({
-  requests, answers, onChange,
-}: {
-  requests: ClarificationRequest[]
-  answers: Record<string, string>
-  onChange: (a: Record<string, string>) => void
-}) {
+function ErrorSection({ job, onRefresh }: { job: JobDetail; onRefresh: () => void }) {
+  const latestRun = job.runs && job.runs.length > 0 ? job.runs[job.runs.length - 1] : null
+  const retryMut = useMutation({
+    mutationFn: () => api.putJobStatus(job.id, 'pending'),
+    onSuccess: onRefresh,
+  })
+
   return (
-    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-3">
-      <div className="text-xs font-semibold text-amber-800 mb-2">Clarifications needed</div>
-      {requests.map((req, i) => (
-        <div key={i} className="mb-3">
-          <div className="text-xs text-gray-700 mb-1">
-            <code className="bg-white border border-gray-200 px-1 py-0.5 rounded text-xs">{req.segment}</code>
-            <span className="ml-1 text-gray-500">— {req.question}</span>
-          </div>
-          <input value={answers[String(i)] ?? ''} onChange={e => onChange({ ...answers, [i]: e.target.value })}
-            placeholder="Your answer…"
-            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200" />
-        </div>
-      ))}
+    <div className="bg-white rounded-xl border border-red-200 p-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-xs font-semibold text-red-500 uppercase tracking-wide">Error — {job.stage}</div>
+        <button onClick={() => retryMut.mutate()} disabled={retryMut.isPending}
+          className="text-xs text-gray-500 hover:text-green-600 border border-gray-200 hover:border-green-400 rounded-lg px-3 py-1 transition-colors disabled:opacity-50">
+          Retry
+        </button>
+      </div>
+      {latestRun && latestRun.outputs?.length > 0 && (
+        <pre className="bg-red-50 border border-red-100 rounded-lg px-3 py-2 text-xs font-mono whitespace-pre-wrap max-h-48 overflow-y-auto text-red-700">
+          {latestRun.outputs.map(o => o.text).join('\n')}
+        </pre>
+      )}
     </div>
   )
 }
 
 function EmbedImageSection({ job, onRefresh }: { job: JobDetail; onRefresh: () => void }) {
+  const embedImage = job.options?.embed?.embed_image ?? false
   const mut = useMutation({
-    mutationFn: () => api.updateJob(job.id, { embed_image: !job.embed_image }),
+    mutationFn: () => api.updateJob(job.id, { options: { embed: { embed_image: !embedImage } } }),
     onSuccess: onRefresh,
   })
 
@@ -644,39 +620,48 @@ function EmbedImageSection({ job, onRefresh }: { job: JobDetail; onRefresh: () =
           onClick={() => mut.mutate()}
           disabled={mut.isPending}
           className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-50 ${
-            job.embed_image ? 'bg-blue-600' : 'bg-gray-200'
+            embedImage ? 'bg-blue-600' : 'bg-gray-200'
           }`}
         >
           <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
-            job.embed_image ? 'translate-x-4' : 'translate-x-1'
+            embedImage ? 'translate-x-4' : 'translate-x-1'
           }`} />
         </button>
         <span className="text-sm text-gray-600">
-          {job.embed_image ? 'Embed image for visual search' : 'Text only (no image embedding)'}
+          {embedImage ? 'Embed image for visual search' : 'Text only (no image embedding)'}
         </span>
       </div>
     </div>
   )
 }
 
-function ReplaySection({ jobId, job, onRefresh }: { jobId: string; job: JobDetail; onRefresh: () => void }) {
+function JobsSection({ jobs, currentJobId, onRefresh }: {
+  jobs: { id: string; stage: string; status: string; updated_at: string }[]
+  currentJobId?: string
+  onRefresh: () => void
+}) {
   const replayMut = useMutation({
-    mutationFn: (stage: string) => api.postJobEvent(jobId, { type: 'replay', stage }),
+    mutationFn: (jobId: string) => api.putJobStatus(jobId, 'pending'),
     onSuccess: onRefresh,
   })
+
+  const doneJobs = jobs.filter(j => j.status === 'done')
+  if (doneJobs.length === 0) return null
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4">
       <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Replay from stage</div>
       <div className="flex flex-wrap gap-2">
-        {job.replay_stages.map(s => (
-          <button key={s.name}
+        {doneJobs.map(j => (
+          <button key={j.id}
             onClick={() => {
-              if (confirm(`Replay from ${s.name}? This will clear downstream stage data.`))
-                replayMut.mutate(s.name)
+              if (confirm(`Replay from ${j.stage}? This will reset this and all downstream stages.`))
+                replayMut.mutate(j.id)
             }}
-            className="px-3 py-1.5 text-xs font-mono font-medium border border-gray-200 rounded-lg hover:bg-gray-50">
-            {s.name}
+            className={`px-3 py-1.5 text-xs font-mono font-medium border rounded-lg hover:bg-gray-50 transition-colors ${
+              j.id === currentJobId ? 'border-blue-300 text-blue-700' : 'border-gray-200 text-gray-700'
+            }`}>
+            {j.stage}
           </button>
         ))}
       </div>

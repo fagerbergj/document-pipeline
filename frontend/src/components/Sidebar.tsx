@@ -2,8 +2,8 @@ import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api'
 
-const STATES = ['pending', 'running', 'waiting', 'error', 'done']
-const STATE_COLORS: Record<string, string> = {
+const STATUSES = ['pending', 'running', 'waiting', 'error', 'done']
+const STATUS_COLORS: Record<string, string> = {
   pending: 'bg-yellow-400',
   running: 'bg-blue-400',
   waiting: 'bg-cyan-400',
@@ -16,7 +16,7 @@ export default function Sidebar() {
   const [searchParams, setSearchParams] = useSearchParams()
 
   const selectedStages = (searchParams.get('stages') ?? '').split(',').filter(Boolean)
-  const selectedStates = (searchParams.get('states') ?? '').split(',').filter(Boolean)
+  const selectedStatuses = (searchParams.get('statuses') ?? '').split(',').filter(Boolean)
 
   // Fetch pipeline stages (source of truth for stage list)
   const { data: pipelineDetail } = useQuery({
@@ -28,7 +28,7 @@ export default function Sidebar() {
   // Fetch all jobs (finite dataset) and aggregate counts client-side
   const { data: jobsPage } = useQuery({
     queryKey: ['jobs-all'],
-    queryFn: () => api.jobs({ pageSize: 1000 }),
+    queryFn: () => api.jobs({ page_size: 1000 }),
     refetchInterval: 10_000,
   })
 
@@ -36,11 +36,11 @@ export default function Sidebar() {
   const pipelineStages = pipelineDetail?.stages ?? []
 
   // Aggregate counts from jobs list
-  const stateCounts: Record<string, number> = {}
+  const statusCounts: Record<string, number> = {}
   const stageCounts: Record<string, number> = {}
   for (const job of jobs) {
-    stateCounts[job.stage_state] = (stateCounts[job.stage_state] ?? 0) + 1
-    stageCounts[job.current_stage] = (stageCounts[job.current_stage] ?? 0) + 1
+    statusCounts[job.status] = (statusCounts[job.status] ?? 0) + 1
+    stageCounts[job.stage] = (stageCounts[job.stage] ?? 0) + 1
   }
 
   function toggleStage(s: string) {
@@ -52,23 +52,23 @@ export default function Sidebar() {
     setSearchParams(next)
   }
 
-  function toggleState(s: string) {
+  function toggleStatus(s: string) {
     const next = new URLSearchParams(searchParams)
-    const cur = selectedStates.includes(s)
-      ? selectedStates.filter(x => x !== s)
-      : [...selectedStates, s]
-    cur.length ? next.set('states', cur.join(',')) : next.delete('states')
+    const cur = selectedStatuses.includes(s)
+      ? selectedStatuses.filter(x => x !== s)
+      : [...selectedStatuses, s]
+    cur.length ? next.set('statuses', cur.join(',')) : next.delete('statuses')
     setSearchParams(next)
   }
 
   function clearAll() {
     const next = new URLSearchParams(searchParams)
     next.delete('stages')
-    next.delete('states')
+    next.delete('statuses')
     setSearchParams(next)
   }
 
-  const hasFilters = selectedStages.length > 0 || selectedStates.length > 0
+  const hasFilters = selectedStages.length > 0 || selectedStatuses.length > 0
 
   return (
     <aside className="fixed left-0 top-0 h-full w-64 bg-gray-950 border-r border-gray-800 flex flex-col">
@@ -99,20 +99,20 @@ export default function Sidebar() {
             </button>
           )}
 
-          {/* State filter */}
+          {/* Status filter */}
           <div>
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-              Status {selectedStates.length > 0 && <span className="ml-1 text-blue-400">({selectedStates.length})</span>}
+              Status {selectedStatuses.length > 0 && <span className="ml-1 text-blue-400">({selectedStatuses.length})</span>}
             </div>
             <div className="space-y-1">
-              {STATES.map(s => {
-                const n = stateCounts[s] ?? 0
-                const active = selectedStates.includes(s)
+              {STATUSES.map(s => {
+                const n = statusCounts[s] ?? 0
+                const active = selectedStatuses.includes(s)
                 return (
-                  <button key={s} onClick={() => toggleState(s)}
+                  <button key={s} onClick={() => toggleStatus(s)}
                     className={`w-full flex items-center justify-between px-2 py-1.5 rounded text-sm transition-colors ${active ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800/50'}`}>
                     <div className="flex items-center gap-2">
-                      <span className={`w-2 h-2 rounded-full ${STATE_COLORS[s]}`} />
+                      <span className={`w-2 h-2 rounded-full ${STATUS_COLORS[s]}`} />
                       <span className="capitalize">{s}</span>
                     </div>
                     {n > 0 && <span className="text-xs text-gray-500">{n}</span>}

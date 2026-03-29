@@ -2,7 +2,7 @@
 
 import { type Client, formDataBodySerializer, type Options as Options2, type TDataShape } from './client';
 import { client } from './client.gen';
-import type { CreateChatSessionApiV1ChatsPostData, CreateChatSessionApiV1ChatsPostErrors, CreateChatSessionApiV1ChatsPostResponses, CreateContextApiV1ContextsPostData, CreateContextApiV1ContextsPostErrors, CreateContextApiV1ContextsPostResponses, DeleteChatSessionApiV1ChatsSessionIdDeleteData, DeleteChatSessionApiV1ChatsSessionIdDeleteErrors, DeleteChatSessionApiV1ChatsSessionIdDeleteResponses, DeleteContextApiV1ContextsContextIdDeleteData, DeleteContextApiV1ContextsContextIdDeleteErrors, DeleteContextApiV1ContextsContextIdDeleteResponses, DeleteDocumentApiV1DocumentsDocIdDeleteData, DeleteDocumentApiV1DocumentsDocIdDeleteErrors, DeleteDocumentApiV1DocumentsDocIdDeleteResponses, GetChatSessionApiV1ChatsSessionIdGetData, GetChatSessionApiV1ChatsSessionIdGetErrors, GetChatSessionApiV1ChatsSessionIdGetResponses, GetDocumentApiV1DocumentsDocIdGetData, GetDocumentApiV1DocumentsDocIdGetErrors, GetDocumentApiV1DocumentsDocIdGetResponses, GetDocumentImageApiV1DocumentsDocIdImageGetData, GetDocumentImageApiV1DocumentsDocIdImageGetErrors, GetDocumentImageApiV1DocumentsDocIdImageGetResponses, GetJobApiV1JobsJobIdGetData, GetJobApiV1JobsJobIdGetErrors, GetJobApiV1JobsJobIdGetResponses, GetPipelineApiV1PipelinesPipelineIdGetData, GetPipelineApiV1PipelinesPipelineIdGetErrors, GetPipelineApiV1PipelinesPipelineIdGetResponses, JobTokenStreamApiV1JobsJobIdStreamGetData, JobTokenStreamApiV1JobsJobIdStreamGetErrors, JobTokenStreamApiV1JobsJobIdStreamGetResponses, ListChatSessionsApiV1ChatsGetData, ListChatSessionsApiV1ChatsGetErrors, ListChatSessionsApiV1ChatsGetResponses, ListContextsApiV1ContextsGetData, ListContextsApiV1ContextsGetResponses, ListDocumentsApiV1DocumentsGetData, ListDocumentsApiV1DocumentsGetErrors, ListDocumentsApiV1DocumentsGetResponses, ListJobEventsApiV1JobsJobIdEventsGetData, ListJobEventsApiV1JobsJobIdEventsGetErrors, ListJobEventsApiV1JobsJobIdEventsGetResponses, ListJobsApiV1JobsGetData, ListJobsApiV1JobsGetErrors, ListJobsApiV1JobsGetResponses, ListPipelinesApiV1PipelinesGetData, ListPipelinesApiV1PipelinesGetResponses, PatchChatSessionApiV1ChatsSessionIdPatchData, PatchChatSessionApiV1ChatsSessionIdPatchErrors, PatchChatSessionApiV1ChatsSessionIdPatchResponses, PatchDocumentApiV1DocumentsDocIdPatchData, PatchDocumentApiV1DocumentsDocIdPatchErrors, PatchDocumentApiV1DocumentsDocIdPatchResponses, PatchJobApiV1JobsJobIdPatchData, PatchJobApiV1JobsJobIdPatchErrors, PatchJobApiV1JobsJobIdPatchResponses, PostJobEventApiV1JobsJobIdEventsPostData, PostJobEventApiV1JobsJobIdEventsPostErrors, PostJobEventApiV1JobsJobIdEventsPostResponses, SendChatMessageApiV1ChatsSessionIdMessagesPostData, SendChatMessageApiV1ChatsSessionIdMessagesPostErrors, SendChatMessageApiV1ChatsSessionIdMessagesPostResponses, UpdateContextApiV1ContextsContextIdPatchData, UpdateContextApiV1ContextsContextIdPatchErrors, UpdateContextApiV1ContextsContextIdPatchResponses, UploadDocumentApiV1DocumentsPostData, UploadDocumentApiV1DocumentsPostErrors, UploadDocumentApiV1DocumentsPostResponses } from './types.gen';
+import type { CreateChatApiV1ChatsPostData, CreateChatApiV1ChatsPostErrors, CreateChatApiV1ChatsPostResponses, CreateContextApiV1ContextsPostData, CreateContextApiV1ContextsPostErrors, CreateContextApiV1ContextsPostResponses, DeleteChatApiV1ChatsChatIdDeleteData, DeleteChatApiV1ChatsChatIdDeleteErrors, DeleteChatApiV1ChatsChatIdDeleteResponses, DeleteContextApiV1ContextsContextIdDeleteData, DeleteContextApiV1ContextsContextIdDeleteErrors, DeleteContextApiV1ContextsContextIdDeleteResponses, DeleteDocumentApiV1DocumentsDocIdDeleteData, DeleteDocumentApiV1DocumentsDocIdDeleteErrors, DeleteDocumentApiV1DocumentsDocIdDeleteResponses, GetArtifactApiV1DocumentsDocIdArtifactsArtifactIdGetData, GetArtifactApiV1DocumentsDocIdArtifactsArtifactIdGetErrors, GetArtifactApiV1DocumentsDocIdArtifactsArtifactIdGetResponses, GetChatApiV1ChatsChatIdGetData, GetChatApiV1ChatsChatIdGetErrors, GetChatApiV1ChatsChatIdGetResponses, GetDocumentApiV1DocumentsDocIdGetData, GetDocumentApiV1DocumentsDocIdGetErrors, GetDocumentApiV1DocumentsDocIdGetResponses, GetJobApiV1JobsJobIdGetData, GetJobApiV1JobsJobIdGetErrors, GetJobApiV1JobsJobIdGetResponses, GetPipelineApiV1PipelinesPipelineIdGetData, GetPipelineApiV1PipelinesPipelineIdGetErrors, GetPipelineApiV1PipelinesPipelineIdGetResponses, JobTokenStreamApiV1JobsJobIdStreamGetData, JobTokenStreamApiV1JobsJobIdStreamGetErrors, JobTokenStreamApiV1JobsJobIdStreamGetResponses, ListChatsApiV1ChatsGetData, ListChatsApiV1ChatsGetErrors, ListChatsApiV1ChatsGetResponses, ListContextsApiV1ContextsGetData, ListContextsApiV1ContextsGetResponses, ListDocumentsApiV1DocumentsGetData, ListDocumentsApiV1DocumentsGetErrors, ListDocumentsApiV1DocumentsGetResponses, ListJobsApiV1JobsGetData, ListJobsApiV1JobsGetErrors, ListJobsApiV1JobsGetResponses, ListPipelinesApiV1PipelinesGetData, ListPipelinesApiV1PipelinesGetResponses, PatchChatApiV1ChatsChatIdPatchData, PatchChatApiV1ChatsChatIdPatchErrors, PatchChatApiV1ChatsChatIdPatchResponses, PatchDocumentApiV1DocumentsDocIdPatchData, PatchDocumentApiV1DocumentsDocIdPatchErrors, PatchDocumentApiV1DocumentsDocIdPatchResponses, PatchJobApiV1JobsJobIdPatchData, PatchJobApiV1JobsJobIdPatchErrors, PatchJobApiV1JobsJobIdPatchResponses, PatchRunApiV1JobsJobIdRunsRunIdPatchData, PatchRunApiV1JobsJobIdRunsRunIdPatchErrors, PatchRunApiV1JobsJobIdRunsRunIdPatchResponses, PutJobStatusApiV1JobsJobIdStatusPutData, PutJobStatusApiV1JobsJobIdStatusPutErrors, PutJobStatusApiV1JobsJobIdStatusPutResponses, SendChatMessageApiV1ChatsChatIdMessagesPostData, SendChatMessageApiV1ChatsChatIdMessagesPostErrors, SendChatMessageApiV1ChatsChatIdMessagesPostResponses, UpdateContextApiV1ContextsContextIdPatchData, UpdateContextApiV1ContextsContextIdPatchErrors, UpdateContextApiV1ContextsContextIdPatchResponses, UploadDocumentApiV1DocumentsPostData, UploadDocumentApiV1DocumentsPostErrors, UploadDocumentApiV1DocumentsPostResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -69,9 +69,9 @@ export const patchDocumentApiV1DocumentsDocIdPatch = <ThrowOnError extends boole
 });
 
 /**
- * Get Document Image
+ * Get Artifact
  */
-export const getDocumentImageApiV1DocumentsDocIdImageGet = <ThrowOnError extends boolean = false>(options: Options<GetDocumentImageApiV1DocumentsDocIdImageGetData, ThrowOnError>) => (options.client ?? client).get<GetDocumentImageApiV1DocumentsDocIdImageGetResponses, GetDocumentImageApiV1DocumentsDocIdImageGetErrors, ThrowOnError>({ url: '/api/v1/documents/{doc_id}/image', ...options });
+export const getArtifactApiV1DocumentsDocIdArtifactsArtifactIdGet = <ThrowOnError extends boolean = false>(options: Options<GetArtifactApiV1DocumentsDocIdArtifactsArtifactIdGetData, ThrowOnError>) => (options.client ?? client).get<GetArtifactApiV1DocumentsDocIdArtifactsArtifactIdGetResponses, GetArtifactApiV1DocumentsDocIdArtifactsArtifactIdGetErrors, ThrowOnError>({ url: '/api/v1/documents/{doc_id}/artifacts/{artifact_id}', ...options });
 
 /**
  * List Jobs
@@ -96,28 +96,35 @@ export const patchJobApiV1JobsJobIdPatch = <ThrowOnError extends boolean = false
 });
 
 /**
- * Job Token Stream
- *
- * SSE stream of LLM tokens while the job is running.
+ * Patch Run
  */
-export const jobTokenStreamApiV1JobsJobIdStreamGet = <ThrowOnError extends boolean = false>(options: Options<JobTokenStreamApiV1JobsJobIdStreamGetData, ThrowOnError>) => (options.client ?? client).get<JobTokenStreamApiV1JobsJobIdStreamGetResponses, JobTokenStreamApiV1JobsJobIdStreamGetErrors, ThrowOnError>({ url: '/api/v1/jobs/{job_id}/stream', ...options });
-
-/**
- * List Job Events
- */
-export const listJobEventsApiV1JobsJobIdEventsGet = <ThrowOnError extends boolean = false>(options: Options<ListJobEventsApiV1JobsJobIdEventsGetData, ThrowOnError>) => (options.client ?? client).get<ListJobEventsApiV1JobsJobIdEventsGetResponses, ListJobEventsApiV1JobsJobIdEventsGetErrors, ThrowOnError>({ url: '/api/v1/jobs/{job_id}/events', ...options });
-
-/**
- * Post Job Event
- */
-export const postJobEventApiV1JobsJobIdEventsPost = <ThrowOnError extends boolean = false>(options: Options<PostJobEventApiV1JobsJobIdEventsPostData, ThrowOnError>) => (options.client ?? client).post<PostJobEventApiV1JobsJobIdEventsPostResponses, PostJobEventApiV1JobsJobIdEventsPostErrors, ThrowOnError>({
-    url: '/api/v1/jobs/{job_id}/events',
+export const patchRunApiV1JobsJobIdRunsRunIdPatch = <ThrowOnError extends boolean = false>(options: Options<PatchRunApiV1JobsJobIdRunsRunIdPatchData, ThrowOnError>) => (options.client ?? client).patch<PatchRunApiV1JobsJobIdRunsRunIdPatchResponses, PatchRunApiV1JobsJobIdRunsRunIdPatchErrors, ThrowOnError>({
+    url: '/api/v1/jobs/{job_id}/runs/{run_id}',
     ...options,
     headers: {
         'Content-Type': 'application/json',
         ...options.headers
     }
 });
+
+/**
+ * Put Job Status
+ */
+export const putJobStatusApiV1JobsJobIdStatusPut = <ThrowOnError extends boolean = false>(options: Options<PutJobStatusApiV1JobsJobIdStatusPutData, ThrowOnError>) => (options.client ?? client).put<PutJobStatusApiV1JobsJobIdStatusPutResponses, PutJobStatusApiV1JobsJobIdStatusPutErrors, ThrowOnError>({
+    url: '/api/v1/jobs/{job_id}/status',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Job Token Stream
+ *
+ * SSE stream of LLM tokens while the job is running.
+ */
+export const jobTokenStreamApiV1JobsJobIdStreamGet = <ThrowOnError extends boolean = false>(options: Options<JobTokenStreamApiV1JobsJobIdStreamGetData, ThrowOnError>) => (options.client ?? client).get<JobTokenStreamApiV1JobsJobIdStreamGetResponses, JobTokenStreamApiV1JobsJobIdStreamGetErrors, ThrowOnError>({ url: '/api/v1/jobs/{job_id}/stream', ...options });
 
 /**
  * List Contexts
@@ -154,14 +161,14 @@ export const updateContextApiV1ContextsContextIdPatch = <ThrowOnError extends bo
 });
 
 /**
- * List Chat Sessions
+ * List Chats
  */
-export const listChatSessionsApiV1ChatsGet = <ThrowOnError extends boolean = false>(options?: Options<ListChatSessionsApiV1ChatsGetData, ThrowOnError>) => (options?.client ?? client).get<ListChatSessionsApiV1ChatsGetResponses, ListChatSessionsApiV1ChatsGetErrors, ThrowOnError>({ url: '/api/v1/chats', ...options });
+export const listChatsApiV1ChatsGet = <ThrowOnError extends boolean = false>(options?: Options<ListChatsApiV1ChatsGetData, ThrowOnError>) => (options?.client ?? client).get<ListChatsApiV1ChatsGetResponses, ListChatsApiV1ChatsGetErrors, ThrowOnError>({ url: '/api/v1/chats', ...options });
 
 /**
- * Create Chat Session
+ * Create Chat
  */
-export const createChatSessionApiV1ChatsPost = <ThrowOnError extends boolean = false>(options: Options<CreateChatSessionApiV1ChatsPostData, ThrowOnError>) => (options.client ?? client).post<CreateChatSessionApiV1ChatsPostResponses, CreateChatSessionApiV1ChatsPostErrors, ThrowOnError>({
+export const createChatApiV1ChatsPost = <ThrowOnError extends boolean = false>(options: Options<CreateChatApiV1ChatsPostData, ThrowOnError>) => (options.client ?? client).post<CreateChatApiV1ChatsPostResponses, CreateChatApiV1ChatsPostErrors, ThrowOnError>({
     url: '/api/v1/chats',
     ...options,
     headers: {
@@ -171,20 +178,20 @@ export const createChatSessionApiV1ChatsPost = <ThrowOnError extends boolean = f
 });
 
 /**
- * Delete Chat Session
+ * Delete Chat
  */
-export const deleteChatSessionApiV1ChatsSessionIdDelete = <ThrowOnError extends boolean = false>(options: Options<DeleteChatSessionApiV1ChatsSessionIdDeleteData, ThrowOnError>) => (options.client ?? client).delete<DeleteChatSessionApiV1ChatsSessionIdDeleteResponses, DeleteChatSessionApiV1ChatsSessionIdDeleteErrors, ThrowOnError>({ url: '/api/v1/chats/{session_id}', ...options });
+export const deleteChatApiV1ChatsChatIdDelete = <ThrowOnError extends boolean = false>(options: Options<DeleteChatApiV1ChatsChatIdDeleteData, ThrowOnError>) => (options.client ?? client).delete<DeleteChatApiV1ChatsChatIdDeleteResponses, DeleteChatApiV1ChatsChatIdDeleteErrors, ThrowOnError>({ url: '/api/v1/chats/{chat_id}', ...options });
 
 /**
- * Get Chat Session
+ * Get Chat
  */
-export const getChatSessionApiV1ChatsSessionIdGet = <ThrowOnError extends boolean = false>(options: Options<GetChatSessionApiV1ChatsSessionIdGetData, ThrowOnError>) => (options.client ?? client).get<GetChatSessionApiV1ChatsSessionIdGetResponses, GetChatSessionApiV1ChatsSessionIdGetErrors, ThrowOnError>({ url: '/api/v1/chats/{session_id}', ...options });
+export const getChatApiV1ChatsChatIdGet = <ThrowOnError extends boolean = false>(options: Options<GetChatApiV1ChatsChatIdGetData, ThrowOnError>) => (options.client ?? client).get<GetChatApiV1ChatsChatIdGetResponses, GetChatApiV1ChatsChatIdGetErrors, ThrowOnError>({ url: '/api/v1/chats/{chat_id}', ...options });
 
 /**
- * Patch Chat Session
+ * Patch Chat
  */
-export const patchChatSessionApiV1ChatsSessionIdPatch = <ThrowOnError extends boolean = false>(options: Options<PatchChatSessionApiV1ChatsSessionIdPatchData, ThrowOnError>) => (options.client ?? client).patch<PatchChatSessionApiV1ChatsSessionIdPatchResponses, PatchChatSessionApiV1ChatsSessionIdPatchErrors, ThrowOnError>({
-    url: '/api/v1/chats/{session_id}',
+export const patchChatApiV1ChatsChatIdPatch = <ThrowOnError extends boolean = false>(options: Options<PatchChatApiV1ChatsChatIdPatchData, ThrowOnError>) => (options.client ?? client).patch<PatchChatApiV1ChatsChatIdPatchResponses, PatchChatApiV1ChatsChatIdPatchErrors, ThrowOnError>({
+    url: '/api/v1/chats/{chat_id}',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -195,8 +202,8 @@ export const patchChatSessionApiV1ChatsSessionIdPatch = <ThrowOnError extends bo
 /**
  * Send Chat Message
  */
-export const sendChatMessageApiV1ChatsSessionIdMessagesPost = <ThrowOnError extends boolean = false>(options: Options<SendChatMessageApiV1ChatsSessionIdMessagesPostData, ThrowOnError>) => (options.client ?? client).post<SendChatMessageApiV1ChatsSessionIdMessagesPostResponses, SendChatMessageApiV1ChatsSessionIdMessagesPostErrors, ThrowOnError>({
-    url: '/api/v1/chats/{session_id}/messages',
+export const sendChatMessageApiV1ChatsChatIdMessagesPost = <ThrowOnError extends boolean = false>(options: Options<SendChatMessageApiV1ChatsChatIdMessagesPostData, ThrowOnError>) => (options.client ?? client).post<SendChatMessageApiV1ChatsChatIdMessagesPostResponses, SendChatMessageApiV1ChatsChatIdMessagesPostErrors, ThrowOnError>({
+    url: '/api/v1/chats/{chat_id}/messages',
     ...options,
     headers: {
         'Content-Type': 'application/json',

@@ -20,7 +20,7 @@ export default function UploadModal({ onClose }: Props) {
     }),
     onSuccess: (job) => {
       onClose()
-      navigate(`/documents/${job.doc_id}`)
+      navigate(`/documents/${job.document_id}`)
     },
     onError: (err: Error & { status?: number; body?: { error?: string } }) => {
       setError(err.body?.error ?? err.message ?? 'Upload failed')

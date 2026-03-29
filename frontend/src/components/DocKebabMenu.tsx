@@ -2,38 +2,33 @@ import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useMutation } from '@tanstack/react-query'
 import { api } from '../api'
+import type { JobStatus } from '../api'
 
 interface DocKebabMenuProps {
   docId: string
   jobId?: string
-  state: string
-  /** If provided, used directly. If omitted, fetched lazily on first open. */
-  replayStages?: { name: string }[]
+  status: JobStatus | string
   /** Called after delete succeeds — caller decides navigation. */
   onDelete: () => void
-  /** Called after stop/retry/replay succeeds. */
+  /** Called after stop/retry succeeds. */
   onSuccess: () => void
-  /** Extra classes for the trigger button (e.g. opacity/sizing). */
+  /** Extra classes for the trigger button. */
   buttonClassName?: string
 }
 
 export default function DocKebabMenu({
   docId,
   jobId,
-  state,
-  replayStages: providedStages,
+  status,
   onDelete,
   onSuccess,
   buttonClassName,
 }: DocKebabMenuProps) {
   const [open, setOpen] = useState(false)
   const [menuPos, setMenuPos] = useState({ top: 0, right: 0 })
-  const [fetchedStages, setFetchedStages] = useState<{ name: string }[] | null>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
-
-  const replayStages = providedStages ?? fetchedStages ?? []
 
   function openMenu() {
     if (btnRef.current) {
@@ -42,11 +37,6 @@ export default function DocKebabMenu({
     }
     setOpen(true)
   }
-
-  useEffect(() => {
-    if (!open || providedStages !== undefined || fetchedStages !== null || !jobId) return
-    api.job(jobId).then(j => setFetchedStages(j.replay_stages)).catch(() => setFetchedStages([]))
-  }, [open, jobId, providedStages, fetchedStages])
 
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -64,10 +54,9 @@ export default function DocKebabMenu({
   const [mutError, setMutError] = useState<string | null>(null)
   const onErr = (e: unknown) => setMutError(e instanceof Error ? e.message : String(e))
 
-  const stopMut   = useMutation({ mutationFn: () => api.postJobEvent(jobId!, { type: 'stop' }),               onSuccess: () => done(onSuccess), onError: onErr })
-  const retryMut  = useMutation({ mutationFn: () => api.postJobEvent(jobId!, { type: 'retry' }),              onSuccess: () => done(onSuccess), onError: onErr })
-  const replayMut = useMutation({ mutationFn: (s: string) => api.postJobEvent(jobId!, { type: 'replay', stage: s }), onSuccess: () => done(onSuccess), onError: onErr })
-  const deleteMut = useMutation({ mutationFn: () => api.deleteDocument(docId),                               onSuccess: () => done(onDelete), onError: onErr })
+  const stopMut   = useMutation({ mutationFn: () => api.putJobStatus(jobId!, 'error'),   onSuccess: () => done(onSuccess), onError: onErr })
+  const retryMut  = useMutation({ mutationFn: () => api.putJobStatus(jobId!, 'pending'), onSuccess: () => done(onSuccess), onError: onErr })
+  const deleteMut = useMutation({ mutationFn: () => api.deleteDocument(docId),           onSuccess: () => done(onDelete),  onError: onErr })
 
   return (
     <div ref={wrapRef} className="relative">
@@ -88,35 +77,17 @@ export default function DocKebabMenu({
           {mutError && (
             <div className="px-3 py-2 text-xs text-red-600 bg-red-50 border-b border-red-100">{mutError}</div>
           )}
-          {state === 'running' && (
+          {status === 'running' && (
             <button onClick={() => stopMut.mutate()}
               className="w-full text-left px-4 py-2.5 text-sm text-amber-700 hover:bg-amber-50">
               Stop
             </button>
           )}
-          {state === 'error' && (
+          {status === 'error' && (
             <button onClick={() => retryMut.mutate()}
               className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">
               Retry
             </button>
-          )}
-          {replayStages.length > 0 && (
-            <>
-              <div className="px-3 py-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wide border-b border-gray-100">
-                Replay from
-              </div>
-              {replayStages.map(s => (
-                <button key={s.name}
-                  onClick={() => {
-                    if (confirm(`Replay from ${s.name}? This will clear downstream stage data.`))
-                      replayMut.mutate(s.name)
-                  }}
-                  className="w-full text-left px-4 py-2 text-sm font-mono text-gray-700 hover:bg-gray-50">
-                  {s.name}
-                </button>
-              ))}
-              <div className="border-t border-gray-100" />
-            </>
           )}
           <button
             onClick={() => { if (confirm('Delete this document? This cannot be undone.')) deleteMut.mutate() }}

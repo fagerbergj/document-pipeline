@@ -77,38 +77,6 @@
         "operationId": "list_documents_api_v1_documents_get",
         "parameters": [
           {
-            "name": "stages",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Stages"
-            }
-          },
-          {
-            "name": "states",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "States"
-            }
-          },
-          {
             "name": "sort",
             "in": "query",
             "required": false,
@@ -119,7 +87,7 @@
             }
           },
           {
-            "name": "pageSize",
+            "name": "page_size",
             "in": "query",
             "required": false,
             "schema": {
@@ -127,11 +95,11 @@
               "maximum": 200,
               "minimum": 1,
               "default": 50,
-              "title": "Pagesize"
+              "title": "Page Size"
             }
           },
           {
-            "name": "pageToken",
+            "name": "page_token",
             "in": "query",
             "required": false,
             "schema": {
@@ -143,7 +111,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Pagetoken"
+              "title": "Page Token"
             }
           }
         ],
@@ -342,13 +310,13 @@
         }
       }
     },
-    "/api/v1/documents/{doc_id}/image": {
+    "/api/v1/documents/{doc_id}/artifacts/{artifact_id}": {
       "get": {
         "tags": [
           "Documents"
         ],
-        "summary": "Get Document Image",
-        "operationId": "get_document_image_api_v1_documents__doc_id__image_get",
+        "summary": "Get Artifact",
+        "operationId": "get_artifact_api_v1_documents__doc_id__artifacts__artifact_id__get",
         "parameters": [
           {
             "name": "doc_id",
@@ -357,6 +325,15 @@
             "schema": {
               "type": "string",
               "title": "Doc Id"
+            }
+          },
+          {
+            "name": "artifact_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Artifact Id"
             }
           }
         ],
@@ -391,7 +368,7 @@
         "operationId": "list_jobs_api_v1_jobs_get",
         "parameters": [
           {
-            "name": "documentId",
+            "name": "document_id",
             "in": "query",
             "required": false,
             "schema": {
@@ -403,7 +380,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Documentid"
+              "title": "Document Id"
             }
           },
           {
@@ -423,7 +400,7 @@
             }
           },
           {
-            "name": "states",
+            "name": "statuses",
             "in": "query",
             "required": false,
             "schema": {
@@ -435,7 +412,7 @@
                   "type": "null"
                 }
               ],
-              "title": "States"
+              "title": "Statuses"
             }
           },
           {
@@ -449,7 +426,7 @@
             }
           },
           {
-            "name": "pageSize",
+            "name": "page_size",
             "in": "query",
             "required": false,
             "schema": {
@@ -457,11 +434,11 @@
               "maximum": 1000,
               "minimum": 1,
               "default": 50,
-              "title": "Pagesize"
+              "title": "Page Size"
             }
           },
           {
-            "name": "pageToken",
+            "name": "page_token",
             "in": "query",
             "required": false,
             "schema": {
@@ -473,7 +450,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Pagetoken"
+              "title": "Page Token"
             }
           }
         ],
@@ -502,6 +479,46 @@
       }
     },
     "/api/v1/jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "Get Job",
+        "operationId": "get_job_api_v1_jobs__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "patch": {
         "tags": [
           "Jobs"
@@ -551,13 +568,74 @@
             }
           }
         }
-      },
-      "get": {
+      }
+    },
+    "/api/v1/jobs/{job_id}/runs/{run_id}": {
+      "patch": {
         "tags": [
           "Jobs"
         ],
-        "summary": "Get Job",
-        "operationId": "get_job_api_v1_jobs__job_id__get",
+        "summary": "Patch Run",
+        "operationId": "patch_run_api_v1_jobs__job_id__runs__run_id__patch",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchRunBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/{job_id}/status": {
+      "put": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "Put Job Status",
+        "operationId": "put_job_status_api_v1_jobs__job_id__status_put",
         "parameters": [
           {
             "name": "job_id",
@@ -569,6 +647,16 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutJobStatusBody"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -618,165 +706,6 @@
             "content": {
               "application/json": {
                 "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/jobs/{job_id}/events": {
-      "get": {
-        "tags": [
-          "Jobs"
-        ],
-        "summary": "List Job Events",
-        "operationId": "list_job_events_api_v1_jobs__job_id__events_get",
-        "parameters": [
-          {
-            "name": "job_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Job Id"
-            }
-          },
-          {
-            "name": "pageSize",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 500,
-              "minimum": 1,
-              "default": 100,
-              "title": "Pagesize"
-            }
-          },
-          {
-            "name": "pageToken",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Pagetoken"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PaginatedJobEvents"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "Jobs"
-        ],
-        "summary": "Post Job Event",
-        "operationId": "post_job_event_api_v1_jobs__job_id__events_post",
-        "parameters": [
-          {
-            "name": "job_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Job Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "oneOf": [
-                  {
-                    "$ref": "#/components/schemas/ApproveEvent"
-                  },
-                  {
-                    "$ref": "#/components/schemas/RejectEvent"
-                  },
-                  {
-                    "$ref": "#/components/schemas/ClarifyEvent"
-                  },
-                  {
-                    "$ref": "#/components/schemas/RetryEvent"
-                  },
-                  {
-                    "$ref": "#/components/schemas/StopEvent"
-                  },
-                  {
-                    "$ref": "#/components/schemas/ReplayEvent"
-                  },
-                  {
-                    "$ref": "#/components/schemas/ProvideContextEvent"
-                  },
-                  {
-                    "$ref": "#/components/schemas/ClearErrorsEvent"
-                  }
-                ],
-                "discriminator": {
-                  "propertyName": "type",
-                  "mapping": {
-                    "approve": "#/components/schemas/ApproveEvent",
-                    "reject": "#/components/schemas/RejectEvent",
-                    "clarify": "#/components/schemas/ClarifyEvent",
-                    "retry": "#/components/schemas/RetryEvent",
-                    "stop": "#/components/schemas/StopEvent",
-                    "replay": "#/components/schemas/ReplayEvent",
-                    "provide_context": "#/components/schemas/ProvideContextEvent",
-                    "clear_errors": "#/components/schemas/ClearErrorsEvent"
-                  }
-                },
-                "title": "Body"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JobDetail"
-                }
               }
             }
           },
@@ -950,8 +879,8 @@
         "tags": [
           "Chat"
         ],
-        "summary": "List Chat Sessions",
-        "operationId": "list_chat_sessions_api_v1_chats_get",
+        "summary": "List Chats",
+        "operationId": "list_chats_api_v1_chats_get",
         "parameters": [
           {
             "name": "page_size",
@@ -1007,14 +936,14 @@
         "tags": [
           "Chat"
         ],
-        "summary": "Create Chat Session",
-        "operationId": "create_chat_session_api_v1_chats_post",
+        "summary": "Create Chat",
+        "operationId": "create_chat_api_v1_chats_post",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CreateChatSessionBody"
+                "$ref": "#/components/schemas/CreateChatBody"
               }
             }
           }
@@ -1041,21 +970,21 @@
         }
       }
     },
-    "/api/v1/chats/{session_id}": {
+    "/api/v1/chats/{chat_id}": {
       "get": {
         "tags": [
           "Chat"
         ],
-        "summary": "Get Chat Session",
-        "operationId": "get_chat_session_api_v1_chats__session_id__get",
+        "summary": "Get Chat",
+        "operationId": "get_chat_api_v1_chats__chat_id__get",
         "parameters": [
           {
-            "name": "session_id",
+            "name": "chat_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Session Id"
+              "title": "Chat Id"
             }
           }
         ],
@@ -1084,16 +1013,16 @@
         "tags": [
           "Chat"
         ],
-        "summary": "Patch Chat Session",
-        "operationId": "patch_chat_session_api_v1_chats__session_id__patch",
+        "summary": "Patch Chat",
+        "operationId": "patch_chat_api_v1_chats__chat_id__patch",
         "parameters": [
           {
-            "name": "session_id",
+            "name": "chat_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Session Id"
+              "title": "Chat Id"
             }
           }
         ],
@@ -1102,7 +1031,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PatchChatSessionBody"
+                "$ref": "#/components/schemas/PatchChatBody"
               }
             }
           }
@@ -1132,16 +1061,16 @@
         "tags": [
           "Chat"
         ],
-        "summary": "Delete Chat Session",
-        "operationId": "delete_chat_session_api_v1_chats__session_id__delete",
+        "summary": "Delete Chat",
+        "operationId": "delete_chat_api_v1_chats__chat_id__delete",
         "parameters": [
           {
-            "name": "session_id",
+            "name": "chat_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Session Id"
+              "title": "Chat Id"
             }
           }
         ],
@@ -1167,21 +1096,21 @@
         }
       }
     },
-    "/api/v1/chats/{session_id}/messages": {
+    "/api/v1/chats/{chat_id}/messages": {
       "post": {
         "tags": [
           "Chat"
         ],
         "summary": "Send Chat Message",
-        "operationId": "send_chat_message_api_v1_chats__session_id__messages_post",
+        "operationId": "send_chat_message_api_v1_chats__chat_id__messages_post",
         "parameters": [
           {
-            "name": "session_id",
+            "name": "chat_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Session Id"
+              "title": "Chat Id"
             }
           }
         ],
@@ -1220,33 +1149,59 @@
   },
   "components": {
     "schemas": {
-      "ApproveEvent": {
+      "Artifact": {
         "properties": {
-          "type": {
+          "id": {
             "type": "string",
-            "const": "approve",
-            "title": "Type",
-            "description": "Event discriminator."
+            "format": "uuid",
+            "title": "Id",
+            "description": "Unique artifact identifier."
           },
-          "edited_text": {
+          "filename": {
+            "type": "string",
+            "title": "Filename",
+            "description": "Original filename of the artifact."
+          },
+          "content_type": {
+            "type": "string",
+            "title": "Content Type",
+            "description": "MIME type (e.g. `image/png`, `text/plain`)."
+          },
+          "created_job_id": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "format": "uuid"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Edited Text",
-            "description": "Replacement text for the LLM output. Empty string keeps the original.",
-            "default": ""
+            "title": "Created Job Id",
+            "description": "UUID of the job that created this artifact. Null for source artifacts created during ingest."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "ISO 8601 creation timestamp."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At",
+            "description": "ISO 8601 last-updated timestamp."
           }
         },
         "type": "object",
         "required": [
-          "type"
+          "id",
+          "filename",
+          "content_type",
+          "created_at",
+          "updated_at"
         ],
-        "title": "ApproveEvent"
+        "title": "Artifact"
       },
       "Body_upload_document_api_v1_documents_post": {
         "properties": {
@@ -1266,7 +1221,7 @@
             ],
             "title": "Title"
           },
-          "document_context": {
+          "additional_context": {
             "anyOf": [
               {
                 "type": "string"
@@ -1275,9 +1230,9 @@
                 "type": "null"
               }
             ],
-            "title": "Document Context"
+            "title": "Additional Context"
           },
-          "context_ref": {
+          "linked_contexts": {
             "anyOf": [
               {
                 "type": "string"
@@ -1286,12 +1241,7 @@
                 "type": "null"
               }
             ],
-            "title": "Context Ref"
-          },
-          "embed_image": {
-            "type": "boolean",
-            "title": "Embed Image",
-            "default": false
+            "title": "Linked Contexts"
           }
         },
         "type": "object",
@@ -1300,97 +1250,14 @@
         ],
         "title": "Body_upload_document_api_v1_documents_post"
       },
-      "ClarificationRequest": {
-        "properties": {
-          "segment": {
-            "type": "string",
-            "title": "Segment",
-            "description": "The text segment that prompted the question."
-          },
-          "question": {
-            "type": "string",
-            "title": "Question",
-            "description": "The clarification question to present to the user."
-          }
-        },
-        "type": "object",
-        "required": [
-          "segment",
-          "question"
+      "Confidence": {
+        "type": "string",
+        "enum": [
+          "high",
+          "medium",
+          "low"
         ],
-        "title": "ClarificationRequest"
-      },
-      "ClarifyEvent": {
-        "properties": {
-          "type": {
-            "type": "string",
-            "const": "clarify",
-            "title": "Type",
-            "description": "Event discriminator."
-          },
-          "answers": {
-            "anyOf": [
-              {
-                "additionalProperties": {
-                  "type": "string"
-                },
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Answers",
-            "description": "Map of question text to answer text for each clarification request.",
-            "default": {}
-          },
-          "free_prompt": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Free Prompt",
-            "description": "Additional instruction appended to the retry prompt.",
-            "default": ""
-          },
-          "edited_text": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Edited Text",
-            "description": "Optionally replace the existing output before retrying.",
-            "default": ""
-          }
-        },
-        "type": "object",
-        "required": [
-          "type"
-        ],
-        "title": "ClarifyEvent"
-      },
-      "ClearErrorsEvent": {
-        "properties": {
-          "type": {
-            "type": "string",
-            "const": "clear_errors",
-            "title": "Type",
-            "description": "Event discriminator."
-          }
-        },
-        "type": "object",
-        "required": [
-          "type"
-        ],
-        "title": "ClearErrorsEvent"
+        "title": "Confidence"
       },
       "ContextEntry": {
         "properties": {
@@ -1419,9 +1286,9 @@
         ],
         "title": "ContextEntry"
       },
-      "CreateChatSessionBody": {
+      "CreateChatBody": {
         "properties": {
-          "context": {
+          "system_prompt": {
             "anyOf": [
               {
                 "type": "string"
@@ -1430,28 +1297,23 @@
                 "type": "null"
               }
             ],
-            "title": "Context",
+            "title": "System Prompt",
             "description": "Optional freeform context injected into every system prompt.",
             "default": ""
           },
-          "top_k": {
+          "rag_retrieval": {
             "anyOf": [
               {
-                "type": "integer",
-                "maximum": 20.0,
-                "minimum": 1.0
+                "$ref": "#/components/schemas/RagRetrieval"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Top K",
-            "description": "Number of Qdrant results to retrieve per query.",
-            "default": 5
+            ]
           }
         },
         "type": "object",
-        "title": "CreateChatSessionBody"
+        "title": "CreateChatBody"
       },
       "CreateContextBody": {
         "properties": {
@@ -1491,49 +1353,20 @@
               }
             ],
             "title": "Title",
-            "description": "Human-readable document title."
-          },
-          "document_context": {
-            "type": "string",
-            "title": "Document Context",
-            "description": "Free-text context attached by the user to guide LLM stages."
-          },
-          "context_ref": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Context Ref",
-            "description": "UUID of a saved context entry linked to this document."
+            "description": "Human-readable title."
           },
           "current_job_id": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "format": "uuid"
               },
               {
                 "type": "null"
               }
             ],
             "title": "Current Job Id",
-            "description": "UUID of the active job row for the current pipeline stage."
-          },
-          "has_image": {
-            "type": "boolean",
-            "title": "Has Image",
-            "description": "True if a source PNG image is available."
-          },
-          "stage_displays": {
-            "items": {
-              "$ref": "#/components/schemas/StageDisplay"
-            },
-            "type": "array",
-            "title": "Stage Displays",
-            "description": "Completed stage outputs available for display."
+            "description": "UUID of the most recently active job for this document."
           },
           "created_at": {
             "type": "string",
@@ -1546,14 +1379,54 @@
             "format": "date-time",
             "title": "Updated At",
             "description": "ISO 8601 last-updated timestamp."
+          },
+          "additional_context": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Additional Context",
+            "description": "Free-text context attached by the user to guide LLM stages."
+          },
+          "linked_contexts": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linked Contexts",
+            "description": "UUIDs of saved context entries linked to this document."
+          },
+          "artifacts": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/Artifact"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifacts",
+            "description": "Files associated with this document (e.g. source image)."
           }
         },
         "type": "object",
         "required": [
           "id",
-          "document_context",
-          "has_image",
-          "stage_displays",
           "created_at",
           "updated_at"
         ],
@@ -1579,10 +1452,18 @@
             "title": "Title",
             "description": "Human-readable title."
           },
-          "needs_context": {
-            "type": "boolean",
-            "title": "Needs Context",
-            "description": "True if the document's current stage is blocked waiting for context."
+          "current_job_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Job Id",
+            "description": "UUID of the most recently active job for this document."
           },
           "created_at": {
             "type": "string",
@@ -1600,11 +1481,29 @@
         "type": "object",
         "required": [
           "id",
-          "needs_context",
           "created_at",
           "updated_at"
         ],
         "title": "DocumentSummary"
+      },
+      "EmbedOptions": {
+        "properties": {
+          "embed_image": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embed Image",
+            "description": "Whether to include a visual image vector in addition to the text vector.",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "EmbedOptions"
       },
       "HTTPValidationError": {
         "properties": {
@@ -1623,123 +1522,14 @@
         "properties": {
           "id": {
             "type": "string",
+            "format": "uuid",
             "title": "Id",
-            "description": "UUID of the active job row for the current stage."
+            "description": "Unique job identifier."
           },
-          "doc_id": {
+          "document_id": {
             "type": "string",
             "format": "uuid",
-            "title": "Doc Id",
-            "description": "UUID of the document this job belongs to."
-          },
-          "current_stage": {
-            "type": "string",
-            "title": "Current Stage",
-            "description": "Name of the stage the document is currently in."
-          },
-          "stage_state": {
-            "$ref": "#/components/schemas/StageState"
-          },
-          "needs_context": {
-            "type": "boolean",
-            "title": "Needs Context",
-            "description": "True if the current stage is blocked waiting for context input."
-          },
-          "context_required": {
-            "type": "boolean",
-            "title": "Context Required",
-            "description": "True when the current stage requires context before it can run at all."
-          },
-          "embed_image": {
-            "type": "boolean",
-            "title": "Embed Image",
-            "description": "Whether the embed stage should include a visual image vector."
-          },
-          "review": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ReviewDetail"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Present when the document is waiting for human review."
-          },
-          "replay_stages": {
-            "items": {
-              "$ref": "#/components/schemas/ReplayStage"
-            },
-            "type": "array",
-            "title": "Replay Stages",
-            "description": "Completed stages the job can be rewound to."
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "doc_id",
-          "current_stage",
-          "stage_state",
-          "needs_context",
-          "context_required",
-          "embed_image",
-          "replay_stages"
-        ],
-        "title": "JobDetail"
-      },
-      "JobEventRecord": {
-        "properties": {
-          "id": {
-            "type": "integer",
-            "title": "Id",
-            "description": "Monotonically increasing internal event ID (used as cursor)."
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Timestamp",
-            "description": "ISO 8601 timestamp of when the event was recorded."
-          },
-          "stage": {
-            "type": "string",
-            "title": "Stage",
-            "description": "Pipeline stage name at time of event."
-          },
-          "event_type": {
-            "type": "string",
-            "title": "Event Type",
-            "description": "Type of event (e.g. `approved`, `completed`, `error`)."
-          },
-          "data": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Data",
-            "description": "Optional event payload."
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "timestamp",
-          "stage",
-          "event_type"
-        ],
-        "title": "JobEventRecord"
-      },
-      "JobSummary": {
-        "properties": {
-          "doc_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Doc Id",
+            "title": "Document Id",
             "description": "UUID of the document this job belongs to."
           },
           "title": {
@@ -1754,18 +1544,136 @@
             "title": "Title",
             "description": "Denormalized document title."
           },
-          "current_stage": {
+          "stage": {
             "type": "string",
-            "title": "Current Stage",
-            "description": "Name of the stage the document is currently in."
+            "title": "Stage",
+            "description": "Pipeline stage this job executes (e.g. `ocr`, `clarify`)."
           },
-          "stage_state": {
-            "$ref": "#/components/schemas/StageState"
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
           },
-          "needs_context": {
-            "type": "boolean",
-            "title": "Needs Context",
-            "description": "True if the current stage is blocked waiting for context input."
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "ISO 8601 creation timestamp."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At",
+            "description": "ISO 8601 last-updated timestamp."
+          },
+          "options": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobOptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "runs": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/Run"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runs",
+            "description": "Ordered list of LLM round trips for this job. Appended on each execution."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "document_id",
+          "stage",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "JobDetail"
+      },
+      "JobOptions": {
+        "properties": {
+          "require_context": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Require Context",
+            "description": "Whether this stage requires context before it can run.",
+            "default": false
+          },
+          "embed": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EmbedOptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "JobOptions"
+      },
+      "JobStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "running",
+          "waiting",
+          "error",
+          "done"
+        ],
+        "title": "JobStatus"
+      },
+      "JobSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "Unique job identifier."
+          },
+          "document_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Document Id",
+            "description": "UUID of the document this job belongs to."
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "Denormalized document title."
+          },
+          "stage": {
+            "type": "string",
+            "title": "Stage",
+            "description": "Pipeline stage this job executes (e.g. `ocr`, `clarify`)."
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
           },
           "created_at": {
             "type": "string",
@@ -1782,10 +1690,10 @@
         },
         "type": "object",
         "required": [
-          "doc_id",
-          "current_stage",
-          "stage_state",
-          "needs_context",
+          "id",
+          "document_id",
+          "stage",
+          "status",
           "created_at",
           "updated_at"
         ],
@@ -1805,6 +1713,26 @@
         ],
         "title": "OkResponse"
       },
+      "Output": {
+        "properties": {
+          "field": {
+            "type": "string",
+            "title": "Field",
+            "description": "Output field name."
+          },
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "description": "Output type (e.g. `text`, `json_array`)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "field",
+          "type"
+        ],
+        "title": "Output"
+      },
       "PaginatedContexts": {
         "properties": {
           "data": {
@@ -1814,7 +1742,7 @@
             "type": "array",
             "title": "Data"
           },
-          "nextPageToken": {
+          "next_page_token": {
             "anyOf": [
               {
                 "type": "string"
@@ -1823,8 +1751,8 @@
                 "type": "null"
               }
             ],
-            "title": "Nextpagetoken",
-            "description": "Opaque cursor; pass as `pageToken` on next request. Null when no more pages."
+            "title": "Next Page Token",
+            "description": "Opaque cursor; pass as `page_token` on next request. Null when no more pages."
           }
         },
         "type": "object",
@@ -1842,7 +1770,7 @@
             "type": "array",
             "title": "Data"
           },
-          "nextPageToken": {
+          "next_page_token": {
             "anyOf": [
               {
                 "type": "string"
@@ -1851,8 +1779,8 @@
                 "type": "null"
               }
             ],
-            "title": "Nextpagetoken",
-            "description": "Opaque cursor; pass as `pageToken` on next request. Null when no more pages."
+            "title": "Next Page Token",
+            "description": "Opaque cursor; pass as `page_token` on next request. Null when no more pages."
           }
         },
         "type": "object",
@@ -1860,34 +1788,6 @@
           "data"
         ],
         "title": "PaginatedDocuments"
-      },
-      "PaginatedJobEvents": {
-        "properties": {
-          "data": {
-            "items": {
-              "$ref": "#/components/schemas/JobEventRecord"
-            },
-            "type": "array",
-            "title": "Data"
-          },
-          "nextPageToken": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Nextpagetoken",
-            "description": "Opaque cursor; pass as `pageToken` on next request. Null when no more pages."
-          }
-        },
-        "type": "object",
-        "required": [
-          "data"
-        ],
-        "title": "PaginatedJobEvents"
       },
       "PaginatedJobs": {
         "properties": {
@@ -1898,7 +1798,7 @@
             "type": "array",
             "title": "Data"
           },
-          "nextPageToken": {
+          "next_page_token": {
             "anyOf": [
               {
                 "type": "string"
@@ -1907,8 +1807,8 @@
                 "type": "null"
               }
             ],
-            "title": "Nextpagetoken",
-            "description": "Opaque cursor; pass as `pageToken` on next request. Null when no more pages."
+            "title": "Next Page Token",
+            "description": "Opaque cursor; pass as `page_token` on next request. Null when no more pages."
           }
         },
         "type": "object",
@@ -1921,12 +1821,12 @@
         "properties": {
           "data": {
             "items": {
-              "$ref": "#/components/schemas/PipelineSummary"
+              "$ref": "#/components/schemas/Pipeline"
             },
             "type": "array",
             "title": "Data"
           },
-          "nextPageToken": {
+          "next_page_token": {
             "anyOf": [
               {
                 "type": "string"
@@ -1935,8 +1835,8 @@
                 "type": "null"
               }
             ],
-            "title": "Nextpagetoken",
-            "description": "Opaque cursor; pass as `pageToken` on next request. Null when no more pages."
+            "title": "Next Page Token",
+            "description": "Opaque cursor; pass as `page_token` on next request. Null when no more pages."
           }
         },
         "type": "object",
@@ -1945,7 +1845,7 @@
         ],
         "title": "PaginatedPipelines"
       },
-      "PatchChatSessionBody": {
+      "PatchChatBody": {
         "properties": {
           "title": {
             "anyOf": [
@@ -1959,7 +1859,7 @@
             "title": "Title",
             "description": "Override the auto-derived title."
           },
-          "context": {
+          "system_prompt": {
             "anyOf": [
               {
                 "type": "string"
@@ -1968,26 +1868,22 @@
                 "type": "null"
               }
             ],
-            "title": "Context",
-            "description": "Optional freeform context injected into every system prompt."
+            "title": "System Prompt",
+            "description": "Updated system prompt. Null clears it."
           },
-          "top_k": {
+          "rag_retrieval": {
             "anyOf": [
               {
-                "type": "integer",
-                "maximum": 20.0,
-                "minimum": 1.0
+                "$ref": "#/components/schemas/RagRetrieval"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Top K",
-            "description": "Number of Qdrant results to retrieve per query."
+            ]
           }
         },
         "type": "object",
-        "title": "PatchChatSessionBody"
+        "title": "PatchChatBody"
       },
       "PatchDocumentBody": {
         "properties": {
@@ -2003,7 +1899,7 @@
             "title": "Title",
             "description": "Updated document title. Null clears the title."
           },
-          "document_context": {
+          "additional_context": {
             "anyOf": [
               {
                 "type": "string"
@@ -2012,20 +1908,24 @@
                 "type": "null"
               }
             ],
-            "title": "Document Context",
+            "title": "Additional Context",
             "description": "Free-text context to attach to the document. Null clears it."
           },
-          "context_ref": {
+          "linked_contexts": {
             "anyOf": [
               {
-                "type": "string"
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "type": "array"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Context Ref",
-            "description": "UUID of a context entry to link, or null to unlink."
+            "title": "Linked Contexts",
+            "description": "UUIDs of context entries to link. Null clears all linked contexts."
           }
         },
         "type": "object",
@@ -2033,21 +1933,79 @@
       },
       "PatchJobBody": {
         "properties": {
-          "embed_image": {
+          "options": {
             "anyOf": [
               {
-                "type": "boolean"
+                "$ref": "#/components/schemas/JobOptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "PatchJobBody"
+      },
+      "PatchRunBody": {
+        "properties": {
+          "questions": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/RunQuestion"
+                },
+                "type": "array"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Embed Image",
-            "description": "Set to true/false to control image embedding for the embed stage."
+            "title": "Questions",
+            "description": "Questions with updated `answer` values."
+          },
+          "suggestions": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunSuggestions"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
-        "title": "PatchJobBody"
+        "title": "PatchRunBody"
+      },
+      "Pipeline": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Pipeline identifier (filename stem)."
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Human-readable pipeline name."
+          },
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/StageSummary"
+            },
+            "type": "array",
+            "title": "Stages",
+            "description": "Ordered list of stage summaries."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "stages"
+        ],
+        "title": "Pipeline"
       },
       "PipelineDetail": {
         "properties": {
@@ -2063,11 +2021,11 @@
           },
           "stages": {
             "items": {
-              "$ref": "#/components/schemas/PipelineStageConfig"
+              "$ref": "#/components/schemas/StageDetail"
             },
             "type": "array",
             "title": "Stages",
-            "description": "Ordered list of stage configurations."
+            "description": "Ordered list of stage details."
           }
         },
         "type": "object",
@@ -2078,7 +2036,247 @@
         ],
         "title": "PipelineDetail"
       },
-      "PipelineStageConfig": {
+      "PutJobStatusBody": {
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/Status",
+            "description": "Target status. `running` and `waiting` are system-only and cannot be set by clients."
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "PutJobStatusBody"
+      },
+      "RagRetrieval": {
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled",
+            "description": "Whether RAG retrieval is enabled for this chat.",
+            "default": true
+          },
+          "max_sources": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 20.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Sources",
+            "description": "Maximum number of source documents to retrieve per query.",
+            "default": 5
+          },
+          "minimum_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minimum Score",
+            "description": "Minimum similarity score for retrieved sources.",
+            "default": 0.0
+          }
+        },
+        "type": "object",
+        "title": "RagRetrieval"
+      },
+      "Run": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "Unique run identifier."
+          },
+          "inputs": {
+            "items": {
+              "$ref": "#/components/schemas/RunIOField"
+            },
+            "type": "array",
+            "title": "Inputs",
+            "description": "Fields fed into the LLM."
+          },
+          "outputs": {
+            "items": {
+              "$ref": "#/components/schemas/RunIOField"
+            },
+            "type": "array",
+            "title": "Outputs",
+            "description": "Fields produced by the LLM."
+          },
+          "confidence": {
+            "$ref": "#/components/schemas/Confidence",
+            "description": "LLM-reported confidence in the output."
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/RunQuestion"
+            },
+            "type": "array",
+            "title": "Questions",
+            "description": "Clarification questions raised by the LLM."
+          },
+          "suggestions": {
+            "$ref": "#/components/schemas/RunSuggestions"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "ISO 8601 timestamp when this run started."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At",
+            "description": "ISO 8601 timestamp when this run was last updated."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "inputs",
+          "outputs",
+          "confidence",
+          "questions",
+          "suggestions",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "Run"
+      },
+      "RunIOField": {
+        "properties": {
+          "field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field",
+            "description": "Field name (e.g. `ocr_raw`, `clarified_text`)."
+          },
+          "text": {
+            "type": "string",
+            "title": "Text",
+            "description": "Field value."
+          }
+        },
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "RunIOField"
+      },
+      "RunQuestion": {
+        "properties": {
+          "segment": {
+            "type": "string",
+            "title": "Segment",
+            "description": "The text segment that prompted the question."
+          },
+          "question": {
+            "type": "string",
+            "title": "Question",
+            "description": "The clarification question to present to the user."
+          },
+          "answer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer",
+            "description": "The user's answer. Null until answered."
+          }
+        },
+        "type": "object",
+        "required": [
+          "segment",
+          "question"
+        ],
+        "title": "RunQuestion"
+      },
+      "RunSuggestions": {
+        "properties": {
+          "additional_context": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Additional Context",
+            "description": "Suggested update to the document's additional context."
+          },
+          "linked_context": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linked Context",
+            "description": "Suggested update to the linked context entry text."
+          },
+          "linked_context_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linked Context Id",
+            "description": "UUID of the linked context entry this suggestion applies to."
+          }
+        },
+        "type": "object",
+        "title": "RunSuggestions"
+      },
+      "SendMessageBody": {
+        "properties": {
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "description": "The user's message text."
+          }
+        },
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "title": "SendMessageBody"
+      },
+      "StageDetail": {
         "properties": {
           "name": {
             "type": "string",
@@ -2100,7 +2298,79 @@
               }
             ],
             "title": "Model",
-            "description": "Model override for LLM stages."
+            "description": "Model used by this stage."
+          },
+          "inputs": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inputs",
+            "description": "Field names consumed by this stage."
+          },
+          "outputs": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/Output"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outputs",
+            "description": "Fields produced by this stage."
+          },
+          "skip_if": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skip If",
+            "description": "Conditions under which this stage is skipped entirely."
+          },
+          "start_if": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start If",
+            "description": "Conditions that must be met before this stage can start."
+          },
+          "continue_if": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Continue If",
+            "description": "Rules that determine if the stage auto-advances without human review."
           }
         },
         "type": "object",
@@ -2108,147 +2378,21 @@
           "name",
           "type"
         ],
-        "title": "PipelineStageConfig"
+        "title": "StageDetail"
       },
-      "PipelineSummary": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "title": "Id",
-            "description": "Pipeline identifier (filename stem)."
-          },
-          "name": {
-            "type": "string",
-            "title": "Name",
-            "description": "Human-readable pipeline name."
-          },
-          "stage_count": {
-            "type": "integer",
-            "title": "Stage Count",
-            "description": "Number of stages in the pipeline."
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "stage_count"
-        ],
-        "title": "PipelineSummary"
-      },
-      "ProvideContextEvent": {
-        "properties": {
-          "type": {
-            "type": "string",
-            "const": "provide_context",
-            "title": "Type",
-            "description": "Event discriminator."
-          },
-          "document_context": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Document Context",
-            "description": "Free-text context to attach to the document.",
-            "default": ""
-          },
-          "context_ref": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Context Ref",
-            "description": "UUID of a saved context entry to link."
-          }
-        },
-        "type": "object",
-        "required": [
-          "type"
-        ],
-        "title": "ProvideContextEvent"
-      },
-      "RejectEvent": {
-        "properties": {
-          "type": {
-            "type": "string",
-            "const": "reject",
-            "title": "Type",
-            "description": "Event discriminator."
-          }
-        },
-        "type": "object",
-        "required": [
-          "type"
-        ],
-        "title": "RejectEvent"
-      },
-      "ReplayEvent": {
-        "properties": {
-          "type": {
-            "type": "string",
-            "const": "replay",
-            "title": "Type",
-            "description": "Event discriminator."
-          },
-          "stage": {
-            "type": "string",
-            "title": "Stage",
-            "description": "Name of the pipeline stage to rewind to."
-          }
-        },
-        "type": "object",
-        "required": [
-          "type",
-          "stage"
-        ],
-        "title": "ReplayEvent"
-      },
-      "ReplayStage": {
+      "StageSummary": {
         "properties": {
           "name": {
             "type": "string",
             "title": "Name",
-            "description": "Pipeline stage name."
-          }
-        },
-        "type": "object",
-        "required": [
-          "name"
-        ],
-        "title": "ReplayStage"
-      },
-      "RetryEvent": {
-        "properties": {
+            "description": "Stage identifier (e.g. `ocr`, `clarify`)."
+          },
           "type": {
             "type": "string",
-            "const": "retry",
             "title": "Type",
-            "description": "Event discriminator."
-          }
-        },
-        "type": "object",
-        "required": [
-          "type"
-        ],
-        "title": "RetryEvent"
-      },
-      "ReviewDetail": {
-        "properties": {
-          "stage_name": {
-            "type": "string",
-            "title": "Stage Name",
-            "description": "Name of the stage awaiting review."
+            "description": "Stage handler type (e.g. `llm_text`, `embed`)."
           },
-          "input_field": {
+          "model": {
             "anyOf": [
               {
                 "type": "string"
@@ -2257,153 +2401,25 @@
                 "type": "null"
               }
             ],
-            "title": "Input Field",
-            "description": "Source field name fed into the LLM prompt."
-          },
-          "output_field": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Output Field",
-            "description": "Field name where the LLM output is stored."
-          },
-          "input_text": {
-            "type": "string",
-            "title": "Input Text",
-            "description": "The text sent to the LLM."
-          },
-          "output_text": {
-            "type": "string",
-            "title": "Output Text",
-            "description": "The LLM's output awaiting approval."
-          },
-          "is_single_output": {
-            "type": "boolean",
-            "title": "Is Single Output",
-            "description": "True when the stage writes a single output field."
-          },
-          "confidence": {
-            "type": "string",
-            "title": "Confidence",
-            "description": "LLM-reported confidence in the output."
-          },
-          "qa_rounds": {
-            "type": "integer",
-            "title": "Qa Rounds",
-            "description": "Number of clarification rounds completed so far."
-          },
-          "clarification_requests": {
-            "items": {
-              "$ref": "#/components/schemas/ClarificationRequest"
-            },
-            "type": "array",
-            "title": "Clarification Requests",
-            "description": "Questions the LLM raised that need answers before it can proceed."
-          },
-          "document_context_update": {
-            "type": "string",
-            "title": "Document Context Update",
-            "description": "Suggested update to the document's context field, proposed by the LLM."
-          },
-          "linked_context_update": {
-            "type": "string",
-            "title": "Linked Context Update",
-            "description": "Suggested update to the linked context entry, proposed by the LLM."
-          },
-          "context_ref": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Context Ref",
-            "description": "UUID of the linked context entry, if any."
-          }
-        },
-        "type": "object",
-        "required": [
-          "stage_name",
-          "input_text",
-          "output_text",
-          "is_single_output",
-          "confidence",
-          "qa_rounds",
-          "clarification_requests",
-          "document_context_update",
-          "linked_context_update"
-        ],
-        "title": "ReviewDetail"
-      },
-      "SendMessageBody": {
-        "properties": {
-          "content": {
-            "type": "string",
-            "title": "Content",
-            "description": "The user's message text."
-          }
-        },
-        "type": "object",
-        "required": [
-          "content"
-        ],
-        "title": "SendMessageBody"
-      },
-      "StageDisplay": {
-        "properties": {
-          "name": {
-            "type": "string",
-            "title": "Name",
-            "description": "Pipeline stage name (e.g. `ocr`, `clarify`)."
-          },
-          "fields": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "type": "object",
-            "title": "Fields",
-            "description": "Map of field name to text value for each output produced by the stage."
+            "title": "Model",
+            "description": "Model used by this stage."
           }
         },
         "type": "object",
         "required": [
           "name",
-          "fields"
+          "type"
         ],
-        "title": "StageDisplay"
+        "title": "StageSummary"
       },
-      "StageState": {
+      "Status": {
         "type": "string",
         "enum": [
           "pending",
-          "running",
-          "waiting",
-          "error",
-          "done"
+          "done",
+          "error"
         ],
-        "title": "StageState"
-      },
-      "StopEvent": {
-        "properties": {
-          "type": {
-            "type": "string",
-            "const": "stop",
-            "title": "Type",
-            "description": "Event discriminator."
-          }
-        },
-        "type": "object",
-        "required": [
-          "type"
-        ],
-        "title": "StopEvent"
+        "title": "Status"
       },
       "UpdateContextBody": {
         "properties": {

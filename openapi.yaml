@@ -2,21 +2,22 @@ openapi: 3.1.0
 
 info:
   title: document-pipeline
-  version: 0.2.0
+  version: 0.3.0
   description: |
     Ingests documents through a configurable OCR → clarify → classify → embed pipeline,
     and stores the results in a vector database for RAG queries.
 
-    Documents move through pipeline stages asynchronously. The frontend polls
-    for state changes and streams live LLM output via Server-Sent Events.
+    Documents move through pipeline stages asynchronously via jobs. Each job represents
+    execution of a single stage. The frontend polls for state changes and streams live
+    LLM output via Server-Sent Events.
 
 tags:
   - name: Pipelines
     description: Pipeline configuration — stage names, types, and models.
   - name: Documents
-    description: Document data — title, context, artifacts, and image.
+    description: Document data — title, context, and artifacts.
   - name: Jobs
-    description: Pipeline execution state and state-transition events for a document.
+    description: Pipeline execution state for a document stage.
   - name: Contexts
     description: Reusable named context snippets that can be attached to documents.
   - name: Chat
@@ -33,11 +34,11 @@ paths:
       description: Returns a paginated list of pipeline configurations loaded from `pipeline.yaml`.
       operationId: listPipelines
       parameters:
-        - $ref: '#/components/parameters/pageToken'
-        - $ref: '#/components/parameters/pageSize'
+        - $ref: '#/components/parameters/page_token'
+        - $ref: '#/components/parameters/page_size'
       responses:
         '200':
-          description: Paginated list of pipeline summaries.
+          description: Paginated list of pipelines with stage summaries.
           content:
             application/json:
               schema:
@@ -49,11 +50,11 @@ paths:
     get:
       tags: [Pipelines]
       summary: Get pipeline detail
-      description: Returns the full configuration for a single pipeline including all stages.
+      description: Returns the full configuration for a single pipeline including all stage details.
       operationId: getPipeline
       responses:
         '200':
-          description: Full pipeline configuration.
+          description: Full pipeline configuration with stage details.
           content:
             application/json:
               schema:
@@ -67,14 +68,12 @@ paths:
     get:
       tags: [Documents]
       summary: List documents
-      description: Returns a paginated list of documents with pure data fields (no job state).
+      description: Returns a paginated list of document summaries (no artifacts or context).
       operationId: listDocuments
       parameters:
-        - $ref: '#/components/parameters/pageToken'
-        - $ref: '#/components/parameters/pageSize'
-        - $ref: '#/components/parameters/stagesFilter'
-        - $ref: '#/components/parameters/statesFilter'
-        - $ref: '#/components/parameters/sortOrder'
+        - $ref: '#/components/parameters/page_token'
+        - $ref: '#/components/parameters/page_size'
+        - $ref: '#/components/parameters/sort_order'
       responses:
         '200':
           description: Paginated list of document summaries.
@@ -101,11 +100,14 @@ paths:
                 title:
                   type: string
                   nullable: true
-                document_context:
+                additional_context:
                   type: string
                   nullable: true
-                context_ref:
-                  type: string
+                linked_contexts:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
                   nullable: true
       responses:
         '201':
@@ -133,7 +135,7 @@ paths:
     get:
       tags: [Documents]
       summary: Get document detail
-      description: Returns pure document data — title, context, artifacts, and image availability. Does not include job/pipeline state.
+      description: Returns full document data — title, context, and artifacts. Does not include job/pipeline state.
       operationId: getDocument
       responses:
         '200':
@@ -167,7 +169,7 @@ paths:
     delete:
       tags: [Documents]
       summary: Delete document
-      description: Permanently deletes the document, all stage data, and all events.
+      description: Permanently deletes the document, all artifacts, and all jobs.
       operationId: deleteDocument
       responses:
         '200':
@@ -179,19 +181,20 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
-  /api/v1/documents/{doc_id}/image:
+  /api/v1/documents/{doc_id}/artifacts/{artifact_id}:
     parameters:
       - $ref: '#/components/parameters/doc_id'
+      - $ref: '#/components/parameters/artifact_id'
     get:
       tags: [Documents]
-      summary: Get document image
-      description: Returns the original PNG image captured from the reMarkable tablet.
-      operationId: getDocumentImage
+      summary: Get artifact content
+      description: Returns the raw bytes of an artifact with the correct Content-Type header. Use this to display source images, OCR outputs, or any other file produced during pipeline execution.
+      operationId: getArtifact
       responses:
         '200':
-          description: PNG image bytes.
+          description: Artifact bytes.
           content:
-            image/png:
+            application/octet-stream:
               schema:
                 type: string
                 format: binary
@@ -203,25 +206,24 @@ paths:
   /api/v1/jobs:
     get:
       tags: [Jobs]
-      summary: List all jobs
+      summary: List jobs
       description: |
-        Returns a paginated list of all jobs with denormalized document title.
-        Useful for dashboard views; filters and sort are independent of pagination.
-        When `documentId` is provided, returns only the job(s) for that document.
+        Returns a paginated list of jobs with denormalized document title.
+        When `document_id` is provided, returns all jobs for that document (one per stage).
       operationId: listJobs
       parameters:
-        - name: documentId
+        - name: document_id
           in: query
           required: false
           description: Filter to jobs for a specific document UUID.
           schema:
             type: string
             format: uuid
-        - $ref: '#/components/parameters/pageToken'
-        - $ref: '#/components/parameters/pageSize'
-        - $ref: '#/components/parameters/stagesFilter'
-        - $ref: '#/components/parameters/statesFilter'
-        - $ref: '#/components/parameters/sortOrder'
+        - $ref: '#/components/parameters/page_token'
+        - $ref: '#/components/parameters/page_size'
+        - $ref: '#/components/parameters/stages_filter'
+        - $ref: '#/components/parameters/statuses_filter'
+        - $ref: '#/components/parameters/sort_order'
       responses:
         '200':
           description: Paginated list of job summaries.
@@ -236,7 +238,7 @@ paths:
     get:
       tags: [Jobs]
       summary: Get job detail
-      description: Returns the current pipeline execution state — stage, state, review data, and available replay stages.
+      description: Returns full job data — stage, status, options, and run history.
       operationId: getJob
       responses:
         '200':
@@ -249,8 +251,8 @@ paths:
           $ref: '#/components/responses/NotFound'
     patch:
       tags: [Jobs]
-      summary: Update job config
-      description: Updates mutable job configuration fields (e.g. `embed_image`). Returns the updated job detail.
+      summary: Update job options
+      description: Updates mutable job options (e.g. `embed_image`). Returns the updated job detail.
       operationId: patchJob
       requestBody:
         required: true
@@ -268,6 +270,76 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /api/v1/jobs/{job_id}/status:
+    parameters:
+      - $ref: '#/components/parameters/job_id'
+    put:
+      tags: [Jobs]
+      summary: Transition job status
+      description: |
+        Transitions the job to a new status. Only valid transitions are accepted; others return 422.
+
+        | From | To | Meaning |
+        |------|----|---------|
+        | `running` | `error` | Stop |
+        | `waiting` | `pending` | Reject |
+        | `waiting` | `done` | Approve |
+        | `error` | `pending` | Retry / clear errors |
+        | `done` | `pending` | Replay (cascades downstream jobs to pending) |
+
+        Setting status to `done` triggers `advance_pipeline` which upserts the next stage job.
+        Setting status to `pending` on a completed job cascades all downstream jobs to `pending`.
+      operationId: putJobStatus
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PutJobStatusBody'
+      responses:
+        '200':
+          description: Updated job detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Invalid status transition.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/jobs/{job_id}/runs/{run_id}:
+    parameters:
+      - $ref: '#/components/parameters/job_id'
+      - $ref: '#/components/parameters/run_id'
+    patch:
+      tags: [Jobs]
+      summary: Update a run
+      description: |
+        Updates a specific run. Typically used to record user answers to clarification
+        questions (`questions[].answer`) before setting the job status back to `pending`
+        to re-run the stage with the answers injected.
+      operationId: patchRun
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchRunBody'
+      responses:
+        '200':
+          description: Updated run.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Run'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /api/v1/jobs/{job_id}/stream:
     parameters:
       - $ref: '#/components/parameters/job_id'
@@ -277,7 +349,7 @@ paths:
       description: |
         Server-Sent Events stream of LLM output tokens while the job is
         in the `running` state. Emits `token` events with `{"text": "..."}` payloads
-        and a final `done` event when generation completes or state changes.
+        and a final `done` event when generation completes or status changes.
       operationId: streamJobTokens
       responses:
         '200':
@@ -286,65 +358,6 @@ paths:
             text/event-stream:
               schema:
                 type: string
-        '404':
-          $ref: '#/components/responses/NotFound'
-
-  /api/v1/jobs/{job_id}/events:
-    parameters:
-      - $ref: '#/components/parameters/job_id'
-    get:
-      tags: [Jobs]
-      summary: List job events
-      description: Returns the paginated event history for a job.
-      operationId: listJobEvents
-      parameters:
-        - name: afterId
-          in: query
-          required: false
-          description: Return only events with an internal ID greater than this value (cursor).
-          schema:
-            type: integer
-        - $ref: '#/components/parameters/pageSize'
-      responses:
-        '200':
-          description: Paginated list of job events.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaginatedJobEvents'
-        '404':
-          $ref: '#/components/responses/NotFound'
-    post:
-      tags: [Jobs]
-      summary: Post a job event
-      description: |
-        Triggers a state transition on the job. The `type` field discriminates the
-        event body. Returns the updated job detail.
-
-        | type | Effect |
-        |------|--------|
-        | `approve` | Advance to next stage, optionally with edited text |
-        | `reject` | Discard output and reset stage to pending |
-        | `clarify` | Provide answers/prompt and retry the stage |
-        | `retry` | Reset stage from error/waiting back to pending |
-        | `stop` | Force-set stage state to error |
-        | `replay` | Rewind to a previous stage |
-        | `provide_context` | Save context and advance if stage was waiting |
-        | `clear_errors` | Remove all failed events from history |
-      operationId: postJobEvent
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/JobEventBody'
-      responses:
-        '200':
-          description: Updated job detail.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/JobDetail'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -357,8 +370,8 @@ paths:
       description: Returns a paginated list of saved context entries.
       operationId: listContexts
       parameters:
-        - $ref: '#/components/parameters/pageToken'
-        - $ref: '#/components/parameters/pageSize'
+        - $ref: '#/components/parameters/page_token'
+        - $ref: '#/components/parameters/page_size'
       responses:
         '200':
           description: Paginated list of context entries.
@@ -428,16 +441,11 @@ paths:
   /api/v1/chats:
     get:
       tags: [Chat]
-      summary: List chat sessions
-      operationId: listChatSessions
+      summary: List chats
+      description: Returns a paginated list of chat summaries ordered by most recently updated.
+      operationId: listChats
       parameters:
-        - name: page_size
-          in: query
-          schema:
-            type: integer
-            default: 20
-            minimum: 1
-            maximum: 100
+        - $ref: '#/components/parameters/page_size'
         - name: before_id
           in: query
           required: false
@@ -445,95 +453,85 @@ paths:
             type: string
       responses:
         '200':
-          description: Paginated list of chat sessions.
+          description: Paginated list of chats.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaginatedChatSessions'
+                $ref: '#/components/schemas/PaginatedChats'
     post:
       tags: [Chat]
-      summary: Create a new chat session
-      operationId: createChatSession
+      summary: Create a new chat
+      description: Creates a new chat with optional system prompt and RAG retrieval settings.
+      operationId: createChat
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateChatSessionBody'
+              $ref: '#/components/schemas/CreateChatBody'
       responses:
         '200':
-          description: Newly created chat session.
+          description: Newly created chat.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ChatSessionSummary'
+                $ref: '#/components/schemas/ChatSummary'
 
-  /api/v1/chats/{session_id}:
+  /api/v1/chats/{chat_id}:
+    parameters:
+      - name: chat_id
+        in: path
+        required: true
+        schema:
+          type: string
     get:
       tags: [Chat]
-      summary: Get chat session with messages
-      operationId: getChatSession
-      parameters:
-        - name: session_id
-          in: path
-          required: true
-          schema:
-            type: string
+      summary: Get chat with messages
+      operationId: getChat
       responses:
         '200':
-          description: Chat session detail including full message history.
+          description: Chat detail including full message history.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ChatSessionDetail'
+                $ref: '#/components/schemas/ChatDetail'
         '404':
           $ref: '#/components/responses/NotFound'
     patch:
       tags: [Chat]
-      summary: Update chat session title, context, or top_k
-      operationId: patchChatSession
-      parameters:
-        - name: session_id
-          in: path
-          required: true
-          schema:
-            type: string
+      summary: Update chat
+      description: Updates mutable chat fields. Only present fields are applied.
+      operationId: patchChat
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PatchChatSessionBody'
+              $ref: '#/components/schemas/PatchChatBody'
       responses:
         '200':
-          description: Updated chat session.
+          description: Updated chat.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ChatSessionSummary'
+                $ref: '#/components/schemas/ChatSummary'
         '404':
           $ref: '#/components/responses/NotFound'
     delete:
       tags: [Chat]
-      summary: Delete a chat session and all its messages
-      operationId: deleteChatSession
-      parameters:
-        - name: session_id
-          in: path
-          required: true
-          schema:
-            type: string
+      summary: Delete a chat and all its messages
+      operationId: deleteChat
       responses:
         '204':
-          description: Session deleted.
+          description: Chat deleted.
         '404':
           $ref: '#/components/responses/NotFound'
 
-  /api/v1/chats/{session_id}/messages:
+  /api/v1/chats/{chat_id}/messages:
     post:
       tags: [Chat]
       summary: Send a message and stream the RAG-augmented reply
       operationId: sendChatMessage
       parameters:
-        - name: session_id
+        - name: chat_id
           in: path
           required: true
           schema:
@@ -571,7 +569,7 @@ components:
       name: job_id
       in: path
       required: true
-      description: UUID of the job row.
+      description: UUID of the job.
       schema:
         type: string
         format: uuid
@@ -585,6 +583,24 @@ components:
         type: string
         format: uuid
 
+    artifact_id:
+      name: artifact_id
+      in: path
+      required: true
+      description: UUID of the artifact.
+      schema:
+        type: string
+        format: uuid
+
+    run_id:
+      name: run_id
+      in: path
+      required: true
+      description: UUID of the run.
+      schema:
+        type: string
+        format: uuid
+
     pipeline_id:
       name: pipeline_id
       in: path
@@ -593,16 +609,16 @@ components:
       schema:
         type: string
 
-    pageToken:
-      name: pageToken
+    page_token:
+      name: page_token
       in: query
       required: false
       description: Opaque cursor token returned by the previous page response. Omit for the first page.
       schema:
         type: string
 
-    pageSize:
-      name: pageSize
+    page_size:
+      name: page_size
       in: query
       required: false
       description: Maximum number of results to return (default 50, max 1000).
@@ -612,7 +628,7 @@ components:
         minimum: 1
         maximum: 1000
 
-    stagesFilter:
+    stages_filter:
       name: stages
       in: query
       required: false
@@ -621,16 +637,16 @@ components:
         type: string
         example: ocr,clarify
 
-    statesFilter:
-      name: states
+    statuses_filter:
+      name: statuses
       in: query
       required: false
-      description: Comma-separated list of stage states to filter by.
+      description: Comma-separated list of job statuses to filter by.
       schema:
         type: string
         example: pending,waiting
 
-    sortOrder:
+    sort_order:
       name: sort
       in: query
       required: false
@@ -656,9 +672,9 @@ components:
 
     # — Shared primitives ——————————————————————————————————————————————————————
 
-    StageState:
+    JobStatus:
       type: string
-      description: Current execution state of a document within its active pipeline stage.
+      description: Execution status of a job.
       enum: [pending, running, waiting, error, done]
 
     ErrorResponse:
@@ -681,9 +697,9 @@ components:
 
     # — Pipelines ——————————————————————————————————————————————————————————————
 
-    PipelineStageConfig:
+    StageSummary:
       type: object
-      description: Configuration for a single pipeline stage.
+      description: Lightweight stage representation used in pipeline list views.
       required: [name, type]
       properties:
         name:
@@ -695,26 +711,52 @@ components:
         model:
           type: string
           nullable: true
-          description: Model override for LLM stages.
+          description: Model used by this stage.
 
-    PipelineSummary:
-      type: object
-      description: Lightweight pipeline representation used in list views.
-      required: [id, name, stage_count]
+    StageDetail:
+      allOf:
+        - $ref: '#/components/schemas/StageSummary'
+      description: Full stage configuration including I/O and conditional logic.
       properties:
-        id:
-          type: string
-          description: Pipeline identifier (filename stem).
-        name:
-          type: string
-          description: Human-readable pipeline name.
-        stage_count:
-          type: integer
-          description: Number of stages in the pipeline.
+        inputs:
+          type: array
+          items:
+            type: string
+          description: Field names consumed by this stage.
+        outputs:
+          type: array
+          items:
+            type: object
+            required: [field, type]
+            properties:
+              field:
+                type: string
+                description: Output field name.
+              type:
+                type: string
+                description: Output type (e.g. `text`, `json_array`).
+          description: Fields produced by this stage.
+        skip_if:
+          type: object
+          nullable: true
+          description: Conditions under which this stage is skipped entirely.
+          additionalProperties: true
+        start_if:
+          type: object
+          nullable: true
+          description: Conditions that must be met before this stage can start.
+          additionalProperties: true
+        continue_if:
+          type: array
+          nullable: true
+          description: Rules that determine if the stage auto-advances without human review.
+          items:
+            type: object
+            additionalProperties: true
 
-    PipelineDetail:
+    Pipeline:
       type: object
-      description: Full pipeline configuration including all stages.
+      description: Pipeline configuration with stage summaries.
       required: [id, name, stages]
       properties:
         id:
@@ -725,30 +767,79 @@ components:
           description: Human-readable pipeline name.
         stages:
           type: array
-          description: Ordered list of stage configurations.
+          description: Ordered list of stage summaries.
           items:
-            $ref: '#/components/schemas/PipelineStageConfig'
+            $ref: '#/components/schemas/StageSummary'
+
+    PipelineDetail:
+      type: object
+      description: Full pipeline configuration with stage details.
+      required: [id, name, stages]
+      properties:
+        id:
+          type: string
+          description: Pipeline identifier (filename stem).
+        name:
+          type: string
+          description: Human-readable pipeline name.
+        stages:
+          type: array
+          description: Ordered list of stage details.
+          items:
+            $ref: '#/components/schemas/StageDetail'
 
     PaginatedPipelines:
       type: object
-      description: Paginated list of pipeline summaries.
+      description: Paginated list of pipelines.
       required: [data]
       properties:
         data:
           type: array
           items:
-            $ref: '#/components/schemas/PipelineSummary'
-        nextPageToken:
+            $ref: '#/components/schemas/Pipeline'
+        next_page_token:
           type: string
           nullable: true
-          description: Opaque cursor; pass as `pageToken` on next request. Null when no more pages.
+          description: Opaque cursor; pass as `page_token` on next request. Null when no more pages.
 
     # — Documents ——————————————————————————————————————————————————————————————
 
+    Artifact:
+      type: object
+      description: |
+        A file artifact associated with a document. Source images uploaded by the user
+        are stored as artifacts with `created_job_id: null`. Pipeline stages (e.g. OCR)
+        may produce additional artifacts such as extracted text files.
+      required: [id, filename, content_type, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique artifact identifier.
+        filename:
+          type: string
+          description: Original filename of the artifact.
+        content_type:
+          type: string
+          description: MIME type (e.g. `image/png`, `text/plain`).
+        created_job_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: UUID of the job that created this artifact. Null for source artifacts created during ingest.
+        created_at:
+          type: string
+          format: date-time
+          description: ISO 8601 creation timestamp.
+        updated_at:
+          type: string
+          format: date-time
+          description: ISO 8601 last-updated timestamp.
+
     DocumentSummary:
       type: object
-      description: Lightweight document representation used in list views. Does not include job/pipeline state.
-      required: [id, needs_context, created_at, updated_at]
+      description: Lightweight document representation used in list views.
+      required: [id, created_at, updated_at]
       properties:
         id:
           type: string
@@ -758,9 +849,11 @@ components:
           type: string
           nullable: true
           description: Human-readable title.
-        needs_context:
-          type: boolean
-          description: True if the document's current stage is blocked waiting for context.
+        current_job_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: UUID of the most recently active job for this document.
         created_at:
           type: string
           format: date-time
@@ -771,45 +864,24 @@ components:
           description: ISO 8601 last-updated timestamp.
 
     DocumentDetail:
-      type: object
-      description: Full document data — title, context, artifacts, and image availability. Does not include job/pipeline state.
-      required: [id, document_context, has_image, stage_displays, created_at, updated_at]
+      allOf:
+        - $ref: '#/components/schemas/DocumentSummary'
+      description: Full document data including context and artifacts.
       properties:
-        id:
-          type: string
-          format: uuid
-          description: Unique document identifier.
-        title:
-          type: string
-          nullable: true
-          description: Human-readable document title.
-        document_context:
+        additional_context:
           type: string
           description: Free-text context attached by the user to guide LLM stages.
-        context_ref:
-          type: string
-          nullable: true
-          description: UUID of a saved context entry linked to this document.
-        current_job_id:
-          type: string
-          nullable: true
-          description: UUID of the active job row for the current pipeline stage.
-        has_image:
-          type: boolean
-          description: True if a source PNG image is available.
-        stage_displays:
+        linked_contexts:
           type: array
           items:
-            $ref: '#/components/schemas/StageDisplay'
-          description: Completed stage outputs available for display.
-        created_at:
-          type: string
-          format: date-time
-          description: ISO 8601 creation timestamp.
-        updated_at:
-          type: string
-          format: date-time
-          description: ISO 8601 last-updated timestamp.
+            type: string
+            format: uuid
+          description: UUIDs of saved context entries linked to this document.
+        artifacts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Artifact'
+          description: Files associated with this document (e.g. source image).
 
     PaginatedDocuments:
       type: object
@@ -820,33 +892,150 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/DocumentSummary'
-        nextPageToken:
+        next_page_token:
           type: string
           nullable: true
-          description: Opaque cursor; pass as `pageToken` on next request. Null when no more pages.
+          description: Opaque cursor; pass as `page_token` on next request. Null when no more pages.
 
-    StageDisplay:
+    PatchDocumentBody:
       type: object
-      description: Named output fields produced by a completed pipeline stage.
-      required: [name, fields]
+      description: Fields to update on a document. Only present fields are applied.
       properties:
-        name:
+        title:
           type: string
-          description: Pipeline stage name (e.g. `ocr`, `clarify`).
-        fields:
-          type: object
-          description: Map of field name to text value for each output produced by the stage.
-          additionalProperties:
+          nullable: true
+          description: Updated document title. Null clears the title.
+        additional_context:
+          type: string
+          nullable: true
+          description: Free-text context to attach to the document. Null clears it.
+        linked_contexts:
+          type: array
+          items:
             type: string
+            format: uuid
+          nullable: true
+          description: UUIDs of context entries to link. Null clears all linked contexts.
 
     # — Jobs ———————————————————————————————————————————————————————————————————
 
+    RunIOField:
+      type: object
+      description: A single input or output field for an LLM run.
+      required: [field, text]
+      properties:
+        field:
+          type: string
+          nullable: true
+          description: Field name (e.g. `ocr_raw`, `clarified_text`).
+        text:
+          type: string
+          description: Field value.
+
+    RunQuestion:
+      type: object
+      description: A clarification question raised by the LLM, with optional answer.
+      required: [segment, question]
+      properties:
+        segment:
+          type: string
+          description: The text segment that prompted the question.
+        question:
+          type: string
+          description: The clarification question to present to the user.
+        answer:
+          type: string
+          nullable: true
+          description: The user's answer. Null until answered.
+
+    RunSuggestions:
+      type: object
+      description: LLM-proposed updates to document and linked context.
+      properties:
+        additional_context:
+          type: string
+          description: Suggested update to the document's additional context.
+        linked_context:
+          type: string
+          description: Suggested update to the linked context entry text.
+        linked_context_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: UUID of the linked context entry this suggestion applies to.
+
+    Run:
+      type: object
+      description: |
+        A single LLM round trip within a job execution. Jobs accumulate runs over their
+        lifetime — each execution (initial run, retry, or re-run after clarification)
+        appends a new run to the list.
+      required: [id, inputs, outputs, confidence, questions, suggestions, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique run identifier.
+        inputs:
+          type: array
+          items:
+            $ref: '#/components/schemas/RunIOField'
+          description: Fields fed into the LLM.
+        outputs:
+          type: array
+          items:
+            $ref: '#/components/schemas/RunIOField'
+          description: Fields produced by the LLM.
+        confidence:
+          type: string
+          enum: [high, medium, low]
+          description: LLM-reported confidence in the output.
+        questions:
+          type: array
+          items:
+            $ref: '#/components/schemas/RunQuestion'
+          description: Clarification questions raised by the LLM.
+        suggestions:
+          $ref: '#/components/schemas/RunSuggestions'
+        created_at:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp when this run started.
+        updated_at:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp when this run was last updated.
+
+    EmbedOptions:
+      type: object
+      description: Options specific to the embed stage.
+      properties:
+        embed_image:
+          type: boolean
+          default: false
+          description: Whether to include a visual image vector in addition to the text vector.
+
+    JobOptions:
+      type: object
+      description: Per-job configuration options.
+      properties:
+        require_context:
+          type: boolean
+          default: false
+          description: Whether this stage requires context before it can run.
+        embed:
+          $ref: '#/components/schemas/EmbedOptions'
+
     JobSummary:
       type: object
-      description: Lightweight job representation with denormalized document title, used in dashboard list views.
-      required: [doc_id, current_stage, stage_state, needs_context, created_at, updated_at]
+      description: Lightweight job representation used in list views.
+      required: [id, document_id, stage, status, created_at, updated_at]
       properties:
-        doc_id:
+        id:
+          type: string
+          format: uuid
+          description: Unique job identifier.
+        document_id:
           type: string
           format: uuid
           description: UUID of the document this job belongs to.
@@ -854,14 +1043,11 @@ components:
           type: string
           nullable: true
           description: Denormalized document title.
-        current_stage:
+        stage:
           type: string
-          description: Name of the stage the document is currently in.
-        stage_state:
-          $ref: '#/components/schemas/StageState'
-        needs_context:
-          type: boolean
-          description: True if the current stage is blocked waiting for context input.
+          description: Pipeline stage this job executes (e.g. `ocr`, `clarify`).
+        status:
+          $ref: '#/components/schemas/JobStatus'
         created_at:
           type: string
           format: date-time
@@ -872,41 +1058,17 @@ components:
           description: ISO 8601 last-updated timestamp.
 
     JobDetail:
-      type: object
-      description: Full pipeline execution state for a document.
-      required: [id, doc_id, current_stage, stage_state, needs_context, context_required, embed_image, replay_stages]
+      allOf:
+        - $ref: '#/components/schemas/JobSummary'
+      description: Full job data including options and run history.
       properties:
-        id:
-          type: string
-          description: UUID of the active job row for the current stage.
-        doc_id:
-          type: string
-          format: uuid
-          description: UUID of the document this job belongs to.
-        current_stage:
-          type: string
-          description: Name of the stage the document is currently in.
-        stage_state:
-          $ref: '#/components/schemas/StageState'
-        needs_context:
-          type: boolean
-          description: True if the current stage is blocked waiting for context input.
-        context_required:
-          type: boolean
-          description: True when the current stage requires context before it can run at all.
-        embed_image:
-          type: boolean
-          default: false
-          description: Whether the embed stage should include a visual image vector.
-        review:
-          $ref: '#/components/schemas/ReviewDetail'
-          nullable: true
-          description: Present when the document is waiting for human review.
-        replay_stages:
+        options:
+          $ref: '#/components/schemas/JobOptions'
+        runs:
           type: array
           items:
-            $ref: '#/components/schemas/ReplayStage'
-          description: Completed stages the job can be rewound to.
+            $ref: '#/components/schemas/Run'
+          description: Ordered list of LLM round trips for this job. Appended on each execution.
 
     PaginatedJobs:
       type: object
@@ -917,271 +1079,40 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/JobSummary'
-        nextPageToken:
+        next_page_token:
           type: string
           nullable: true
-          description: Opaque cursor; pass as `pageToken` on next request. Null when no more pages.
+          description: Opaque cursor; pass as `page_token` on next request. Null when no more pages.
 
-    JobEventRecord:
+    PutJobStatusBody:
       type: object
-      description: A single recorded event in a job's history.
-      required: [id, timestamp, stage, event_type]
+      description: Desired job status. Only valid transitions are accepted.
+      required: [status]
       properties:
-        id:
-          type: integer
-          description: Monotonically increasing internal event ID (used as cursor).
-        timestamp:
+        status:
           type: string
-          format: date-time
-          description: ISO 8601 timestamp of when the event was recorded.
-        stage:
-          type: string
-          description: Pipeline stage name at time of event.
-        event_type:
-          type: string
-          description: Type of event (e.g. `approved`, `completed`, `error`).
-        data:
-          type: object
-          nullable: true
-          additionalProperties: true
-          description: Optional event payload.
+          enum: [pending, done, error]
+          description: Target status. `running` and `waiting` are system-only and cannot be set by clients.
 
-    PaginatedJobEvents:
+    PatchRunBody:
       type: object
-      description: Paginated list of job events in chronological order.
-      required: [data]
+      description: Fields to update on an existing run. Typically used to record user answers to clarification questions.
       properties:
-        data:
+        questions:
           type: array
-          items:
-            $ref: '#/components/schemas/JobEventRecord'
-        nextPageToken:
-          type: string
           nullable: true
-          description: Opaque cursor; pass as `pageToken` on next request. Null when no more pages.
+          items:
+            $ref: '#/components/schemas/RunQuestion'
+          description: Questions with updated `answer` values.
+        suggestions:
+          $ref: '#/components/schemas/RunSuggestions'
 
     PatchJobBody:
       type: object
-      description: Mutable per-job configuration fields.
+      description: Mutable job fields. Only present fields are applied.
       properties:
-        embed_image:
-          type: boolean
-          nullable: true
-          description: Set to true/false to control image embedding for the embed stage.
-
-    ReplayStage:
-      type: object
-      description: A completed stage that the job can be rewound to.
-      required: [name]
-      properties:
-        name:
-          type: string
-          description: Pipeline stage name.
-
-    ReviewDetail:
-      type: object
-      description: |
-        LLM review data present when a job is in `waiting` state at an
-        `llm_text` stage. Contains the input, output, and any clarification
-        questions the LLM raised.
-      required:
-        - stage_name
-        - input_text
-        - output_text
-        - is_single_output
-        - confidence
-        - qa_rounds
-        - clarification_requests
-        - document_context_update
-        - linked_context_update
-      properties:
-        stage_name:
-          type: string
-          description: Name of the stage awaiting review.
-        input_field:
-          type: string
-          nullable: true
-          description: Source field name fed into the LLM prompt.
-        output_field:
-          type: string
-          nullable: true
-          description: Field name where the LLM output is stored.
-        input_text:
-          type: string
-          description: The text sent to the LLM.
-        output_text:
-          type: string
-          description: The LLM's output awaiting approval.
-        is_single_output:
-          type: boolean
-          description: True when the stage writes a single output field.
-        confidence:
-          type: string
-          description: LLM-reported confidence in the output.
-        qa_rounds:
-          type: integer
-          description: Number of clarification rounds completed so far.
-        clarification_requests:
-          type: array
-          description: Questions the LLM raised that need answers before it can proceed.
-          items:
-            $ref: '#/components/schemas/ClarificationRequest'
-        document_context_update:
-          type: string
-          description: Suggested update to the document's context field, proposed by the LLM.
-        linked_context_update:
-          type: string
-          description: Suggested update to the linked context entry, proposed by the LLM.
-        context_ref:
-          type: string
-          nullable: true
-          description: UUID of the linked context entry, if any.
-
-    ClarificationRequest:
-      type: object
-      description: A question the LLM raised about a specific text segment.
-      required: [segment, question]
-      properties:
-        segment:
-          type: string
-          description: The text segment that prompted the question.
-        question:
-          type: string
-          description: The clarification question to present to the user.
-
-    # — Job event bodies (discriminated union) ——————————————————————————————————
-
-    ApproveEvent:
-      type: object
-      description: Advance the stage to the next, optionally replacing the LLM output with edited text.
-      required: [type]
-      properties:
-        type:
-          type: string
-          enum: [approve]
-          description: Event discriminator.
-        edited_text:
-          type: string
-          default: ''
-          description: Replacement text for the LLM output. Empty string keeps the original.
-
-    RejectEvent:
-      type: object
-      description: Discard the LLM output and reset the stage to pending.
-      required: [type]
-      properties:
-        type:
-          type: string
-          enum: [reject]
-          description: Event discriminator.
-
-    ClarifyEvent:
-      type: object
-      description: Provide clarification answers or a free prompt and retry the stage.
-      required: [type]
-      properties:
-        type:
-          type: string
-          enum: [clarify]
-          description: Event discriminator.
-        answers:
-          type: object
-          additionalProperties:
-            type: string
-          default: {}
-          description: Map of question text to answer text for each clarification request.
-        free_prompt:
-          type: string
-          default: ''
-          description: Additional instruction appended to the retry prompt.
-        edited_text:
-          type: string
-          default: ''
-          description: Optionally replace the existing output before retrying.
-
-    RetryEvent:
-      type: object
-      description: Reset the stage from error or waiting back to pending.
-      required: [type]
-      properties:
-        type:
-          type: string
-          enum: [retry]
-          description: Event discriminator.
-
-    StopEvent:
-      type: object
-      description: Force the stage into the error state.
-      required: [type]
-      properties:
-        type:
-          type: string
-          enum: [stop]
-          description: Event discriminator.
-
-    ReplayEvent:
-      type: object
-      description: Rewind the document to a previously completed stage.
-      required: [type, stage]
-      properties:
-        type:
-          type: string
-          enum: [replay]
-          description: Event discriminator.
-        stage:
-          type: string
-          description: Name of the pipeline stage to rewind to.
-
-    ProvideContextEvent:
-      type: object
-      description: Supply context to unblock a stage that is waiting for it.
-      required: [type]
-      properties:
-        type:
-          type: string
-          enum: [provide_context]
-          description: Event discriminator.
-        document_context:
-          type: string
-          default: ''
-          description: Free-text context to attach to the document.
-        context_ref:
-          type: string
-          nullable: true
-          description: UUID of a saved context entry to link.
-
-    ClearErrorsEvent:
-      type: object
-      description: Remove all failed events from the job's event history.
-      required: [type]
-      properties:
-        type:
-          type: string
-          enum: [clear_errors]
-          description: Event discriminator.
-
-    JobEventBody:
-      description: Discriminated union of all job state-transition event types.
-      oneOf:
-        - $ref: '#/components/schemas/ApproveEvent'
-        - $ref: '#/components/schemas/RejectEvent'
-        - $ref: '#/components/schemas/ClarifyEvent'
-        - $ref: '#/components/schemas/RetryEvent'
-        - $ref: '#/components/schemas/StopEvent'
-        - $ref: '#/components/schemas/ReplayEvent'
-        - $ref: '#/components/schemas/ProvideContextEvent'
-        - $ref: '#/components/schemas/ClearErrorsEvent'
-      discriminator:
-        propertyName: type
-        mapping:
-          approve: '#/components/schemas/ApproveEvent'
-          reject: '#/components/schemas/RejectEvent'
-          clarify: '#/components/schemas/ClarifyEvent'
-          retry: '#/components/schemas/RetryEvent'
-          stop: '#/components/schemas/StopEvent'
-          replay: '#/components/schemas/ReplayEvent'
-          provide_context: '#/components/schemas/ProvideContextEvent'
-          clear_errors: '#/components/schemas/ClearErrorsEvent'
+        options:
+          $ref: '#/components/schemas/JobOptions'
 
     # — Contexts ———————————————————————————————————————————————————————————————
 
@@ -1210,10 +1141,10 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ContextEntry'
-        nextPageToken:
+        next_page_token:
           type: string
           nullable: true
-          description: Opaque cursor; pass as `pageToken` on next request. Null when no more pages.
+          description: Opaque cursor; pass as `page_token` on next request. Null when no more pages.
 
     CreateContextBody:
       type: object
@@ -1240,33 +1171,34 @@ components:
           nullable: true
           description: Updated context text. Null leaves unchanged.
 
-    # — Documents request bodies ————————————————————————————————————————————————
-
-    PatchDocumentBody:
-      type: object
-      description: Fields to update on a document. Only present fields are applied.
-      properties:
-        title:
-          type: string
-          nullable: true
-          description: Updated document title. Null clears the title.
-        document_context:
-          type: string
-          nullable: true
-          description: Free-text context to attach to the document. Null clears it.
-        context_ref:
-          type: string
-          nullable: true
-          description: UUID of a context entry to link, or null to unlink.
-
     # — Chat ———————————————————————————————————————————————————————————————————
+
+    RagRetrieval:
+      type: object
+      description: RAG retrieval configuration for a chat.
+      properties:
+        enabled:
+          type: boolean
+          default: true
+          description: Whether RAG retrieval is enabled for this chat.
+        max_sources:
+          type: integer
+          default: 5
+          minimum: 1
+          maximum: 20
+          description: Maximum number of source documents to retrieve per query.
+        minimum_score:
+          type: number
+          format: float
+          default: 0.0
+          description: Minimum similarity score for retrieved sources.
 
     SourceDoc:
       type: object
       description: A document retrieved from the vector store as a RAG source.
-      required: [doc_id, title, score]
+      required: [document_id, title, score]
       properties:
-        doc_id:
+        document_id:
           type: string
           format: uuid
           description: UUID of the source document.
@@ -1286,140 +1218,119 @@ components:
           format: float
           description: Vector similarity score.
 
-    ChatSessionSummary:
+    ChatMessage:
       type: object
-      description: Lightweight chat session representation used in list views.
-      required: [id, title, context, top_k, created_at, updated_at, message_count]
-      properties:
-        id:
-          type: string
-          description: Session UUID.
-        title:
-          type: string
-          description: Auto-derived from the first user message (first 60 chars).
-        context:
-          type: string
-          description: Optional freeform context injected into every system prompt.
-        top_k:
-          type: integer
-          description: Number of Qdrant results to retrieve per query.
-        created_at:
-          type: string
-          description: ISO 8601 creation timestamp.
-        updated_at:
-          type: string
-          description: ISO 8601 last-updated timestamp.
-        message_count:
-          type: integer
-          description: Total number of messages in the session.
-
-    ChatSessionDetail:
-      type: object
-      description: Full chat session including all message history.
-      required: [id, title, context, top_k, created_at, updated_at, messages]
-      properties:
-        id:
-          type: string
-          description: Session UUID.
-        title:
-          type: string
-          description: Auto-derived from the first user message (first 60 chars).
-        context:
-          type: string
-          description: Optional freeform context injected into every system prompt.
-        top_k:
-          type: integer
-          description: Number of Qdrant results to retrieve per query.
-        created_at:
-          type: string
-          description: ISO 8601 creation timestamp.
-        updated_at:
-          type: string
-          description: ISO 8601 last-updated timestamp.
-        messages:
-          type: array
-          description: All messages in the session in chronological order.
-          items:
-            $ref: '#/components/schemas/ChatMessageRecord'
-
-    ChatMessageRecord:
-      type: object
-      description: A single message turn in a chat session.
+      description: A single message turn in a chat.
       required: [id, role, content, created_at]
       properties:
         id:
-          type: integer
-          description: Auto-increment row ID; defines message ordering.
+          type: string
+          format: uuid
+          description: Unique message identifier.
+        external_id:
+          type: string
+          nullable: true
+          description: External identifier assigned by the LLM provider (e.g. Ollama message ID).
         role:
           type: string
-          description: Message author.
           enum: [user, assistant]
+          description: Message author.
         content:
           type: string
           description: Message text.
         sources:
           type: array
           nullable: true
-          description: Retrieved source documents (only set on assistant messages).
           items:
             $ref: '#/components/schemas/SourceDoc'
+          description: Retrieved source documents (only set on assistant messages).
         created_at:
           type: string
+          format: date-time
           description: ISO 8601 creation timestamp.
 
-    CreateChatSessionBody:
+    ChatSummary:
       type: object
-      description: Options for creating a new chat session.
+      description: Lightweight chat representation used in list views.
+      required: [id, rag_retrieval, created_at, updated_at]
       properties:
-        context:
+        id:
           type: string
-          default: ''
-          description: Optional freeform context injected into every system prompt.
-        top_k:
-          type: integer
-          default: 5
-          minimum: 1
-          maximum: 20
-          description: Number of Qdrant results to retrieve per query.
-
-    PatchChatSessionBody:
-      type: object
-      description: Fields to update on an existing chat session. Omitted fields are unchanged.
-      properties:
+          description: Chat UUID.
         title:
           type: string
           nullable: true
-          description: Override the auto-derived title.
-        context:
+          description: Auto-derived from the first user message (first 60 chars). Null until the first message is sent.
+        system_prompt:
           type: string
-          nullable: true
           description: Optional freeform context injected into every system prompt.
-        top_k:
-          type: integer
-          nullable: true
-          minimum: 1
-          maximum: 20
-          description: Number of Qdrant results to retrieve per query.
-
-    SendMessageBody:
-      type: object
-      description: A new user message to send to the chat session.
-      required: [content]
-      properties:
-        content:
+        rag_retrieval:
+          $ref: '#/components/schemas/RagRetrieval'
+        created_at:
           type: string
-          description: The user's message text.
+          format: date-time
+          description: ISO 8601 creation timestamp.
+        updated_at:
+          type: string
+          format: date-time
+          description: ISO 8601 last-updated timestamp.
 
-    PaginatedChatSessions:
+    ChatDetail:
+      allOf:
+        - $ref: '#/components/schemas/ChatSummary'
+      description: Full chat data including message history.
+      properties:
+        messages:
+          type: array
+          description: All messages in the chat in chronological order.
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+
+    PaginatedChats:
       type: object
-      description: Paginated list of chat sessions ordered by most recently updated.
+      description: Paginated list of chats ordered by most recently updated.
       required: [data]
       properties:
         data:
           type: array
           items:
-            $ref: '#/components/schemas/ChatSessionSummary'
-        next_before_id:
+            $ref: '#/components/schemas/ChatSummary'
+        next_page_token:
           type: string
           nullable: true
-          description: Pass as `before_id` to fetch the next page. Null when no more pages.
+          description: Opaque cursor; pass as `page_token` on next request. Null when no more pages.
+
+    CreateChatBody:
+      type: object
+      description: Options for creating a new chat.
+      properties:
+        system_prompt:
+          type: string
+          default: ''
+          description: Optional freeform context injected into every system prompt.
+        rag_retrieval:
+          $ref: '#/components/schemas/RagRetrieval'
+
+    PatchChatBody:
+      type: object
+      description: Fields to update on an existing chat. Omitted fields are unchanged.
+      properties:
+        title:
+          type: string
+          nullable: true
+          description: Override the auto-derived title.
+        system_prompt:
+          type: string
+          nullable: true
+          description: Updated system prompt. Null clears it.
+        rag_retrieval:
+          $ref: '#/components/schemas/RagRetrieval'
+
+    SendMessageBody:
+      type: object
+      description: A new user message to send to the chat.
+      required: [content]
+      properties:
+        content:
+          type: string
+          description: The user's message text.
