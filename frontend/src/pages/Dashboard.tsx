@@ -267,7 +267,7 @@ function InlineTitle({ docId, title, onSaved }: {
 
   return (
     <span className="flex items-center gap-1.5 group/title">
-      <span onClick={startEdit} className="text-sm font-medium text-gray-800 group-hover:text-blue-600 transition-colors cursor-text">
+      <span onClick={startEdit} className="text-sm font-medium text-gray-800 dark:text-gray-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors cursor-text">
         {title || <span className="text-gray-400 italic font-normal">untitled</span>}
       </span>
       <button onClick={startEdit}
