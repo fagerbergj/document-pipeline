@@ -49,11 +49,13 @@ def _job_detail(job, title: Optional[str] = None) -> dict:
     }
 
 
-def _doc_summary(doc, current_job_id: Optional[str] = None) -> dict:
+def _doc_summary(doc, current_job=None) -> dict:
     return {
         "id": str(doc.id),
         "title": doc.title,
-        "current_job_id": current_job_id,
+        "current_job_id":     current_job.id     if current_job else None,
+        "current_job_stage":  current_job.stage  if current_job else None,
+        "current_job_status": current_job.status if current_job else None,
         "created_at": doc.created_at,
         "updated_at": doc.updated_at,
     }
@@ -64,12 +66,11 @@ async def _build_doc_detail(doc, db) -> dict:
     jobs = await db.list_jobs_for_document(doc.id)
     # current_job: prefer active (non-done/error) job, fall back to most recently updated
     active = next((j for j in reversed(jobs) if j.status in ("pending", "running", "waiting")), None)
-    current_job_id = (active or (jobs[-1] if jobs else None))
-    current_job_id = current_job_id.id if current_job_id else None
+    current_job = active or (jobs[-1] if jobs else None)
     return {
         "id": str(doc.id),
         "title": doc.title,
-        "current_job_id": current_job_id,
+        "current_job_id": current_job.id if current_job else None,
         "additional_context": doc.additional_context,
         "linked_contexts": doc.linked_contexts,
         "artifacts": artifacts,
@@ -161,7 +162,7 @@ async def list_documents(
         jobs = await db.list_jobs_for_document(doc.id)
         active = next((j for j in reversed(jobs) if j.status in ("pending", "running", "waiting")), None)
         current_job = active or (jobs[-1] if jobs else None)
-        result.append(_doc_summary(doc, current_job.id if current_job else None))
+        result.append(_doc_summary(doc, current_job))
 
     return {"data": result, "next_page_token": next_token}
 

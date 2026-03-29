@@ -24,16 +24,19 @@ export default function Dashboard() {
   const sort = (searchParams.get('sort') ?? 'pipeline') as SortKey
 
   const { data: page, isLoading, dataUpdatedAt } = useQuery({
-    queryKey: ['jobs', stages, statuses, sort],
-    queryFn: () => api.jobs({
-      stages: stages || undefined,
-      statuses: statuses || undefined,
-      sort,
-    }),
+    queryKey: ['documents', sort],
+    queryFn: () => api.documents({ sort, page_size: 200 }),
     refetchInterval: 10_000,
   })
 
-  const jobs = page?.data ?? []
+  const selectedStages = stages ? stages.split(',') : []
+  const selectedStatuses = statuses ? statuses.split(',') : []
+
+  const docs = (page?.data ?? []).filter(doc => {
+    if (selectedStages.length && !selectedStages.includes(doc.current_job_stage ?? '')) return false
+    if (selectedStatuses.length && !selectedStatuses.includes(doc.current_job_status ?? '')) return false
+    return true
+  })
 
   function setSort(col: string) {
     const next = new URLSearchParams(searchParams)
@@ -85,7 +88,7 @@ export default function Dashboard() {
       <div className="p-6">
         {isLoading ? <LoadingSpinner /> : (
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            {!jobs.length ? (
+            {!docs.length ? (
               <div className="py-16 text-center text-gray-400 text-sm">
                 {activeFilters > 0 ? 'No documents match the current filters.' : 'No documents yet.'}
               </div>
@@ -109,33 +112,33 @@ export default function Dashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {jobs.map(job => (
-                    <tr key={job.document_id}
-                      onClick={() => navigate(`/documents/${job.document_id}`)}
+                  {docs.map(doc => (
+                    <tr key={doc.id}
+                      onClick={() => navigate(`/documents/${doc.id}`)}
                       className="hover:bg-gray-50 transition-colors group cursor-pointer">
                       <td className="px-4 py-3">
                         <InlineTitle
-                          docId={job.document_id}
-                          title={job.title ?? null}
-                          onSaved={() => qc.invalidateQueries({ queryKey: ['jobs'] })}
+                          docId={doc.id}
+                          title={doc.title ?? null}
+                          onSaved={() => qc.invalidateQueries({ queryKey: ['documents'] })}
                         />
                       </td>
                       <td className="px-4 py-3">
-                        <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{job.stage}</span>
+                        <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{doc.current_job_stage ?? '—'}</span>
                       </td>
                       <td className="px-4 py-3">
-                        <StatusBadge state={job.status} />
+                        <StatusBadge state={doc.current_job_status ?? ''} />
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-400 hidden sm:table-cell">
-                        {job.created_at.slice(0, 16).replace('T', ' ')}
+                        {doc.created_at.slice(0, 16).replace('T', ' ')}
                       </td>
                       <td className="px-2 py-3 text-right" onClick={e => e.stopPropagation()}>
                         <DocKebabMenu
-                          docId={job.document_id}
-                          jobId={job.id}
-                          status={job.status}
-                          onDelete={() => qc.invalidateQueries({ queryKey: ['jobs'] })}
-                          onSuccess={() => qc.invalidateQueries({ queryKey: ['jobs'] })}
+                          docId={doc.id}
+                          jobId={doc.current_job_id ?? undefined}
+                          status={doc.current_job_status ?? ''}
+                          onDelete={() => qc.invalidateQueries({ queryKey: ['documents'] })}
+                          onSuccess={() => qc.invalidateQueries({ queryKey: ['documents'] })}
                           buttonClassName="w-7 h-7 flex items-center justify-center rounded text-gray-300 hover:text-gray-600 hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-all text-base leading-none"
                         />
                       </td>

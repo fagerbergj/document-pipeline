@@ -5,6 +5,7 @@
  */
 import {
   getPipelineApiV1PipelinesPipelineIdGet,
+  listDocumentsApiV1DocumentsGet,
   getDocumentApiV1DocumentsDocIdGet,
   patchDocumentApiV1DocumentsDocIdPatch,
   deleteDocumentApiV1DocumentsDocIdDelete,
@@ -46,6 +47,17 @@ export type {
   StageSummary,
   StageDetail,
 } from './generated'
+
+// DocumentSummary enriched with current job stage/status (backend adds these fields)
+export interface DocSummary {
+  id: string
+  title: string | null
+  current_job_id: string | null
+  current_job_stage: string | null
+  current_job_status: string | null
+  created_at: string
+  updated_at: string
+}
 
 // Chat types (generator returns unknown for these responses)
 export interface SourceDoc {
@@ -101,6 +113,13 @@ export const api = {
     unwrap(getPipelineApiV1PipelinesPipelineIdGet({ path: { pipeline_id: id } })),
 
   // ── Documents ─────────────────────────────────────────────────────────────
+  documents: (params?: { sort?: string; page_size?: number; page_token?: string }) =>
+    unwrap(listDocumentsApiV1DocumentsGet({ query: {
+      sort: params?.sort,
+      page_size: params?.page_size,
+      page_token: params?.page_token,
+    }})) as Promise<{ data: DocSummary[]; next_page_token?: string | null }>,
+
   document: (id: string) =>
     unwrap(getDocumentApiV1DocumentsDocIdGet({ path: { doc_id: id } })),
 
