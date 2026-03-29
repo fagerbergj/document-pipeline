@@ -386,6 +386,5 @@ def encode_page_token(sort_key: str, row_id: str) -> str:
     return base64.urlsafe_b64encode(payload.encode()).decode()
 
 
-def decode_page_token(token: str) -> tuple[str, str]:
-    payload = _json.loads(base64.urlsafe_b64decode(token.encode()).decode())
-    return payload["k"], payload["id"]
+def decode_page_token(token: str) -> dict:
+    return _json.loads(base64.urlsafe_b64decode(token.encode()).decode())
