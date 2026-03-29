@@ -401,6 +401,34 @@ async def _run_embed(
     return input_items, output_items
 
 
+async def _save_stage_artifacts(
+    stage: StageDefinition, output_items: list, job: Job, vault_path: str, db
+) -> None:
+    """Write each text output as a file in the vault and insert an artifact record."""
+    if not stage.save_as_artifact:
+        return
+    now = _now_str()
+    for item in output_items:
+        text = item.get("text", "")
+        if not text:
+            continue
+        field = item.get("field") or stage.name
+        filename = f"{field}.md"
+        artifact_id = str(_uuid.uuid4())
+        dest_dir = Path(vault_path) / "artifacts" / artifact_id
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        (dest_dir / filename).write_text(text, encoding="utf-8")
+        await db.insert_artifact(
+            document_id=job.document_id,
+            filename=filename,
+            content_type="text/markdown",
+            created_job_id=job.id,
+            now=now,
+            artifact_id=artifact_id,
+        )
+        logger.info("Saved artifact %s for doc %s", filename, job.document_id[:8])
+
+
 async def _was_stopped(job_id: str, db) -> bool:
     current = await db.get_job_by_id(job_id)
     if current and current.status != "running":
@@ -416,6 +444,7 @@ async def _process_job(
     filesystem,
     ollama_base_url: str,
     config: PipelineConfig,
+    vault_path: str = "",
 ):
     now = _now_str()
     doc = await db.get(job.document_id)
@@ -473,6 +502,7 @@ async def _process_job(
 
             await db.update_job_status(job.id, "done", now)
             await db.append_event(doc.id, stage.name, "completed", now)
+            await _save_stage_artifacts(stage, output_items, job, vault_path, db)
             await _advance_pipeline(job, config, db, now)
             logger.info("Doc %s — %s done", doc.id[:8], stage.name)
 
@@ -503,6 +533,7 @@ async def _process_job(
 
             await db.update_job_status(job.id, "done", now)
             await db.append_event(doc.id, stage.name, "completed", now)
+            await _save_stage_artifacts(stage, output_items, job, vault_path, db)
             await _streams.put_done(doc.id)
             await _advance_pipeline(job, config, db, now)
             logger.info("Doc %s — %s done", doc.id[:8], stage.name)
@@ -569,7 +600,7 @@ async def run_worker(config: PipelineConfig, db, vault_path: str, ollama_base_ur
 
                 async def _run(j, _sem=sem):
                     async with _sem:
-                        await _process_job(j, stage, db, filesystem, ollama_base_url, config)
+                        await _process_job(j, stage, db, filesystem, ollama_base_url, config, vault_path)
 
                 await asyncio.gather(*(_run(j) for j in jobs))
 

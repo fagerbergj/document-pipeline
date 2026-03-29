@@ -37,6 +37,7 @@ class StageDefinition:
     skip_if: Optional[dict] = None
     max_concurrent: Optional[int] = None
     vision: bool = False
+    save_as_artifact: bool = False
 
 
 @dataclass
@@ -66,6 +67,7 @@ class PipelineConfig:
                 skip_if=s.get("skip_if"),
                 max_concurrent=s.get("max_concurrent"),
                 vision=s.get("vision", False),
+                save_as_artifact=s.get("save_as_artifact", False),
             )
             for s in raw.get("stages", [])
         ]

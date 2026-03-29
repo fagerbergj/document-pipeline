@@ -98,9 +98,8 @@ export default function Document() {
         {job?.status === 'error' && (
           <ErrorSection job={job} onRefresh={refresh} />
         )}
-        {(doneJobs.length > 0 || (doc.artifacts?.length ?? 0) > 0) && (
-          <DocumentContentSection doc={doc} doneJobs={doneJobs} />
-        )}
+        {doneJobs.length > 0 && <PipelineResultsSection jobs={doneJobs} currentJobId={jobId} />}
+        {(doc.artifacts?.length ?? 0) > 0 && <ArtifactsSection doc={doc} />}
       </div>
     </div>
   )
@@ -240,55 +239,67 @@ function ContextSection({ doc, onRefresh }: { doc: DocumentDetail; onRefresh: ()
   )
 }
 
-type ContentTab =
-  | { kind: 'artifact'; id: string; label: string }
-  | { kind: 'job'; id: string; label: string }
-
-function DocumentContentSection({ doc, doneJobs }: { doc: DocumentDetail; doneJobs: JobSummary[] }) {
+function ArtifactsSection({ doc }: { doc: DocumentDetail }) {
   const artifacts = doc.artifacts ?? []
-  const tabs: ContentTab[] = [
-    ...artifacts.map(a => ({ kind: 'artifact' as const, id: a.id, label: a.filename })),
-    ...doneJobs.map(j => ({ kind: 'job' as const, id: j.id, label: j.stage })),
-  ]
-  const [activeIdx, setActiveIdx] = useState(0)
-  if (!tabs.length) return null
-  const active = tabs[activeIdx]
-
+  const [activeId, setActiveId] = useState(artifacts[0]?.id ?? '')
+  const activeArtifact = artifacts.find(a => a.id === activeId)
+  if (!artifacts.length) return null
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
       <div className="flex border-b border-gray-100 dark:border-gray-700 overflow-x-auto">
-        {tabs.map((tab, i) => (
-          <button key={tab.kind + tab.id} onClick={() => setActiveIdx(i)}
+        {artifacts.map(a => (
+          <button key={a.id} onClick={() => setActiveId(a.id)}
             className={`px-4 py-2.5 text-xs font-medium whitespace-nowrap transition-colors border-b-2 -mb-px ${
-              i === activeIdx
+              activeId === a.id
                 ? 'border-gray-900 dark:border-gray-100 text-gray-900 dark:text-white'
                 : 'border-transparent text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'
             }`}>
-            {tab.label}
+            {a.filename}
           </button>
         ))}
       </div>
       <div className="p-4">
-        {active.kind === 'artifact'
-          ? <ArtifactViewer doc={doc} artifact={artifacts.find(a => a.id === active.id)!} />
-          : <JobOutputsPanel jobId={active.id} />
-        }
+        {activeArtifact && <ArtifactViewer doc={doc} artifact={activeArtifact} />}
       </div>
     </div>
   )
 }
 
-function JobOutputsPanel({ jobId }: { jobId: string }) {
+function PipelineResultsSection({ jobs, currentJobId }: { jobs: JobSummary[]; currentJobId: string | null }) {
+  return (
+    <div className="space-y-2">
+      {jobs.map(j => <StageOutputCard key={j.id} jobSummary={j} defaultExpanded={j.id === currentJobId} />)}
+    </div>
+  )
+}
+
+function StageOutputCard({ jobSummary, defaultExpanded }: { jobSummary: JobSummary; defaultExpanded: boolean }) {
+  const [expanded, setExpanded] = useState(defaultExpanded)
   const { data: job } = useQuery({
-    queryKey: ['job', jobId],
-    queryFn: () => api.job(jobId),
+    queryKey: ['job', jobSummary.id],
+    queryFn: () => api.job(jobSummary.id),
+    enabled: expanded,
   })
   const outputs = (job?.runs?.length ? job.runs[job.runs.length - 1].outputs : [])
     ?.filter(o => o.text?.trim()) ?? []
-  if (!outputs.length) return <div className="text-xs text-gray-400 dark:text-gray-500">No outputs for this stage.</div>
+
   return (
-    <div className="space-y-4">
-      {outputs.map((out, i) => <OutputField key={i} field={out.field ?? ''} text={out.text} />)}
+    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+      <button
+        onClick={() => setExpanded(e => !e)}
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+      >
+        <span className="text-xs font-mono text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded">{jobSummary.stage}</span>
+        <span className="text-gray-400 dark:text-gray-500 text-xs">{expanded ? '▲' : '▼'}</span>
+      </button>
+      {expanded && (
+        <div className="px-4 pb-4 space-y-4">
+          {outputs.length === 0
+            ? <div className="text-xs text-gray-400 dark:text-gray-500">No text outputs for this stage.</div>
+            : outputs.map((out, i) => <OutputField key={i} field={out.field ?? ''} text={out.text} />)
+          }
+        </div>
+      )}
     </div>
   )
 }
