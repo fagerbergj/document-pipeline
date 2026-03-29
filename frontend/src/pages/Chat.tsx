@@ -36,6 +36,7 @@ export default function Chat() {
   const [systemPrompt, setSystemPrompt] = useState('')
   const [maxSources, setMaxSources] = useState(5)
   const [showSettings, setShowSettings] = useState(false)
+  const [chatListOpen, setChatListOpen] = useState(false)
   const [streaming, setStreaming] = useState(false)
   const [error, setError] = useState('')
   const [copied, setCopied] = useState<number | null>(null)
@@ -269,14 +270,38 @@ export default function Chat() {
 
   return (
     <div className="flex h-screen">
-      {/* Sidebar */}
-      <div className="w-[250px] flex-shrink-0 flex flex-col border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-        <div className="p-3 border-b border-gray-200 dark:border-gray-700">
+      {/* Mobile backdrop for chat list */}
+      {chatListOpen && (
+        <div
+          className="md:hidden fixed inset-0 z-30 bg-black/50"
+          onClick={() => setChatListOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Chat list sidebar */}
+      <div className={`
+        fixed md:static inset-y-0 left-0 z-40
+        w-[250px] flex-shrink-0 flex flex-col
+        border-r border-gray-200 dark:border-gray-700
+        bg-white dark:bg-gray-800
+        transition-transform duration-200
+        md:translate-x-0
+        ${chatListOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+      `}>
+        <div className="p-3 border-b border-gray-200 dark:border-gray-700 flex items-center gap-2">
           <button
             onClick={handleNewChat}
-            className="w-full text-sm px-3 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors font-medium"
+            className="flex-1 text-sm px-3 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors font-medium"
           >
             New Chat
+          </button>
+          <button
+            onClick={() => setChatListOpen(false)}
+            className="md:hidden text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1.5 rounded transition-colors"
+            aria-label="Close chat list"
+          >
+            ✕
           </button>
         </div>
         <div className="flex-1 overflow-y-auto">
@@ -286,7 +311,7 @@ export default function Chat() {
           {chats.map(s => (
             <div
               key={s.id}
-              onClick={() => activateChat(s.id)}
+              onClick={() => { activateChat(s.id); setChatListOpen(false) }}
               className={`group relative flex flex-col px-3 py-2.5 cursor-pointer border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${activeChatId === s.id ? 'bg-blue-50 dark:bg-blue-900/30' : ''}`}
             >
               <span className={`text-sm truncate pr-6 ${activeChatId === s.id ? 'text-blue-700 dark:text-blue-400 font-medium' : 'text-gray-800 dark:text-gray-100'}`}>
@@ -307,15 +332,25 @@ export default function Chat() {
       {/* Main chat area */}
       <div className="flex flex-col flex-1 min-w-0">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-          <h1 className="text-base font-semibold text-gray-900 dark:text-white">
-            {activeChatId
-              ? (chats.find(s => s.id === activeChatId)?.title || 'New chat')
-              : 'Chat'}
-          </h1>
+        <div className="flex items-center justify-between px-4 py-3 sm:px-6 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+          <div className="flex items-center gap-2 min-w-0">
+            {/* Toggle chat list — mobile only */}
+            <button
+              onClick={() => setChatListOpen(o => !o)}
+              className="md:hidden flex-shrink-0 w-8 h-8 flex items-center justify-center rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              aria-label="Toggle chat list"
+            >
+              ☰
+            </button>
+            <h1 className="text-base font-semibold text-gray-900 dark:text-white truncate">
+              {activeChatId
+                ? (chats.find(s => s.id === activeChatId)?.title || 'New chat')
+                : 'Chat'}
+            </h1>
+          </div>
           <button
             onClick={() => setShowSettings(s => !s)}
-            className={`text-xs px-3 py-1.5 rounded border transition-colors ${showSettings ? 'bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200' : 'border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-500'}`}
+            className={`text-xs px-3 py-1.5 rounded border transition-colors flex-shrink-0 ${showSettings ? 'bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200' : 'border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-500'}`}
           >
             Settings
           </button>

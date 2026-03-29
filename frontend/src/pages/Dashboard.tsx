@@ -104,7 +104,7 @@ export default function Dashboard() {
     <div className="h-full">
       {showUpload && <UploadModal onClose={() => setShowUpload(false)} />}
       {/* Header bar */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+      <div className="flex items-center justify-between px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Documents</h1>
           {activeFilters > 0 && (
@@ -133,6 +133,7 @@ export default function Dashboard() {
                 {activeFilters > 0 ? 'No documents match the current filters.' : 'No documents yet.'}
               </div>
             ) : (
+              <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-gray-100 dark:border-gray-700">
@@ -179,7 +180,7 @@ export default function Dashboard() {
                           docId={doc.id}
                           onDelete={() => qc.invalidateQueries({ queryKey: ['documents'] })}
                           onSuccess={() => qc.invalidateQueries({ queryKey: ['documents'] })}
-                          buttonClassName="w-7 h-7 flex items-center justify-center rounded text-gray-300 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 opacity-0 group-hover:opacity-100 transition-all text-base leading-none"
+                          buttonClassName="w-9 h-9 sm:w-7 sm:h-7 flex items-center justify-center rounded text-gray-300 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 opacity-0 group-hover:opacity-100 transition-all text-base leading-none"
                         />
                       </td>
                     </tr>
@@ -187,6 +188,7 @@ export default function Dashboard() {
                   })}
                 </tbody>
               </table>
+              </div>
             )}
             {/* Pagination footer */}
             {(hasPrev || hasNext || docs.length > 0) && (
@@ -205,7 +207,7 @@ export default function Dashboard() {
                   <button
                     onClick={goPrev}
                     disabled={!hasPrev}
-                    className="px-2.5 py-1 text-xs text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="px-3 py-1.5 text-sm sm:px-2.5 sm:py-1 sm:text-xs text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     ← Prev
                   </button>
@@ -213,7 +215,7 @@ export default function Dashboard() {
                   <button
                     onClick={goNext}
                     disabled={!hasNext}
-                    className="px-2.5 py-1 text-xs text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="px-3 py-1.5 text-sm sm:px-2.5 sm:py-1 sm:text-xs text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     Next →
                   </button>

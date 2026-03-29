@@ -12,7 +12,12 @@ const STATUS_COLORS: Record<string, string> = {
   done:    'bg-green-400',
 }
 
-export default function Sidebar() {
+interface SidebarProps {
+  open: boolean
+  onClose: () => void
+}
+
+export default function Sidebar({ open, onClose }: SidebarProps) {
   const { pathname } = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -80,17 +85,39 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="fixed left-0 top-0 h-full w-64 bg-gray-950 border-r border-gray-800 flex flex-col">
+    <>
+      {/* Mobile backdrop */}
+      {open && (
+        <div
+          className="md:hidden fixed inset-0 z-40 bg-black/50"
+          onClick={onClose}
+          aria-hidden="true"
+        />
+      )}
+
+    <aside className={`fixed left-0 top-0 h-full w-64 bg-gray-950 border-r border-gray-800 flex flex-col z-50 transition-transform duration-200
+      md:translate-x-0
+      ${open ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
       {/* Brand */}
       <div className="px-5 py-4 border-b border-gray-800 flex items-center justify-between">
         <span className="text-sm font-semibold text-white tracking-wide">document-pipeline</span>
-        <button
-          onClick={handleToggleDark}
-          title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-          className="text-gray-400 hover:text-white transition-colors text-base leading-none"
-        >
-          {isDark ? '☀' : '☽'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleToggleDark}
+            title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+            className="text-gray-400 hover:text-white transition-colors text-base leading-none"
+          >
+            {isDark ? '☀' : '☽'}
+          </button>
+          {/* Close button — mobile only */}
+          <button
+            onClick={onClose}
+            className="md:hidden text-gray-400 hover:text-white transition-colors text-lg leading-none"
+            aria-label="Close menu"
+          >
+            ✕
+          </button>
+        </div>
       </div>
 
       {/* Nav */}
@@ -167,5 +194,6 @@ export default function Sidebar() {
         </div>
       )}
     </aside>
+    </>
   )
 }

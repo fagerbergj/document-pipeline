@@ -68,7 +68,7 @@ export default function Document() {
   return (
     <div>
       {/* Header bar */}
-      <div className="sticky top-0 z-10 flex items-center gap-3 px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+      <div className="sticky top-0 z-10 flex items-center gap-3 px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
         <Link to="/" className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-sm">←</Link>
         <h1 className="text-base font-semibold text-gray-900 dark:text-white flex-1 truncate">{doc.title || '(untitled)'}</h1>
         {job && (
@@ -88,7 +88,7 @@ export default function Document() {
       </div>
 
       {/* Content */}
-      <div className="p-6 space-y-8">
+      <div className="p-4 sm:p-6 space-y-8">
         <section className="space-y-3">
           <TitleSection doc={doc} onRefresh={refresh} />
         </section>
