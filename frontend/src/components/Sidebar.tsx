@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api'
@@ -70,11 +71,26 @@ export default function Sidebar() {
 
   const hasFilters = selectedStages.length > 0 || selectedStatuses.length > 0
 
+  const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'))
+
+  function handleToggleDark() {
+    const nowDark = document.documentElement.classList.toggle('dark')
+    localStorage.setItem('theme', nowDark ? 'dark' : 'light')
+    setIsDark(nowDark)
+  }
+
   return (
     <aside className="fixed left-0 top-0 h-full w-64 bg-gray-950 border-r border-gray-800 flex flex-col">
       {/* Brand */}
-      <div className="px-5 py-4 border-b border-gray-800">
+      <div className="px-5 py-4 border-b border-gray-800 flex items-center justify-between">
         <span className="text-sm font-semibold text-white tracking-wide">document-pipeline</span>
+        <button
+          onClick={handleToggleDark}
+          title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+          className="text-gray-400 hover:text-white transition-colors text-base leading-none"
+        >
+          {isDark ? '☀' : '☽'}
+        </button>
       </div>
 
       {/* Nav */}

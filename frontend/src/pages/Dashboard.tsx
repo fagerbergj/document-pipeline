@@ -104,9 +104,9 @@ export default function Dashboard() {
     <div className="h-full">
       {showUpload && <UploadModal onClose={() => setShowUpload(false)} />}
       {/* Header bar */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-white">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
         <div className="flex items-center gap-3">
-          <h1 className="text-lg font-semibold text-gray-900">Documents</h1>
+          <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Documents</h1>
           {activeFilters > 0 && (
             <span className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full font-medium">
               {activeFilters} filter{activeFilters > 1 ? 's' : ''}
@@ -120,44 +120,44 @@ export default function Dashboard() {
           >
             Upload
           </button>
-          <span className="text-xs text-gray-400">Updated {updatedTime}</span>
+          <span className="text-xs text-gray-400 dark:text-gray-500">Updated {updatedTime}</span>
         </div>
       </div>
 
       {/* Table */}
       <div className="p-6">
         {isLoading ? <LoadingSpinner /> : (
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
             {!docs.length ? (
-              <div className="py-16 text-center text-gray-400 text-sm">
+              <div className="py-16 text-center text-gray-400 dark:text-gray-500 text-sm">
                 {activeFilters > 0 ? 'No documents match the current filters.' : 'No documents yet.'}
               </div>
             ) : (
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-gray-100">
+                  <tr className="border-b border-gray-100 dark:border-gray-700">
                     <th className="text-left px-4 py-3">
-                      <button onClick={() => setSort('title')} className="flex items-center text-xs font-semibold text-gray-400 uppercase tracking-wide hover:text-gray-600">
+                      <button onClick={() => setSort('title')} className="flex items-center text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-300">
                         Title {sortIcon('title')}
                       </button>
                     </th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Stage</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Status</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">Stage</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">Status</th>
                     <th className="text-left px-4 py-3 hidden sm:table-cell">
-                      <button onClick={() => setSort('created')} className="flex items-center text-xs font-semibold text-gray-400 uppercase tracking-wide hover:text-gray-600">
+                      <button onClick={() => setSort('created')} className="flex items-center text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide hover:text-gray-600 dark:hover:text-gray-300">
                         Received {sortIcon('created')}
                       </button>
                     </th>
                     <th className="w-10" />
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-50">
+                <tbody className="divide-y divide-gray-50 dark:divide-gray-700">
                   {docs.map(doc => {
                     const job = doc.current_job_id ? jobById[doc.current_job_id] : undefined
                     return (
                     <tr key={doc.id}
                       onClick={() => navigate(`/documents/${doc.id}`)}
-                      className="hover:bg-gray-50 transition-colors group cursor-pointer">
+                      className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group cursor-pointer">
                       <td className="px-4 py-3">
                         <InlineTitle
                           docId={doc.id}
@@ -166,12 +166,12 @@ export default function Dashboard() {
                         />
                       </td>
                       <td className="px-4 py-3">
-                        <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{job?.stage ?? '—'}</span>
+                        <span className="text-xs font-mono text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded">{job?.stage ?? '—'}</span>
                       </td>
                       <td className="px-4 py-3">
                         <StatusBadge state={job?.status ?? ''} />
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-400 hidden sm:table-cell">
+                      <td className="px-4 py-3 text-sm text-gray-400 dark:text-gray-500 hidden sm:table-cell">
                         {doc.created_at.slice(0, 16).replace('T', ' ')}
                       </td>
                       <td className="px-2 py-3 text-right" onClick={e => e.stopPropagation()}>
@@ -179,7 +179,7 @@ export default function Dashboard() {
                           docId={doc.id}
                           onDelete={() => qc.invalidateQueries({ queryKey: ['documents'] })}
                           onSuccess={() => qc.invalidateQueries({ queryKey: ['documents'] })}
-                          buttonClassName="w-7 h-7 flex items-center justify-center rounded text-gray-300 hover:text-gray-600 hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-all text-base leading-none"
+                          buttonClassName="w-7 h-7 flex items-center justify-center rounded text-gray-300 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 opacity-0 group-hover:opacity-100 transition-all text-base leading-none"
                         />
                       </td>
                     </tr>
@@ -190,13 +190,13 @@ export default function Dashboard() {
             )}
             {/* Pagination footer */}
             {(hasPrev || hasNext || docs.length > 0) && (
-              <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
+              <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 dark:border-gray-700">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-400">Rows per page</span>
+                  <span className="text-xs text-gray-400 dark:text-gray-500">Rows per page</span>
                   <select
                     value={pageSize}
                     onChange={e => setPageSize(Number(e.target.value))}
-                    className="text-xs border border-gray-200 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-blue-200"
+                    className="text-xs border border-gray-200 dark:border-gray-600 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-blue-200 dark:focus:ring-blue-800 dark:bg-gray-700 dark:text-gray-100"
                   >
                     {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
                   </select>
@@ -205,15 +205,15 @@ export default function Dashboard() {
                   <button
                     onClick={goPrev}
                     disabled={!hasPrev}
-                    className="px-2.5 py-1 text-xs text-gray-600 border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="px-2.5 py-1 text-xs text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     ← Prev
                   </button>
-                  <span className="px-2 text-xs text-gray-400">page {tokenStack.length}</span>
+                  <span className="px-2 text-xs text-gray-400 dark:text-gray-500">page {tokenStack.length}</span>
                   <button
                     onClick={goNext}
                     disabled={!hasNext}
-                    className="px-2.5 py-1 text-xs text-gray-600 border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="px-2.5 py-1 text-xs text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     Next →
                   </button>

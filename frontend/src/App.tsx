@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Routes, Route, useLocation, Navigate } from 'react-router-dom'
 import Sidebar from './components/Sidebar'
 import Dashboard from './pages/Dashboard'
@@ -9,10 +10,17 @@ export default function App() {
   const { pathname } = useLocation()
   const fullWidth = pathname.startsWith('/documents/')
 
+  useEffect(() => {
+    const stored = localStorage.getItem('theme')
+    if (stored === 'dark' || (!stored && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+      document.documentElement.classList.add('dark')
+    }
+  }, [])
+
   return (
     <div className="flex min-h-screen bg-gray-950 text-gray-100">
       {!fullWidth && <Sidebar />}
-      <div className={`flex-1 ${fullWidth ? '' : 'ml-64'} bg-gray-50 text-gray-900 min-h-screen`}>
+      <div className={`flex-1 ${fullWidth ? '' : 'ml-64'} bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white min-h-screen`}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/documents/:id" element={<Document />} />

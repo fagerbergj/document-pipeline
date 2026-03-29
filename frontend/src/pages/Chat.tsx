@@ -270,8 +270,8 @@ export default function Chat() {
   return (
     <div className="flex h-screen">
       {/* Sidebar */}
-      <div className="w-[250px] flex-shrink-0 flex flex-col border-r border-gray-200 bg-white">
-        <div className="p-3 border-b border-gray-200">
+      <div className="w-[250px] flex-shrink-0 flex flex-col border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+        <div className="p-3 border-b border-gray-200 dark:border-gray-700">
           <button
             onClick={handleNewChat}
             className="w-full text-sm px-3 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors font-medium"
@@ -281,18 +281,18 @@ export default function Chat() {
         </div>
         <div className="flex-1 overflow-y-auto">
           {chats.length === 0 && (
-            <div className="text-xs text-gray-400 text-center py-6 px-3">No conversations yet</div>
+            <div className="text-xs text-gray-400 dark:text-gray-500 text-center py-6 px-3">No conversations yet</div>
           )}
           {chats.map(s => (
             <div
               key={s.id}
               onClick={() => activateChat(s.id)}
-              className={`group relative flex flex-col px-3 py-2.5 cursor-pointer border-b border-gray-100 hover:bg-gray-50 transition-colors ${activeChatId === s.id ? 'bg-blue-50' : ''}`}
+              className={`group relative flex flex-col px-3 py-2.5 cursor-pointer border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${activeChatId === s.id ? 'bg-blue-50 dark:bg-blue-900/30' : ''}`}
             >
-              <span className={`text-sm truncate pr-6 ${activeChatId === s.id ? 'text-blue-700 font-medium' : 'text-gray-800'}`}>
+              <span className={`text-sm truncate pr-6 ${activeChatId === s.id ? 'text-blue-700 dark:text-blue-400 font-medium' : 'text-gray-800 dark:text-gray-100'}`}>
                 {s.title || 'New chat'}
               </span>
-              <span className="text-xs text-gray-400 mt-0.5">{relativeDate(s.updated_at)}</span>
+              <span className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{relativeDate(s.updated_at)}</span>
               <button
                 onClick={e => handleDeleteChat(s.id, e)}
                 className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition-opacity p-1 rounded"
@@ -307,15 +307,15 @@ export default function Chat() {
       {/* Main chat area */}
       <div className="flex flex-col flex-1 min-w-0">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 bg-white">
-          <h1 className="text-base font-semibold text-gray-900">
+        <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+          <h1 className="text-base font-semibold text-gray-900 dark:text-white">
             {activeChatId
               ? (chats.find(s => s.id === activeChatId)?.title || 'New chat')
               : 'Chat'}
           </h1>
           <button
             onClick={() => setShowSettings(s => !s)}
-            className={`text-xs px-3 py-1.5 rounded border transition-colors ${showSettings ? 'bg-gray-100 border-gray-300 text-gray-700' : 'border-gray-200 text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}
+            className={`text-xs px-3 py-1.5 rounded border transition-colors ${showSettings ? 'bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200' : 'border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-500'}`}
           >
             Settings
           </button>
@@ -323,14 +323,14 @@ export default function Chat() {
 
         {/* Settings panel */}
         {showSettings && (
-          <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 space-y-3">
+          <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 space-y-3">
             <div className="flex items-start gap-6">
               <div className="flex-1">
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-medium text-gray-600">System prompt <span className="text-gray-400">(optional)</span></label>
+                  <label className="text-xs font-medium text-gray-600 dark:text-gray-300">System prompt <span className="text-gray-400 dark:text-gray-500">(optional)</span></label>
                   {contextLibrary.length > 0 && (
                     <select
-                      className="text-xs text-gray-500 border border-gray-200 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                      className="text-xs text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-600 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400 dark:bg-gray-700 dark:text-gray-100"
                       defaultValue=""
                       onChange={e => {
                         const entry = contextLibrary.find(x => x.name === e.target.value)
@@ -345,7 +345,7 @@ export default function Chat() {
                   )}
                 </div>
                 <textarea
-                  className="w-full rounded border border-gray-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                  className="w-full rounded border border-gray-300 dark:border-gray-600 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400"
                   rows={3}
                   placeholder="Add context to guide answers…"
                   value={systemPrompt}
@@ -353,14 +353,14 @@ export default function Chat() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Max sources</label>
+                <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">Max sources</label>
                 <input
                   type="number"
                   min={1}
                   max={20}
                   value={maxSources}
                   onChange={e => handleMaxSourcesChange(Number(e.target.value))}
-                  className="w-14 rounded border border-gray-300 px-2 py-1.5 text-xs text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-14 rounded border border-gray-300 dark:border-gray-600 px-2 py-1.5 text-xs text-center focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-gray-100"
                 />
               </div>
             </div>
@@ -370,12 +370,12 @@ export default function Chat() {
         {/* Messages */}
         <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
           {!activeChatId && (
-            <div className="text-center text-gray-400 text-sm mt-20">
+            <div className="text-center text-gray-400 dark:text-gray-500 text-sm mt-20">
               Start a new chat or select a conversation
             </div>
           )}
           {activeChatId && messages.length === 0 && !streaming && (
-            <div className="text-center text-gray-400 text-sm mt-20">
+            <div className="text-center text-gray-400 dark:text-gray-500 text-sm mt-20">
               Ask a question about your notes
             </div>
           )}
@@ -390,9 +390,9 @@ export default function Chat() {
                   </div>
                 ) : (
                   <div>
-                    <div className="bg-white border border-gray-200 rounded-2xl rounded-tl-sm px-5 py-4">
+                    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl rounded-tl-sm px-5 py-4">
                       {msg.content ? (
-                        <div className="prose prose-sm max-w-none">
+                        <div className="prose prose-sm dark:prose-invert max-w-none">
                           <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
                             {msg.content}
                           </ReactMarkdown>
@@ -413,20 +413,20 @@ export default function Chat() {
                       <div className="flex items-center gap-3 mt-1.5 px-1">
                         <button
                           onClick={() => handleCopy(idx, msg.content)}
-                          className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+                          className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                         >
                           {copied === idx ? 'Copied!' : 'Copy'}
                         </button>
                         <button
                           onClick={() => handleDownload(msg.content, idx)}
-                          className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+                          className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                         >
                           Download
                         </button>
                         {msg.sources && msg.sources.length > 0 && (
                           <button
                             onClick={() => toggleSources(idx)}
-                            className="text-xs text-gray-400 hover:text-gray-600 transition-colors ml-auto"
+                            className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors ml-auto"
                           >
                             {msg.sourcesOpen ? '▾' : '▸'} {msg.sources.length} source{msg.sources.length !== 1 ? 's' : ''}
                           </button>
@@ -440,14 +440,14 @@ export default function Chat() {
                           <Link
                             key={si}
                             to={`/documents/${s.document_id}`}
-                            className="block rounded-lg border border-gray-200 bg-white px-4 py-2.5 hover:border-blue-300 hover:bg-blue-50 transition-colors"
+                            className="block rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-2.5 hover:border-blue-300 dark:hover:border-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
                           >
                             <div className="flex items-start justify-between gap-2">
-                              <span className="text-sm font-medium text-gray-800">{s.title}</span>
-                              <span className="text-xs text-gray-400 whitespace-nowrap">score {s.score.toFixed(3)}</span>
+                              <span className="text-sm font-medium text-gray-800 dark:text-gray-100">{s.title}</span>
+                              <span className="text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">score {s.score.toFixed(3)}</span>
                             </div>
-                            {s.date_month && <div className="text-xs text-gray-400 mt-0.5">{s.date_month}</div>}
-                            {s.summary && <div className="text-xs text-gray-600 mt-1 line-clamp-2">{s.summary}</div>}
+                            {s.date_month && <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{s.date_month}</div>}
+                            {s.summary && <div className="text-xs text-gray-600 dark:text-gray-300 mt-1 line-clamp-2">{s.summary}</div>}
                           </Link>
                         ))}
                       </div>
@@ -459,7 +459,7 @@ export default function Chat() {
           ))}
 
           {error && (
-            <div className="rounded-md bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+            <div className="rounded-md bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 px-4 py-3 text-sm text-red-700 dark:text-red-400">
               {error}
             </div>
           )}
@@ -468,10 +468,10 @@ export default function Chat() {
         </div>
 
         {/* Input */}
-        <div className="border-t border-gray-200 bg-white px-6 py-4">
+        <div className="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-6 py-4">
           <form onSubmit={handleSubmit} className="flex gap-3 items-end">
             <textarea
-              className="flex-1 rounded-xl border border-gray-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none disabled:opacity-50"
+              className="flex-1 rounded-xl border border-gray-300 dark:border-gray-600 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none disabled:opacity-50 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400"
               rows={1}
               placeholder={activeChatId ? 'Ask something… (Enter to send, Shift+Enter for newline)' : 'Select or start a chat first'}
               value={input}
@@ -483,7 +483,7 @@ export default function Chat() {
               <button
                 type="button"
                 onClick={handleStop}
-                className="px-4 py-3 rounded-xl bg-gray-200 text-gray-700 text-sm font-medium hover:bg-gray-300 transition-colors whitespace-nowrap"
+                className="px-4 py-3 rounded-xl bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors whitespace-nowrap"
               >
                 Stop
               </button>

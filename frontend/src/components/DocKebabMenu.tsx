@@ -65,7 +65,7 @@ export default function DocKebabMenu({ docId, onDelete, onSuccess, buttonClassNa
       <button
         ref={btnRef}
         onClick={() => open ? closeAll() : openMenu()}
-        className={buttonClassName ?? 'w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors text-lg leading-none'}
+        className={buttonClassName ?? 'w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-lg leading-none'}
       >
         ⋯
       </button>
@@ -74,21 +74,21 @@ export default function DocKebabMenu({ docId, onDelete, onSuccess, buttonClassNa
         <div
           ref={dropdownRef}
           style={{ position: 'fixed', top: menuPos.top, right: menuPos.right, zIndex: 9999 }}
-          className="w-48 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden"
+          className="w-48 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg dark:shadow-black/40 overflow-hidden"
         >
           {mutError && (
-            <div className="px-3 py-2 text-xs text-red-600 bg-red-50 border-b border-red-100">{mutError}</div>
+            <div className="px-3 py-2 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 border-b border-red-100 dark:border-red-800">{mutError}</div>
           )}
 
           {currentJob?.status === 'running' && (
             <button onClick={() => stopMut.mutate()}
-              className="w-full text-left px-4 py-2.5 text-sm text-amber-700 hover:bg-amber-50">
+              className="w-full text-left px-4 py-2.5 text-sm text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30">
               Stop
             </button>
           )}
           {(currentJob?.status === 'error' || currentJob?.status === 'waiting') && (
             <button onClick={() => retryMut.mutate()}
-              className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">
+              className="w-full text-left px-4 py-2.5 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">
               Retry
             </button>
           )}
@@ -99,7 +99,7 @@ export default function DocKebabMenu({ docId, onDelete, onSuccess, buttonClassNa
               <button
                 onMouseEnter={() => setReplayOpen(true)}
                 onClick={() => setReplayOpen(r => !r)}
-                className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center justify-between"
+                className="w-full text-left px-4 py-2.5 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center justify-between"
               >
                 Replay
                 <span className="text-gray-400 text-xs">▶</span>
@@ -108,14 +108,14 @@ export default function DocKebabMenu({ docId, onDelete, onSuccess, buttonClassNa
                 <div
                   onMouseLeave={() => setReplayOpen(false)}
                   style={{ position: 'fixed', top: menuPos.top, right: menuPos.right + 192, zIndex: 10000 }}
-                  className="w-36 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden"
+                  className="w-36 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg dark:shadow-black/40 overflow-hidden"
                 >
                   {replayableJobs.map(j => (
                     <button
                       key={j.id}
                       onClick={() => replayMut.mutate(j.id)}
                       disabled={replayMut.isPending}
-                      className="w-full text-left px-4 py-2.5 text-sm font-mono text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      className="w-full text-left px-4 py-2.5 text-sm font-mono text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
                     >
                       {j.stage}
                     </button>
@@ -127,7 +127,7 @@ export default function DocKebabMenu({ docId, onDelete, onSuccess, buttonClassNa
 
           <button
             onClick={() => { if (confirm('Delete this document? This cannot be undone.')) deleteMut.mutate() }}
-            className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50">
+            className="w-full text-left px-4 py-2.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30">
             Delete
           </button>
         </div>,

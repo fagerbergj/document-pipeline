@@ -5,7 +5,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
 import { api } from '../api'
-import type { DocumentDetail, JobDetail, Run, Artifact } from '../types'
+import type { DocumentDetail, JobDetail, JobSummary, Run, Artifact } from '../types'
 import StatusBadge from '../components/StatusBadge'
 import LoadingSpinner from '../components/LoadingSpinner'
 import DocKebabMenu from '../components/DocKebabMenu'
@@ -29,6 +29,13 @@ export default function Document() {
     enabled: !!jobId,
     retry: 1,
   })
+
+  const { data: allJobsPage } = useQuery({
+    queryKey: ['jobs-for-doc', id],
+    queryFn: () => api.jobs({ document_id: id!, page_size: 50 }),
+    enabled: !!id,
+  })
+  const doneJobs = (allJobsPage?.data ?? []).filter(j => j.status === 'done')
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['document', id] })
@@ -61,12 +68,12 @@ export default function Document() {
   return (
     <div>
       {/* Header bar */}
-      <div className="sticky top-0 z-10 flex items-center gap-3 px-6 py-4 border-b border-gray-200 bg-white">
-        <Link to="/" className="text-gray-400 hover:text-gray-600 text-sm">←</Link>
-        <h1 className="text-base font-semibold text-gray-900 flex-1 truncate">{doc.title || '(untitled)'}</h1>
+      <div className="sticky top-0 z-10 flex items-center gap-3 px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+        <Link to="/" className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-sm">←</Link>
+        <h1 className="text-base font-semibold text-gray-900 dark:text-white flex-1 truncate">{doc.title || '(untitled)'}</h1>
         {job && (
           <>
-            <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{job.stage}</span>
+            <span className="text-xs font-mono text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded">{job.stage}</span>
             <StatusBadge state={job.status} />
           </>
         )}
@@ -91,6 +98,7 @@ export default function Document() {
         {job?.status === 'error' && (
           <ErrorSection job={job} onRefresh={refresh} />
         )}
+        {doneJobs.length > 0 && <PipelineResultsSection jobs={doneJobs} />}
         {(doc.artifacts?.length ?? 0) > 0 && (
           <ArtifactsSection doc={doc} />
         )}
@@ -107,17 +115,17 @@ function TitleSection({ doc, onRefresh }: { doc: DocumentDetail; onRefresh: () =
   })
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4">
-      <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Title</div>
+    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+      <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-3">Title</div>
       <form onSubmit={e => { e.preventDefault(); mut.mutate(title) }} className="flex gap-2">
         <input value={title} onChange={e => setTitle(e.target.value)}
-          className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200" />
+          className="flex-1 text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400" />
         <button type="submit" disabled={mut.isPending}
           className="px-4 py-2 text-sm font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50">
           Save
         </button>
       </form>
-      <div className="text-xs text-gray-400 mt-2">Received {doc.created_at.slice(0, 19).replace('T', ' ')}</div>
+      <div className="text-xs text-gray-400 dark:text-gray-500 mt-2">Received {doc.created_at.slice(0, 19).replace('T', ' ')}</div>
     </div>
   )
 }
@@ -172,27 +180,27 @@ function ContextSection({ doc, onRefresh }: { doc: DocumentDetail; onRefresh: ()
       <div className="flex items-center gap-2">
         <span className="text-xs text-gray-400 uppercase tracking-wide font-semibold">Context</span>
         <button onClick={openEdit}
-          className="inline-flex items-center gap-1 px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs rounded-full transition-colors max-w-sm truncate">
+          className="inline-flex items-center gap-1 px-2.5 py-1 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 text-xs rounded-full transition-colors max-w-sm truncate">
           <span className="truncate">{parts.join(' · ')}</span>
-          <span className="text-gray-400 flex-shrink-0">✎</span>
+          <span className="text-gray-400 dark:text-gray-500 flex-shrink-0">✎</span>
         </button>
       </div>
     )
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4">
+    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
       <div className="flex items-center justify-between mb-3">
-        <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Document context</div>
+        <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">Document context</div>
         {hasContext && (
-          <button onClick={() => setEditing(false)} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
+          <button onClick={() => setEditing(false)} className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">Cancel</button>
         )}
       </div>
 
       {/* Linked contexts */}
       {entries.length > 0 && (
         <div className="mb-3">
-          <label className="block text-xs text-gray-500 mb-1">Linked contexts</label>
+          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Linked contexts</label>
           <div className="space-y-1">
             {entries.map(e => (
               <label key={e.id} className="flex items-center gap-2 cursor-pointer">
@@ -200,16 +208,16 @@ function ContextSection({ doc, onRefresh }: { doc: DocumentDetail; onRefresh: ()
                   type="checkbox"
                   checked={linkedIds.includes(e.id)}
                   onChange={() => toggleLinked(e.id)}
-                  className="rounded border-gray-300"
+                  className="rounded border-gray-300 dark:border-gray-600"
                 />
-                <span className="text-sm text-gray-700">{e.name}</span>
+                <span className="text-sm text-gray-700 dark:text-gray-200">{e.name}</span>
               </label>
             ))}
           </div>
         </div>
       )}
       {entries.length === 0 && (
-        <div className="mb-3 text-xs text-gray-400">
+        <div className="mb-3 text-xs text-gray-400 dark:text-gray-500">
           No saved contexts —{' '}
           <Link to="/contexts" className="text-blue-500 hover:underline">create one in Context Library</Link>
         </div>
@@ -217,15 +225,15 @@ function ContextSection({ doc, onRefresh }: { doc: DocumentDetail; onRefresh: ()
 
       {/* Free-text additional context */}
       <div>
-        <label className="block text-xs text-gray-500 mb-1">Additional context</label>
+        <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Additional context</label>
         <textarea value={ctx} onChange={e => setCtx(e.target.value)} rows={4}
-          className="w-full text-sm font-mono border border-gray-200 rounded-lg px-3 py-2 resize-y focus:outline-none focus:ring-2 focus:ring-blue-200"
+          className="w-full text-sm font-mono border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 resize-y focus:outline-none focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400"
           placeholder="Describe this document — used by clarify, classify, and other stages…" />
       </div>
 
       <div className="flex gap-2 mt-3">
         <button onClick={() => saveMut.mutate()} disabled={saveMut.isPending}
-          className="px-3 py-1.5 text-xs font-medium border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50">
+          className="px-3 py-1.5 text-xs font-medium border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-gray-200 disabled:opacity-50">
           Save
         </button>
       </div>
@@ -241,14 +249,14 @@ function ArtifactsSection({ doc }: { doc: DocumentDetail }) {
   if (artifacts.length === 0) return null
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <div className="flex border-b border-gray-100 overflow-x-auto">
+    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+      <div className="flex border-b border-gray-100 dark:border-gray-700 overflow-x-auto">
         {artifacts.map(a => (
           <button key={a.id} onClick={() => setActiveId(a.id)}
             className={`px-4 py-2.5 text-xs font-medium whitespace-nowrap transition-colors border-b-2 -mb-px ${
               activeId === a.id
-                ? 'border-gray-900 text-gray-900'
-                : 'border-transparent text-gray-400 hover:text-gray-600'
+                ? 'border-gray-900 dark:border-gray-100 text-gray-900 dark:text-white'
+                : 'border-transparent text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'
             }`}>
             {a.filename}
           </button>
@@ -270,10 +278,10 @@ function ArtifactViewer({ doc, artifact }: { doc: DocumentDetail; artifact: Arti
       <div>
         <div className="flex justify-end mb-2">
           <a href={url} target="_blank" rel="noreferrer"
-            className="text-xs text-gray-400 hover:text-gray-600">Open in new tab ↗</a>
+            className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">Open in new tab ↗</a>
         </div>
         <img src={url} alt={artifact.filename}
-          className="max-w-full rounded-lg border border-gray-100" />
+          className="max-w-full rounded-lg border border-gray-100 dark:border-gray-700" />
       </div>
     )
   }
@@ -308,25 +316,25 @@ function TextArtifact({ url, filename, raw, onToggleRaw }: {
   return (
     <div>
       <div className="flex items-center justify-between mb-1">
-        <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{filename}</div>
+        <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">{filename}</div>
         <div className="flex items-center gap-3">
           {isMarkdown && (
-            <button onClick={onToggleRaw} className="text-xs text-gray-400 hover:text-gray-600">
+            <button onClick={onToggleRaw} className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
               {raw ? 'Rendered' : 'Raw'}
             </button>
           )}
           <button onClick={() => {
             const blob = new Blob([text], { type: 'text/plain' })
             window.open(URL.createObjectURL(blob), '_blank')
-          }} className="text-xs text-gray-400 hover:text-gray-600">Open in new tab ↗</button>
+          }} className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">Open in new tab ↗</button>
         </div>
       </div>
       {isMarkdown && !raw ? (
-        <div className="prose prose-sm prose-gray max-w-none bg-gray-50 border border-gray-100 rounded-lg px-4 py-3 max-h-96 overflow-y-auto">
+        <div className="prose prose-sm prose-gray dark:prose-invert max-w-none bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-lg px-4 py-3 max-h-96 overflow-y-auto">
           <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{text.replace(/<!--[\s\S]*?-->/g, '')}</ReactMarkdown>
         </div>
       ) : (
-        <pre className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2 text-xs font-mono whitespace-pre-wrap max-h-96 overflow-y-auto">{text}</pre>
+        <pre className="bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 text-gray-800 dark:text-gray-200 rounded-lg px-3 py-2 text-xs font-mono whitespace-pre-wrap max-h-96 overflow-y-auto">{text}</pre>
       )}
     </div>
   )
@@ -360,10 +368,10 @@ function LiveLogSection({ jobId, onDone }: { jobId: string; onDone: () => void }
   }, [jobId, onDone])
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4">
+    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
       <div className="flex items-center justify-between mb-3">
-        <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Live output</div>
-        <span className="text-xs text-gray-400">{status}</span>
+        <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">Live output</div>
+        <span className="text-xs text-gray-400 dark:text-gray-500">{status}</span>
       </div>
       <pre ref={logRef}
         className="bg-gray-950 text-gray-100 rounded-lg p-3 text-xs min-h-24 max-h-96 overflow-y-auto whitespace-pre-wrap font-mono" />
@@ -415,11 +423,11 @@ function ReviewSection({ job, run, doc, onRefresh }: {
 
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-xl border border-gray-200 p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
         <div className="flex flex-wrap items-center gap-2 mb-4">
-          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Review — {job.stage}</div>
+          <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">Review — {job.stage}</div>
           <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${confidenceColor}`}>{run.confidence} confidence</span>
-          <span className="text-xs text-gray-400">run {(job.runs?.length ?? 1)} of {job.runs?.length ?? 1}</span>
+          <span className="text-xs text-gray-400 dark:text-gray-500">run {(job.runs?.length ?? 1)} of {job.runs?.length ?? 1}</span>
         </div>
 
         {/* Outputs */}
@@ -427,8 +435,8 @@ function ReviewSection({ job, run, doc, onRefresh }: {
           <div className="mb-4">
             {run.outputs.map((out, i) => (
               <div key={i} className="mb-3">
-                {out.field && <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">{out.field}</div>}
-                <pre className="bg-gray-50 border border-gray-100 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap max-h-80 overflow-y-auto">{out.text}</pre>
+                {out.field && <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-1">{out.field}</div>}
+                <pre className="bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 text-gray-800 dark:text-gray-200 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap max-h-80 overflow-y-auto">{out.text}</pre>
               </div>
             ))}
           </div>
@@ -436,19 +444,19 @@ function ReviewSection({ job, run, doc, onRefresh }: {
 
         {/* Clarification questions */}
         {run.questions?.length > 0 && (
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
-            <div className="text-xs font-semibold text-amber-800 mb-2">Clarifications needed</div>
+          <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-3 mb-4">
+            <div className="text-xs font-semibold text-amber-800 dark:text-amber-400 mb-2">Clarifications needed</div>
             {run.questions.map((q, i) => (
               <div key={i} className="mb-3">
-                <div className="text-xs text-gray-700 mb-1">
-                  <code className="bg-white border border-gray-200 px-1 py-0.5 rounded text-xs">{q.segment}</code>
-                  <span className="ml-1 text-gray-500">— {q.question}</span>
+                <div className="text-xs text-gray-700 dark:text-gray-300 mb-1">
+                  <code className="bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 px-1 py-0.5 rounded text-xs">{q.segment}</code>
+                  <span className="ml-1 text-gray-500 dark:text-gray-400">— {q.question}</span>
                 </div>
                 <input
                   value={answers[i] ?? q.answer ?? ''}
                   onChange={e => setAnswers(a => ({ ...a, [i]: e.target.value }))}
                   placeholder="Your answer…"
-                  className="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400"
                 />
               </div>
             ))}
@@ -456,7 +464,7 @@ function ReviewSection({ job, run, doc, onRefresh }: {
         )}
 
         {mutError && (
-          <div className="mb-3 text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{mutError}</div>
+          <div className="mb-3 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 border border-red-100 dark:border-red-800 rounded-lg px-3 py-2">{mutError}</div>
         )}
         <div className="flex gap-2">
           <button onClick={() => approveMut.mutate()} disabled={busy}
@@ -470,7 +478,7 @@ function ReviewSection({ job, run, doc, onRefresh }: {
             </button>
           )}
           <button onClick={() => rejectMut.mutate()} disabled={busy}
-            className="px-4 py-1.5 text-sm font-medium border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50">
+            className="px-4 py-1.5 text-sm font-medium border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50">
             Re-run
           </button>
         </div>
@@ -515,29 +523,29 @@ function ContextSuggestionSection({ label, current, proposed, onSave, onRefresh 
   if (dismissed) return null
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4">
+    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
       <div className="flex items-center justify-between mb-4">
-        <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{label}</div>
+        <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">{label}</div>
         <div className="flex gap-2">
           <button onClick={() => saveMut.mutate()} disabled={saveMut.isPending}
             className="px-4 py-1.5 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
             {saveMut.isSuccess ? 'Saved' : 'Accept'}
           </button>
           <button onClick={() => setDismissed(true)}
-            className="px-4 py-1.5 text-sm font-medium border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">
+            className="px-4 py-1.5 text-sm font-medium border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
             Dismiss
           </button>
         </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div>
-          <div className="text-xs font-semibold text-gray-400 mb-1">Current</div>
-          <pre className="bg-gray-50 border border-gray-100 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap h-48 overflow-y-auto">{current || '(empty)'}</pre>
+          <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 mb-1">Current</div>
+          <pre className="bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 text-gray-800 dark:text-gray-200 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap h-48 overflow-y-auto">{current || '(empty)'}</pre>
         </div>
         <div>
-          <div className="text-xs font-semibold text-gray-400 mb-1">Proposed — editable</div>
+          <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 mb-1">Proposed — editable</div>
           <textarea value={edited} onChange={e => setEdited(e.target.value)}
-            className="w-full bg-gray-50 border border-gray-100 rounded-lg p-3 text-xs font-mono h-48 resize-none focus:outline-none focus:ring-2 focus:ring-blue-200" />
+            className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-100 dark:border-gray-600 text-gray-800 dark:text-gray-100 rounded-lg p-3 text-xs font-mono h-48 resize-none focus:outline-none focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800" />
         </div>
       </div>
     </div>
@@ -575,18 +583,88 @@ function ErrorSection({ job, onRefresh }: { job: JobDetail; onRefresh: () => voi
   })
 
   return (
-    <div className="bg-white rounded-xl border border-red-200 p-4">
+    <div className="bg-white dark:bg-gray-800 rounded-xl border border-red-200 dark:border-red-800 p-4">
       <div className="flex items-center justify-between mb-3">
-        <div className="text-xs font-semibold text-red-500 uppercase tracking-wide">Error — {job.stage}</div>
+        <div className="text-xs font-semibold text-red-500 dark:text-red-400 uppercase tracking-wide">Error — {job.stage}</div>
         <button onClick={() => retryMut.mutate()} disabled={retryMut.isPending}
-          className="text-xs text-gray-500 hover:text-green-600 border border-gray-200 hover:border-green-400 rounded-lg px-3 py-1 transition-colors disabled:opacity-50">
+          className="text-xs text-gray-500 dark:text-gray-400 hover:text-green-600 border border-gray-200 dark:border-gray-600 hover:border-green-400 rounded-lg px-3 py-1 transition-colors disabled:opacity-50">
           Retry
         </button>
       </div>
       {latestRun && latestRun.outputs?.length > 0 && (
-        <pre className="bg-red-50 border border-red-100 rounded-lg px-3 py-2 text-xs font-mono whitespace-pre-wrap max-h-48 overflow-y-auto text-red-700">
+        <pre className="bg-red-50 dark:bg-red-950/30 border border-red-100 dark:border-red-800 rounded-lg px-3 py-2 text-xs font-mono whitespace-pre-wrap max-h-48 overflow-y-auto text-red-700 dark:text-red-400">
           {latestRun.outputs.map(o => o.text).join('\n')}
         </pre>
+      )}
+    </div>
+  )
+}
+
+function PipelineResultsSection({ jobs }: { jobs: JobSummary[] }) {
+  return (
+    <div className="space-y-3">
+      {jobs.map(j => <JobOutputCard key={j.id} jobSummary={j} />)}
+    </div>
+  )
+}
+
+function JobOutputCard({ jobSummary }: { jobSummary: JobSummary }) {
+  const [expanded, setExpanded] = useState(true)
+  const { data: job } = useQuery({
+    queryKey: ['job', jobSummary.id],
+    queryFn: () => api.job(jobSummary.id),
+  })
+
+  const latestRun = job?.runs?.length ? job.runs[job.runs.length - 1] : null
+  const outputs = latestRun?.outputs?.filter(o => o.text?.trim()) ?? []
+  if (!outputs.length) return null
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+      <button
+        onClick={() => setExpanded(e => !e)}
+        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+      >
+        <span className="text-xs font-mono text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded">{jobSummary.stage}</span>
+        <span className="text-gray-400 dark:text-gray-500 text-xs">{expanded ? '▲' : '▼'}</span>
+      </button>
+      {expanded && (
+        <div className="px-4 pb-4 space-y-3">
+          {outputs.map((out, i) => (
+            <OutputField key={i} field={out.field ?? ''} text={out.text} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function OutputField({ field, text }: { field: string; text: string }) {
+  const isMarkdown = field === 'clarified_text' || field === 'summary'
+  const isTags = field === 'tags'
+
+  let tags: string[] = []
+  if (isTags) {
+    try { tags = JSON.parse(text) } catch { tags = [] }
+  }
+
+  return (
+    <div>
+      {field && (
+        <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-1">{field.replace(/_/g, ' ')}</div>
+      )}
+      {isTags ? (
+        <div className="flex flex-wrap gap-1">
+          {tags.map((t, i) => (
+            <span key={i} className="px-2 py-0.5 text-xs bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 rounded-full">{t}</span>
+          ))}
+        </div>
+      ) : isMarkdown ? (
+        <div className="prose prose-sm dark:prose-invert max-w-none text-sm text-gray-700 dark:text-gray-200">
+          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{text}</ReactMarkdown>
+        </div>
+      ) : (
+        <pre className="bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 text-gray-800 dark:text-gray-200 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap max-h-80 overflow-y-auto">{text}</pre>
       )}
     </div>
   )
@@ -607,7 +685,7 @@ function JobOptionsMenu({ job, onRefresh }: { job: JobDetail; onRefresh: () => v
   const embedImage = job.options?.embed?.embed_image ?? false
   const mut = useMutation({
     mutationFn: () => api.updateJob(job.id, { options: { embed: { embed_image: !embedImage } } }),
-    onSuccess: () => { onRefresh(); setOpen(false) },
+    onSuccess: onRefresh,
   })
 
   return (
@@ -615,26 +693,26 @@ function JobOptionsMenu({ job, onRefresh }: { job: JobDetail; onRefresh: () => v
       <button
         onClick={() => setOpen(o => !o)}
         title="Job options"
-        className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors text-base"
+        className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-base"
       >
         ⚙
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-xl shadow-lg p-3 z-20">
-          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Job options</div>
+        <div className="absolute right-0 top-full mt-1 w-56 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg dark:shadow-black/40 p-3 z-20">
+          <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2">Job options</div>
           <label className="flex items-center gap-3 cursor-pointer">
             <button
               onClick={() => mut.mutate()}
               disabled={mut.isPending}
               className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
-                embedImage ? 'bg-blue-600' : 'bg-gray-200'
+                embedImage ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-600'
               }`}
             >
               <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
                 embedImage ? 'translate-x-4' : 'translate-x-1'
               }`} />
             </button>
-            <span className="text-sm text-gray-700">Embed image</span>
+            <span className="text-sm text-gray-700 dark:text-gray-200">Embed image</span>
           </label>
         </div>
       )}
