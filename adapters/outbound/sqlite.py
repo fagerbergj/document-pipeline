@@ -272,7 +272,7 @@ class Database:
         if page_token:
             k = page_token.get("k")
             last_id = page_token.get("id", "")
-            cursor_vals = k if isinstance(k, list) else [k, last_id]
+            cursor_vals = (k if isinstance(k, list) else [k]) + [last_id]
             conditions.append(cursor_where)
             params.extend(cursor_vals)
 
@@ -529,7 +529,7 @@ class Database:
         if page_token:
             k = page_token.get("k")
             last_id = page_token.get("id", "")
-            cursor_vals = k if isinstance(k, list) else [k, last_id]
+            cursor_vals = (k if isinstance(k, list) else [k]) + [last_id]
             conditions.append(cursor_where)
             params.extend(cursor_vals)
 
