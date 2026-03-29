@@ -5,7 +5,6 @@
  */
 import {
   getPipelineApiV1PipelinesPipelineIdGet,
-  listDocumentsApiV1DocumentsGet,
   getDocumentApiV1DocumentsDocIdGet,
   patchDocumentApiV1DocumentsDocIdPatch,
   deleteDocumentApiV1DocumentsDocIdDelete,
@@ -113,12 +112,16 @@ export const api = {
     unwrap(getPipelineApiV1PipelinesPipelineIdGet({ path: { pipeline_id: id } })),
 
   // ── Documents ─────────────────────────────────────────────────────────────
-  documents: (params?: { sort?: string; page_size?: number; page_token?: string }) =>
-    unwrap(listDocumentsApiV1DocumentsGet({ query: {
-      sort: params?.sort,
-      page_size: params?.page_size,
-      page_token: params?.page_token,
-    }})) as Promise<{ data: DocSummary[]; next_page_token?: string | null }>,
+  documents: async (params?: { sort?: string; page_size?: number; page_token?: string }): Promise<{ data: DocSummary[]; next_page_token?: string | null }> => {
+    const q = new URLSearchParams()
+    if (params?.sort)       q.set('sort', params.sort)
+    if (params?.page_size)  q.set('page_size', String(params.page_size))
+    if (params?.page_token) q.set('page_token', params.page_token)
+    const res = await fetch(`/api/v1/documents?${q}`)
+    const json = await res.json()
+    if (!res.ok) throw Object.assign(new Error(json.error ?? 'Failed'), { status: res.status, body: json })
+    return json
+  },
 
   document: (id: string) =>
     unwrap(getDocumentApiV1DocumentsDocIdGet({ path: { doc_id: id } })),
