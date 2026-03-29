@@ -207,8 +207,16 @@ paths:
       description: |
         Returns a paginated list of all jobs with denormalized document title.
         Useful for dashboard views; filters and sort are independent of pagination.
+        When `documentId` is provided, returns only the job(s) for that document.
       operationId: listJobs
       parameters:
+        - name: documentId
+          in: query
+          required: false
+          description: Filter to jobs for a specific document UUID.
+          schema:
+            type: string
+            format: uuid
         - $ref: '#/components/parameters/pageToken'
         - $ref: '#/components/parameters/pageSize'
         - $ref: '#/components/parameters/stagesFilter'
@@ -222,13 +230,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedJobs'
 
-  /api/v1/documents/{doc_id}/jobs:
+  /api/v1/jobs/{job_id}:
     parameters:
-      - $ref: '#/components/parameters/doc_id'
+      - $ref: '#/components/parameters/job_id'
     get:
       tags: [Jobs]
       summary: Get job detail
-      description: Returns the current pipeline execution state for a document — stage, state, review data, and available replay stages.
+      description: Returns the current pipeline execution state — stage, state, review data, and available replay stages.
       operationId: getJob
       responses:
         '200':
@@ -239,15 +247,35 @@ paths:
                 $ref: '#/components/schemas/JobDetail'
         '404':
           $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Jobs]
+      summary: Update job config
+      description: Updates mutable job configuration fields (e.g. `embed_image`). Returns the updated job detail.
+      operationId: patchJob
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchJobBody'
+      responses:
+        '200':
+          description: Updated job detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
-  /api/v1/documents/{doc_id}/jobs/stream:
+  /api/v1/jobs/{job_id}/stream:
     parameters:
-      - $ref: '#/components/parameters/doc_id'
+      - $ref: '#/components/parameters/job_id'
     get:
       tags: [Jobs]
       summary: Stream LLM tokens (SSE)
       description: |
-        Server-Sent Events stream of LLM output tokens while the document is
+        Server-Sent Events stream of LLM output tokens while the job is
         in the `running` state. Emits `token` events with `{"text": "..."}` payloads
         and a final `done` event when generation completes or state changes.
       operationId: streamJobTokens
@@ -261,13 +289,13 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
-  /api/v1/documents/{doc_id}/jobs/events:
+  /api/v1/jobs/{job_id}/events:
     parameters:
-      - $ref: '#/components/parameters/doc_id'
+      - $ref: '#/components/parameters/job_id'
     get:
       tags: [Jobs]
       summary: List job events
-      description: Returns the paginated event history for a document's job.
+      description: Returns the paginated event history for a job.
       operationId: listJobEvents
       parameters:
         - name: afterId
@@ -539,6 +567,15 @@ components:
         type: string
         format: uuid
 
+    job_id:
+      name: job_id
+      in: path
+      required: true
+      description: UUID of the job row.
+      schema:
+        type: string
+        format: uuid
+
     context_id:
       name: context_id
       in: path
@@ -753,6 +790,10 @@ components:
           type: string
           nullable: true
           description: UUID of a saved context entry linked to this document.
+        current_job_id:
+          type: string
+          nullable: true
+          description: UUID of the active job row for the current pipeline stage.
         has_image:
           type: boolean
           description: True if a source PNG image is available.
@@ -833,8 +874,11 @@ components:
     JobDetail:
       type: object
       description: Full pipeline execution state for a document.
-      required: [doc_id, current_stage, stage_state, needs_context, context_required, replay_stages]
+      required: [id, doc_id, current_stage, stage_state, needs_context, context_required, embed_image, replay_stages]
       properties:
+        id:
+          type: string
+          description: UUID of the active job row for the current stage.
         doc_id:
           type: string
           format: uuid
@@ -850,6 +894,10 @@ components:
         context_required:
           type: boolean
           description: True when the current stage requires context before it can run at all.
+        embed_image:
+          type: boolean
+          default: false
+          description: Whether the embed stage should include a visual image vector.
         review:
           $ref: '#/components/schemas/ReviewDetail'
           nullable: true
@@ -911,6 +959,15 @@ components:
           type: string
           nullable: true
           description: Opaque cursor; pass as `pageToken` on next request. Null when no more pages.
+
+    PatchJobBody:
+      type: object
+      description: Mutable per-job configuration fields.
+      properties:
+        embed_image:
+          type: boolean
+          nullable: true
+          description: Set to true/false to control image embedding for the embed stage.
 
     ReplayStage:
       type: object

@@ -21,34 +21,37 @@ export default function Document() {
     retry: 1,
   })
 
+  const jobId = doc?.current_job_id ?? null
+
   const { data: job, isLoading: jobLoading, error: jobError } = useQuery({
-    queryKey: ['job', id],
-    queryFn: () => api.job(id!),
+    queryKey: ['job', jobId],
+    queryFn: () => api.job(jobId!),
+    enabled: !!jobId,
     retry: 1,
   })
 
   const { data: eventsPage } = useQuery({
-    queryKey: ['job-events', id],
-    queryFn: () => api.jobEvents(id!),
-    enabled: !!id,
+    queryKey: ['job-events', jobId],
+    queryFn: () => api.jobEvents(jobId!),
+    enabled: !!jobId,
   })
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['document', id] })
-    qc.invalidateQueries({ queryKey: ['job', id] })
-    qc.invalidateQueries({ queryKey: ['job-events', id] })
+    qc.invalidateQueries({ queryKey: ['job', jobId] })
+    qc.invalidateQueries({ queryKey: ['job-events', jobId] })
   }
 
   const handleDelete = () => navigate('/')
 
-  const isLoading = docLoading || jobLoading
+  const isLoading = docLoading || (!!jobId && jobLoading)
 
   if (isLoading) return (
     <div className="flex items-center justify-center h-full py-24">
       <LoadingSpinner />
     </div>
   )
-  if (!doc || !job) {
+  if (!doc || (jobId && !job)) {
     const err = docError ?? jobError
     const errMsg = err instanceof Error
       ? err.message
@@ -71,12 +74,13 @@ export default function Document() {
       <div className="sticky top-0 z-10 flex items-center gap-3 px-6 py-4 border-b border-gray-200 bg-white">
         <Link to="/" className="text-gray-400 hover:text-gray-600 text-sm">←</Link>
         <h1 className="text-base font-semibold text-gray-900 flex-1 truncate">{doc.title || '(untitled)'}</h1>
-        <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{job.current_stage}</span>
-        <StatusBadge state={job.stage_state} />
+        <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{job?.current_stage ?? '…'}</span>
+        <StatusBadge state={job?.stage_state ?? 'pending'} />
         <DocKebabMenu
           docId={doc.id}
-          state={job.stage_state}
-          replayStages={job.replay_stages}
+          jobId={job?.id}
+          state={job?.stage_state ?? 'pending'}
+          replayStages={job?.replay_stages}
           onDelete={handleDelete}
           onSuccess={refresh}
         />
@@ -86,13 +90,14 @@ export default function Document() {
       <div className="p-6 space-y-4">
         <TitleSection doc={doc} onRefresh={refresh} />
         <ContextSection doc={doc} job={job} onRefresh={refresh} />
-        {job.stage_state === 'running' && <LiveLogSection docId={doc.id} onDone={refresh} />}
-        {job.review && <ReviewSection doc={doc} review={job.review} onRefresh={refresh} />}
+        {job?.stage_state === 'running' && <LiveLogSection jobId={job.id} onDone={refresh} />}
+        {job?.review && <ReviewSection jobId={job.id} doc={doc} review={job.review} onRefresh={refresh} />}
         {(doc.has_image || doc.stage_displays.length > 0) && (
           <ArtifactsSection doc={doc} />
         )}
-        {errorEvents.length > 0 && <EventLogSection events={errorEvents} docId={doc.id} onCleared={refresh} />}
-        {job.replay_stages.length > 0 && <ReplaySection docId={doc.id} job={job} onRefresh={refresh} />}
+        {doc.has_image && job?.id && <EmbedImageSection job={job} onRefresh={refresh} />}
+        {errorEvents.length > 0 && <EventLogSection events={errorEvents} jobId={job?.id ?? ''} onCleared={refresh} />}
+        {(job?.replay_stages?.length ?? 0) > 0 && <ReplaySection jobId={job!.id} job={job!} onRefresh={refresh} />}
       </div>
     </div>
   )
@@ -121,13 +126,13 @@ function TitleSection({ doc, onRefresh }: { doc: DocumentDetail; onRefresh: () =
   )
 }
 
-function ContextSection({ doc, job, onRefresh }: { doc: DocumentDetail; job: JobDetail; onRefresh: () => void }) {
+function ContextSection({ doc, job, onRefresh }: { doc: DocumentDetail; job: JobDetail | undefined; onRefresh: () => void }) {
   const [editing, setEditing] = useState(false)
   const [ctx, setCtx] = useState(doc.document_context ?? '')
   const [contextRef, setContextRef] = useState<string>(doc.context_ref ?? '')
   const [entries, setEntries] = useState<{ id: string; name: string; text: string }[]>([])
 
-  const required = job.context_required
+  const required = job?.context_required ?? false
   const hasContext = !!(doc.context_ref || doc.document_context)
 
   useEffect(() => {
@@ -152,7 +157,7 @@ function ContextSection({ doc, job, onRefresh }: { doc: DocumentDetail; job: Job
     onSuccess: () => { onRefresh(); setEditing(false) },
   })
   const runMut = useMutation({
-    mutationFn: () => api.postJobEvent(doc.id, {
+    mutationFn: () => api.postJobEvent(job!.id, {
       type: 'provide_context',
       document_context: ctx || undefined,
       context_ref: contextRef || null,
@@ -333,12 +338,12 @@ function ArtifactFields({ fields }: { fields: Record<string, string> }) {
 }
 
 
-function LiveLogSection({ docId, onDone }: { docId: string; onDone: () => void }) {
+function LiveLogSection({ jobId, onDone }: { jobId: string; onDone: () => void }) {
   const logRef = useRef<HTMLPreElement>(null)
   const [status, setStatus] = useState('connecting…')
 
   useEffect(() => {
-    const es = new EventSource(`/api/v1/documents/${docId}/jobs/stream`)
+    const es = new EventSource(`/api/v1/jobs/${jobId}/stream`)
     es.addEventListener('token', (e) => {
       const data = JSON.parse((e as MessageEvent).data)
       if (logRef.current) {
@@ -358,7 +363,7 @@ function LiveLogSection({ docId, onDone }: { docId: string; onDone: () => void }
       setTimeout(onDone, 2000)
     }
     return () => es.close()
-  }, [docId, onDone])
+  }, [jobId, onDone])
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4">
@@ -372,9 +377,9 @@ function LiveLogSection({ docId, onDone }: { docId: string; onDone: () => void }
   )
 }
 
-function EventLogSection({ events, docId, onCleared }: { events: JobEventRecord[]; docId: string; onCleared: () => void }) {
+function EventLogSection({ events, jobId, onCleared }: { events: JobEventRecord[]; jobId: string; onCleared: () => void }) {
   const clearMut = useMutation({
-    mutationFn: () => api.postJobEvent(docId, { type: 'clear_errors' }),
+    mutationFn: () => api.postJobEvent(jobId, { type: 'clear_errors' }),
     onSuccess: onCleared,
   })
 
@@ -399,7 +404,8 @@ function EventLogSection({ events, docId, onCleared }: { events: JobEventRecord[
   )
 }
 
-function ReviewSection({ doc, review, onRefresh }: {
+function ReviewSection({ jobId, doc, review, onRefresh }: {
+  jobId: string
   doc: DocumentDetail
   review: NonNullable<JobDetail['review']>
   onRefresh: () => void
@@ -411,7 +417,7 @@ function ReviewSection({ doc, review, onRefresh }: {
   const [mutError, setMutError] = useState<string | null>(null)
 
   const approveMut = useMutation({
-    mutationFn: () => api.postJobEvent(doc.id, {
+    mutationFn: () => api.postJobEvent(jobId, {
       type: 'approve',
       edited_text: review.is_single_output ? editedText : undefined,
     }),
@@ -419,12 +425,12 @@ function ReviewSection({ doc, review, onRefresh }: {
     onError: (e: unknown) => setMutError(e instanceof Error ? e.message : String(e)),
   })
   const rejectMut = useMutation({
-    mutationFn: () => api.postJobEvent(doc.id, { type: 'reject' }),
+    mutationFn: () => api.postJobEvent(jobId, { type: 'reject' }),
     onSuccess: () => { setMutError(null); onRefresh() },
     onError: (e: unknown) => setMutError(e instanceof Error ? e.message : String(e)),
   })
   const clarifyMut = useMutation({
-    mutationFn: () => api.postJobEvent(doc.id, {
+    mutationFn: () => api.postJobEvent(jobId, {
       type: 'clarify',
       answers,
       free_prompt: freePrompt,
@@ -624,9 +630,38 @@ function ClarificationForm({
   )
 }
 
-function ReplaySection({ docId, job, onRefresh }: { docId: string; job: JobDetail; onRefresh: () => void }) {
+function EmbedImageSection({ job, onRefresh }: { job: JobDetail; onRefresh: () => void }) {
+  const mut = useMutation({
+    mutationFn: () => api.updateJob(job.id, { embed_image: !job.embed_image }),
+    onSuccess: onRefresh,
+  })
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-4">
+      <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Image embedding</div>
+      <div className="flex items-center gap-3">
+        <button
+          onClick={() => mut.mutate()}
+          disabled={mut.isPending}
+          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-50 ${
+            job.embed_image ? 'bg-blue-600' : 'bg-gray-200'
+          }`}
+        >
+          <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+            job.embed_image ? 'translate-x-4' : 'translate-x-1'
+          }`} />
+        </button>
+        <span className="text-sm text-gray-600">
+          {job.embed_image ? 'Embed image for visual search' : 'Text only (no image embedding)'}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function ReplaySection({ jobId, job, onRefresh }: { jobId: string; job: JobDetail; onRefresh: () => void }) {
   const replayMut = useMutation({
-    mutationFn: (stage: string) => api.postJobEvent(docId, { type: 'replay', stage }),
+    mutationFn: (stage: string) => api.postJobEvent(jobId, { type: 'replay', stage }),
     onSuccess: onRefresh,
   })
 

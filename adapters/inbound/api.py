@@ -17,7 +17,7 @@ from adapters.inbound.schemas import (
     JobDetail, JobEventBody, JobEventRecord, JobSummary,
     OkResponse, PaginatedContexts, PaginatedDocuments,
     PaginatedJobEvents, PaginatedJobs, PaginatedPipelines,
-    PatchDocumentBody, PipelineDetail, PipelineStageConfig, PipelineSummary,
+    PatchDocumentBody, PatchJobBody, PipelineDetail, PipelineStageConfig, PipelineSummary,
     ProvideContextEvent, ReplayEvent, RejectEvent, RetryEvent, StopEvent,
     UpdateContextBody,
     CreateChatSessionBody, PatchChatSessionBody, SendMessageBody,
@@ -39,10 +39,13 @@ def _clean_context_updates(val: str) -> str:
     return "" if v.lower() in _NULL else v
 
 
-def _build_doc_detail(doc, config) -> dict:
+async def _build_doc_detail(doc, config, db) -> dict:
     """Pure document data: title, context, artifacts."""
     document_context = doc.stage_data.get("_ingest", {}).get("document_context", "")
     context_ref = doc.context_ref
+
+    current_job = await db.get_job(doc.id, doc.current_stage)
+    current_job_id = current_job.id if current_job is not None else None
 
     stage_displays = []
     for s in config.stages:
@@ -72,6 +75,7 @@ def _build_doc_detail(doc, config) -> dict:
         "title": doc.title,
         "document_context": document_context,
         "context_ref": context_ref,
+        "current_job_id": current_job_id,
         "has_image": bool(doc.png_path and _os.path.exists(doc.png_path)),
         "stage_displays": stage_displays,
         "created_at": doc.created_at,
@@ -79,8 +83,9 @@ def _build_doc_detail(doc, config) -> dict:
     }
 
 
-def _build_job_detail(doc, config) -> dict:
+async def _build_job_detail(doc, config, db) -> dict:
     """Job execution state: stage, state, review, replay_stages."""
+    job = await db.get_job(doc.id, doc.current_stage)
     stage_def = config.get_stage(doc.current_stage)
     document_context = doc.stage_data.get("_ingest", {}).get("document_context", "")
     sdata = doc.stage_data.get(doc.current_stage, {}) if doc.current_stage else {}
@@ -147,7 +152,7 @@ def _build_job_detail(doc, config) -> dict:
             "output_text": output_text,
             "is_single_output": bool(stage_def.output),
             "confidence": sdata.get("confidence", ""),
-            "qa_rounds": len(sdata.get("qa_history", [])),
+            "qa_rounds": len(job.qa_rounds) if job is not None else len(sdata.get("qa_history", [])),
             "clarification_requests": sdata.get("clarification_requests", []),
             "document_context_update": _clean_context_updates(sdata.get("document_context_update", "")),
             "linked_context_update": _clean_context_updates(sdata.get("linked_context_update", "")),
@@ -163,11 +168,13 @@ def _build_job_detail(doc, config) -> dict:
     ]
 
     return {
+        "id": job.id if job is not None else "",
         "doc_id": doc.id,
         "current_stage": doc.current_stage,
         "stage_state": doc.stage_state,
         "needs_context": needs_context,
         "context_required": context_required,
+        "embed_image": job.get_embed_image() if job is not None else False,
         "review": review,
         "replay_stages": replay_stages,
     }
@@ -278,6 +285,7 @@ async def upload_document(
     title: Optional[str] = Form(None),
     document_context: Optional[str] = Form(None),
     context_ref: Optional[str] = Form(None),
+    embed_image: bool = Form(False),
 ):
     from core.services.ingest import ingest_upload, SUPPORTED_TYPES
     from adapters.outbound import filesystem as _fs
@@ -301,6 +309,7 @@ async def upload_document(
         title=title or None,
         document_context=document_context or "",
         context_ref=context_ref or None,
+        embed_image=embed_image,
         db=db,
         vault_path=vault_path,
         filesystem=_fs,
@@ -308,7 +317,23 @@ async def upload_document(
     if doc is None:
         return JSONResponse({"error": "Duplicate file — document already exists"}, status_code=409)
 
-    return _build_job_detail(doc, config)
+    # Create initial job row for the first pipeline stage
+    if config.stages:
+        from core.domain.job import Job
+        import uuid as _uuid
+        first_stage = config.stages[0]
+        now_str = _now()
+        first_job = Job(
+            id=str(_uuid.uuid4()),
+            document_id=doc.id,
+            stage=first_stage.name,
+            state="pending",
+            created_at=now_str,
+            updated_at=now_str,
+        )
+        await db.upsert_job(first_job)
+
+    return await _build_job_detail(doc, config, db)
 
 
 @router.get("/documents/{doc_id}", response_model=DocumentDetail, tags=["Documents"])
@@ -320,7 +345,7 @@ async def get_document(request: Request, doc_id: str):
     if doc is None:
         return JSONResponse({"error": "not found"}, status_code=404)
     try:
-        return _build_doc_detail(doc, config)
+        return await _build_doc_detail(doc, config, db)
     except Exception as exc:
         _log.getLogger(__name__).exception("get_document failed for %s", doc_id)
         return JSONResponse({"error": f"build failed: {exc}"}, status_code=500)
@@ -354,7 +379,7 @@ async def patch_document(request: Request, doc_id: str, body: PatchDocumentBody)
         await db.update(updated)
         doc = await db.get(doc_id)
 
-    return _build_doc_detail(doc, config)
+    return await _build_doc_detail(doc, config, db)
 
 
 @router.delete("/documents/{doc_id}", response_model=OkResponse, tags=["Documents"])
@@ -381,6 +406,7 @@ async def get_document_image(request: Request, doc_id: str):
 @router.get("/jobs", response_model=PaginatedJobs, tags=["Jobs"])
 async def list_jobs(
     request: Request,
+    documentId: Optional[str] = Query(default=None),
     stages: Optional[str] = Query(default=None),
     states: Optional[str] = Query(default=None),
     sort: str = Query(default="pipeline"),
@@ -389,6 +415,13 @@ async def list_jobs(
 ):
     db = request.app.state.db
     config = request.app.state.pipeline
+
+    if documentId:
+        doc = await db.get(documentId)
+        if doc is None:
+            return JSONResponse({"error": "not found"}, status_code=404)
+        return {"data": [_job_summary(doc, config)], "nextPageToken": None}
+
     stage_list = [s.strip() for s in stages.split(",")] if stages else None
     state_list = [s.strip() for s in states.split(",")] if states else None
     token = decode_page_token(pageToken) if pageToken else None
@@ -399,32 +432,58 @@ async def list_jobs(
     return {"data": [_job_summary(d, config) for d in docs], "nextPageToken": next_token}
 
 
-# ── Per-document Jobs ──────────────────────────────────────────────────────────
+@router.patch("/jobs/{job_id}", response_model=JobDetail, tags=["Jobs"])
+async def patch_job(request: Request, job_id: str, body: PatchJobBody):
+    db = request.app.state.db
+    config = request.app.state.pipeline
+    job = await db.get_job_by_id(job_id)
+    if job is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    doc = await db.get(job.document_id)
+    if doc is None:
+        return JSONResponse({"error": "document not found"}, status_code=404)
 
-@router.get("/documents/{doc_id}/jobs", response_model=JobDetail, tags=["Jobs"])
-async def get_job(request: Request, doc_id: str):
+    now_str = _now()
+    new_config = dict(job.config)
+    if body.embed_image is not None:
+        new_config["embed_image"] = body.embed_image
+    await db.update_job_config(job_id, new_config, now_str)
+    return await _build_job_detail(doc, config, db)
+
+
+# ── Per-job endpoints ─────────────────────────────────────────────────────────
+
+@router.get("/jobs/{job_id}", response_model=JobDetail, tags=["Jobs"])
+async def get_job(request: Request, job_id: str):
     import logging as _log
     db = request.app.state.db
     config = request.app.state.pipeline
-    doc = await db.get(doc_id)
-    if doc is None:
+    job = await db.get_job_by_id(job_id)
+    if job is None:
         return JSONResponse({"error": "not found"}, status_code=404)
+    doc = await db.get(job.document_id)
+    if doc is None:
+        return JSONResponse({"error": "document not found"}, status_code=404)
     try:
-        return _build_job_detail(doc, config)
+        return await _build_job_detail(doc, config, db)
     except Exception as exc:
-        _log.getLogger(__name__).exception("get_job failed for %s", doc_id)
+        _log.getLogger(__name__).exception("get_job failed for %s", job_id)
         return JSONResponse({"error": f"build failed: {exc}"}, status_code=500)
 
 
-@router.get("/documents/{doc_id}/jobs/stream", tags=["Jobs"])
-async def job_token_stream(request: Request, doc_id: str):
-    """SSE stream of LLM tokens while the document's job is running."""
+@router.get("/jobs/{job_id}/stream", tags=["Jobs"])
+async def job_token_stream(request: Request, job_id: str):
+    """SSE stream of LLM tokens while the job is running."""
     from adapters.outbound import streams as _streams
     db = request.app.state.db
 
-    doc = await db.get(doc_id)
-    if doc is None:
+    job = await db.get_job_by_id(job_id)
+    if job is None:
         return JSONResponse({"error": "not found"}, status_code=404)
+    doc = await db.get(job.document_id)
+    if doc is None:
+        return JSONResponse({"error": "document not found"}, status_code=404)
+    doc_id = doc.id
     initial_state = f"{doc.current_stage}:{doc.stage_state}"
 
     async def generate():
@@ -457,16 +516,16 @@ async def job_token_stream(request: Request, doc_id: str):
     )
 
 
-@router.get("/documents/{doc_id}/jobs/events", response_model=PaginatedJobEvents, tags=["Jobs"])
+@router.get("/jobs/{job_id}/events", response_model=PaginatedJobEvents, tags=["Jobs"])
 async def list_job_events(
     request: Request,
-    doc_id: str,
+    job_id: str,
     pageSize: int = Query(default=100, ge=1, le=500),
     pageToken: Optional[str] = Query(default=None),
 ):
     db = request.app.state.db
-    doc = await db.get(doc_id)
-    if doc is None:
+    job = await db.get_job_by_id(job_id)
+    if job is None:
         return JSONResponse({"error": "not found"}, status_code=404)
 
     after_id: Optional[int] = None
@@ -475,18 +534,22 @@ async def list_job_events(
         if token:
             after_id = token.get("id")
 
-    events, next_after = await db.get_events_paginated(doc_id, page_size=pageSize, after_id=after_id)
+    events, next_after = await db.get_events_paginated(job.document_id, page_size=pageSize, after_id=after_id)
     next_token = encode_page_token(None, str(next_after)) if next_after is not None else None
     return {"data": events, "nextPageToken": next_token}
 
 
-@router.post("/documents/{doc_id}/jobs/events", response_model=JobDetail, tags=["Jobs"])
-async def post_job_event(request: Request, doc_id: str, body: JobEventBody):
+@router.post("/jobs/{job_id}/events", response_model=JobDetail, tags=["Jobs"])
+async def post_job_event(request: Request, job_id: str, body: JobEventBody):
     db = request.app.state.db
     config = request.app.state.pipeline
-    doc = await db.get(doc_id)
-    if doc is None:
+    job = await db.get_job_by_id(job_id)
+    if job is None:
         return JSONResponse({"error": "not found"}, status_code=404)
+    doc = await db.get(job.document_id)
+    if doc is None:
+        return JSONResponse({"error": "document not found"}, status_code=404)
+    doc_id = doc.id
 
     now_str = _now()
     event_type = body.type
@@ -503,12 +566,12 @@ async def post_job_event(request: Request, doc_id: str, body: JobEventBody):
             doc = replace(doc, stage_data=stage_data)
             await db.update(doc)
         updated = await review_service.approve(doc, config, db, now_str)
-        return _build_job_detail(updated, config)
+        return await _build_job_detail(updated, config, db)
 
     # ── reject ─────────────────────────────────────────────────────────────────
     if event_type == "reject":
         updated = await review_service.reject(doc, config, db, now_str)
-        return _build_job_detail(updated, config)
+        return await _build_job_detail(updated, config, db)
 
     # ── clarify ────────────────────────────────────────────────────────────────
     if event_type == "clarify":
@@ -525,21 +588,21 @@ async def post_job_event(request: Request, doc_id: str, body: JobEventBody):
             doc, clarification_responses, config, db, now_str,
             free_prompt=free_prompt, edited_text=edited_text,
         )
-        return _build_job_detail(updated, config)
+        return await _build_job_detail(updated, config, db)
 
     # ── retry ──────────────────────────────────────────────────────────────────
     if event_type == "retry":
         updated = replace(doc, stage_state="pending", updated_at=now_str)
         await db.update(updated)
         await db.append_event(doc_id, doc.current_stage, "retried", now_str)
-        return _build_job_detail(updated, config)
+        return await _build_job_detail(updated, config, db)
 
     # ── stop ───────────────────────────────────────────────────────────────────
     if event_type == "stop":
         updated = replace(doc, stage_state="error", updated_at=now_str)
         await db.update(updated)
         await db.append_event(doc_id, doc.current_stage, "stopped", now_str)
-        return _build_job_detail(updated, config)
+        return await _build_job_detail(updated, config, db)
 
     # ── replay ─────────────────────────────────────────────────────────────────
     if event_type == "replay":
@@ -555,8 +618,13 @@ async def post_job_event(request: Request, doc_id: str, body: JobEventBody):
         updated = replace(doc, current_stage=stage_name, stage_state="pending",
                           stage_data=stage_data, updated_at=now_str)
         await db.update(updated)
+        # Reset target stage job row so it re-runs cleanly
+        existing_job = await db.get_job(doc_id, stage_name)
+        if existing_job is not None:
+            from dataclasses import replace as _dc_replace
+            await db.upsert_job(_dc_replace(existing_job, state="pending", updated_at=now_str))
         await db.append_event(doc_id, stage_name, "replayed", now_str)
-        return _build_job_detail(updated, config)
+        return await _build_job_detail(updated, config, db)
 
     # ── provide_context ────────────────────────────────────────────────────────
     if event_type == "provide_context":
@@ -580,13 +648,13 @@ async def post_job_event(request: Request, doc_id: str, body: JobEventBody):
                           stage_state=new_state, updated_at=now_str)
         await db.update(updated)
         await db.append_event(doc_id, doc.current_stage, "context_set", now_str)
-        return _build_job_detail(updated, config)
+        return await _build_job_detail(updated, config, db)
 
     # ── clear_errors ───────────────────────────────────────────────────────────
     if event_type == "clear_errors":
         await db.clear_errors(doc_id)
         doc = await db.get(doc_id)
-        return _build_job_detail(doc, config)
+        return await _build_job_detail(doc, config, db)
 
     return JSONResponse({"error": f"unknown event type: {event_type}"}, status_code=400)
 

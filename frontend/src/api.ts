@@ -9,9 +9,10 @@ import {
   patchDocumentApiV1DocumentsDocIdPatch,
   deleteDocumentApiV1DocumentsDocIdDelete,
   listJobsApiV1JobsGet,
-  getJobApiV1DocumentsDocIdJobsGet,
-  postJobEventApiV1DocumentsDocIdJobsEventsPost,
-  listJobEventsApiV1DocumentsDocIdJobsEventsGet,
+  getJobApiV1JobsJobIdGet,
+  patchJobApiV1JobsJobIdPatch,
+  postJobEventApiV1JobsJobIdEventsPost,
+  listJobEventsApiV1JobsJobIdEventsGet,
   listContextsApiV1ContextsGet,
   createContextApiV1ContextsPost,
   updateContextApiV1ContextsContextIdPatch,
@@ -99,8 +100,9 @@ export const api = {
     unwrap(deleteDocumentApiV1DocumentsDocIdDelete({ path: { doc_id: id } })),
 
   // ── Jobs ──────────────────────────────────────────────────────────────────
-  jobs: (params?: { stages?: string; states?: string; sort?: string; pageToken?: string; pageSize?: number }) =>
+  jobs: (params?: { documentId?: string; stages?: string; states?: string; sort?: string; pageToken?: string; pageSize?: number }) =>
     unwrap(listJobsApiV1JobsGet({ query: {
+      documentId: params?.documentId,
       stages: params?.stages,
       states: params?.states,
       sort: params?.sort,
@@ -108,11 +110,14 @@ export const api = {
       pageSize: params?.pageSize,
     }})),
 
-  job: (id: string) =>
-    unwrap(getJobApiV1DocumentsDocIdJobsGet({ path: { doc_id: id } })),
+  job: (jobId: string) =>
+    unwrap(getJobApiV1JobsJobIdGet({ path: { job_id: jobId } })),
+
+  updateJob: (jobId: string, patch: { embed_image?: boolean }) =>
+    unwrap(patchJobApiV1JobsJobIdPatch({ path: { job_id: jobId }, body: patch })),
 
   postJobEvent: (
-    id: string,
+    jobId: string,
     event:
       | { type: 'approve'; edited_text?: string }
       | { type: 'reject' }
@@ -123,10 +128,10 @@ export const api = {
       | { type: 'provide_context'; document_context?: string; context_ref?: string | null }
       | { type: 'clear_errors' },
   ) =>
-    unwrap(postJobEventApiV1DocumentsDocIdJobsEventsPost({ path: { doc_id: id }, body: event as never })),
+    unwrap(postJobEventApiV1JobsJobIdEventsPost({ path: { job_id: jobId }, body: event as never })),
 
-  jobEvents: (id: string, pageSize = 100) =>
-    unwrap(listJobEventsApiV1DocumentsDocIdJobsEventsGet({ path: { doc_id: id }, query: { pageSize } })),
+  jobEvents: (jobId: string, pageSize = 100) =>
+    unwrap(listJobEventsApiV1JobsJobIdEventsGet({ path: { job_id: jobId }, query: { pageSize } })),
 
   // ── Contexts ──────────────────────────────────────────────────────────────
   contexts: () =>

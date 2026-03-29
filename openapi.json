@@ -391,6 +391,22 @@
         "operationId": "list_jobs_api_v1_jobs_get",
         "parameters": [
           {
+            "name": "documentId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Documentid"
+            }
+          },
+          {
             "name": "stages",
             "in": "query",
             "required": false,
@@ -485,21 +501,71 @@
         }
       }
     },
-    "/api/v1/documents/{doc_id}/jobs": {
+    "/api/v1/jobs/{job_id}": {
+      "patch": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "Patch Job",
+        "operationId": "patch_job_api_v1_jobs__job_id__patch",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchJobBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "get": {
         "tags": [
           "Jobs"
         ],
         "summary": "Get Job",
-        "operationId": "get_job_api_v1_documents__doc_id__jobs_get",
+        "operationId": "get_job_api_v1_jobs__job_id__get",
         "parameters": [
           {
-            "name": "doc_id",
+            "name": "job_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Doc Id"
+              "title": "Job Id"
             }
           }
         ],
@@ -527,22 +593,22 @@
         }
       }
     },
-    "/api/v1/documents/{doc_id}/jobs/stream": {
+    "/api/v1/jobs/{job_id}/stream": {
       "get": {
         "tags": [
           "Jobs"
         ],
         "summary": "Job Token Stream",
-        "description": "SSE stream of LLM tokens while the document's job is running.",
-        "operationId": "job_token_stream_api_v1_documents__doc_id__jobs_stream_get",
+        "description": "SSE stream of LLM tokens while the job is running.",
+        "operationId": "job_token_stream_api_v1_jobs__job_id__stream_get",
         "parameters": [
           {
-            "name": "doc_id",
+            "name": "job_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Doc Id"
+              "title": "Job Id"
             }
           }
         ],
@@ -568,21 +634,21 @@
         }
       }
     },
-    "/api/v1/documents/{doc_id}/jobs/events": {
+    "/api/v1/jobs/{job_id}/events": {
       "get": {
         "tags": [
           "Jobs"
         ],
         "summary": "List Job Events",
-        "operationId": "list_job_events_api_v1_documents__doc_id__jobs_events_get",
+        "operationId": "list_job_events_api_v1_jobs__job_id__events_get",
         "parameters": [
           {
-            "name": "doc_id",
+            "name": "job_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Doc Id"
+              "title": "Job Id"
             }
           },
           {
@@ -642,15 +708,15 @@
           "Jobs"
         ],
         "summary": "Post Job Event",
-        "operationId": "post_job_event_api_v1_documents__doc_id__jobs_events_post",
+        "operationId": "post_job_event_api_v1_jobs__job_id__events_post",
         "parameters": [
           {
-            "name": "doc_id",
+            "name": "job_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Doc Id"
+              "title": "Job Id"
             }
           }
         ],
@@ -1221,6 +1287,11 @@
               }
             ],
             "title": "Context Ref"
+          },
+          "embed_image": {
+            "type": "boolean",
+            "title": "Embed Image",
+            "default": false
           }
         },
         "type": "object",
@@ -1439,6 +1510,18 @@
             "title": "Context Ref",
             "description": "UUID of a saved context entry linked to this document."
           },
+          "current_job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Job Id",
+            "description": "UUID of the active job row for the current pipeline stage."
+          },
           "has_image": {
             "type": "boolean",
             "title": "Has Image",
@@ -1538,6 +1621,11 @@
       },
       "JobDetail": {
         "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "UUID of the active job row for the current stage."
+          },
           "doc_id": {
             "type": "string",
             "format": "uuid",
@@ -1562,6 +1650,11 @@
             "title": "Context Required",
             "description": "True when the current stage requires context before it can run at all."
           },
+          "embed_image": {
+            "type": "boolean",
+            "title": "Embed Image",
+            "description": "Whether the embed stage should include a visual image vector."
+          },
           "review": {
             "anyOf": [
               {
@@ -1584,11 +1677,13 @@
         },
         "type": "object",
         "required": [
+          "id",
           "doc_id",
           "current_stage",
           "stage_state",
           "needs_context",
           "context_required",
+          "embed_image",
           "replay_stages"
         ],
         "title": "JobDetail"
@@ -1935,6 +2030,24 @@
         },
         "type": "object",
         "title": "PatchDocumentBody"
+      },
+      "PatchJobBody": {
+        "properties": {
+          "embed_image": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embed Image",
+            "description": "Set to true/false to control image embedding for the embed stage."
+          }
+        },
+        "type": "object",
+        "title": "PatchJobBody"
       },
       "PipelineDetail": {
         "properties": {

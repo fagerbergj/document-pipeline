@@ -15,7 +15,9 @@ export default function UploadModal({ onClose }: Props) {
   const [error, setError] = useState<string | null>(null)
 
   const uploadMut = useMutation({
-    mutationFn: () => api.uploadDocument(file!, title ? { title } : undefined),
+    mutationFn: () => api.uploadDocument(file!, {
+      ...(title ? { title } : {}),
+    }),
     onSuccess: (job) => {
       onClose()
       navigate(`/documents/${job.doc_id}`)

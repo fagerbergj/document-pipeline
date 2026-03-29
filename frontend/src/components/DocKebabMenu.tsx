@@ -5,6 +5,7 @@ import { api } from '../api'
 
 interface DocKebabMenuProps {
   docId: string
+  jobId?: string
   state: string
   /** If provided, used directly. If omitted, fetched lazily on first open. */
   replayStages?: { name: string }[]
@@ -18,6 +19,7 @@ interface DocKebabMenuProps {
 
 export default function DocKebabMenu({
   docId,
+  jobId,
   state,
   replayStages: providedStages,
   onDelete,
@@ -42,9 +44,9 @@ export default function DocKebabMenu({
   }
 
   useEffect(() => {
-    if (!open || providedStages !== undefined || fetchedStages !== null) return
-    api.job(docId).then(j => setFetchedStages(j.replay_stages)).catch(() => setFetchedStages([]))
-  }, [open, docId, providedStages, fetchedStages])
+    if (!open || providedStages !== undefined || fetchedStages !== null || !jobId) return
+    api.job(jobId).then(j => setFetchedStages(j.replay_stages)).catch(() => setFetchedStages([]))
+  }, [open, jobId, providedStages, fetchedStages])
 
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -62,9 +64,9 @@ export default function DocKebabMenu({
   const [mutError, setMutError] = useState<string | null>(null)
   const onErr = (e: unknown) => setMutError(e instanceof Error ? e.message : String(e))
 
-  const stopMut   = useMutation({ mutationFn: () => api.postJobEvent(docId, { type: 'stop' }),               onSuccess: () => done(onSuccess), onError: onErr })
-  const retryMut  = useMutation({ mutationFn: () => api.postJobEvent(docId, { type: 'retry' }),              onSuccess: () => done(onSuccess), onError: onErr })
-  const replayMut = useMutation({ mutationFn: (s: string) => api.postJobEvent(docId, { type: 'replay', stage: s }), onSuccess: () => done(onSuccess), onError: onErr })
+  const stopMut   = useMutation({ mutationFn: () => api.postJobEvent(jobId!, { type: 'stop' }),               onSuccess: () => done(onSuccess), onError: onErr })
+  const retryMut  = useMutation({ mutationFn: () => api.postJobEvent(jobId!, { type: 'retry' }),              onSuccess: () => done(onSuccess), onError: onErr })
+  const replayMut = useMutation({ mutationFn: (s: string) => api.postJobEvent(jobId!, { type: 'replay', stage: s }), onSuccess: () => done(onSuccess), onError: onErr })
   const deleteMut = useMutation({ mutationFn: () => api.deleteDocument(docId),                               onSuccess: () => done(onDelete), onError: onErr })
 
   return (

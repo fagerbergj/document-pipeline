@@ -42,6 +42,10 @@ export type BodyUploadDocumentApiV1DocumentsPost = {
      * Context Ref
      */
     context_ref?: string | null;
+    /**
+     * Embed Image
+     */
+    embed_image?: boolean;
 };
 
 /**
@@ -195,6 +199,12 @@ export type DocumentDetail = {
      */
     context_ref?: string | null;
     /**
+     * Current Job Id
+     *
+     * UUID of the active job row for the current pipeline stage.
+     */
+    current_job_id?: string | null;
+    /**
      * Has Image
      *
      * True if a source PNG image is available.
@@ -271,6 +281,12 @@ export type HttpValidationError = {
  */
 export type JobDetail = {
     /**
+     * Id
+     *
+     * UUID of the active job row for the current stage.
+     */
+    id: string;
+    /**
      * Doc Id
      *
      * UUID of the document this job belongs to.
@@ -295,6 +311,12 @@ export type JobDetail = {
      * True when the current stage requires context before it can run at all.
      */
     context_required: boolean;
+    /**
+     * Embed Image
+     *
+     * Whether the embed stage should include a visual image vector.
+     */
+    embed_image: boolean;
     /**
      * Present when the document is waiting for human review.
      */
@@ -526,6 +548,18 @@ export type PatchDocumentBody = {
      * UUID of a context entry to link, or null to unlink.
      */
     context_ref?: string | null;
+};
+
+/**
+ * PatchJobBody
+ */
+export type PatchJobBody = {
+    /**
+     * Embed Image
+     *
+     * Set to true/false to control image embedding for the embed stage.
+     */
+    embed_image?: boolean | null;
 };
 
 /**
@@ -1081,6 +1115,10 @@ export type ListJobsApiV1JobsGetData = {
     path?: never;
     query?: {
         /**
+         * Documentid
+         */
+        documentId?: string | null;
+        /**
          * Stages
          */
         stages?: string | null;
@@ -1122,71 +1160,101 @@ export type ListJobsApiV1JobsGetResponses = {
 
 export type ListJobsApiV1JobsGetResponse = ListJobsApiV1JobsGetResponses[keyof ListJobsApiV1JobsGetResponses];
 
-export type GetJobApiV1DocumentsDocIdJobsGetData = {
+export type GetJobApiV1JobsJobIdGetData = {
     body?: never;
     path: {
         /**
-         * Doc Id
+         * Job Id
          */
-        doc_id: string;
+        job_id: string;
     };
     query?: never;
-    url: '/api/v1/documents/{doc_id}/jobs';
+    url: '/api/v1/jobs/{job_id}';
 };
 
-export type GetJobApiV1DocumentsDocIdJobsGetErrors = {
+export type GetJobApiV1JobsJobIdGetErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type GetJobApiV1DocumentsDocIdJobsGetError = GetJobApiV1DocumentsDocIdJobsGetErrors[keyof GetJobApiV1DocumentsDocIdJobsGetErrors];
+export type GetJobApiV1JobsJobIdGetError = GetJobApiV1JobsJobIdGetErrors[keyof GetJobApiV1JobsJobIdGetErrors];
 
-export type GetJobApiV1DocumentsDocIdJobsGetResponses = {
+export type GetJobApiV1JobsJobIdGetResponses = {
     /**
      * Successful Response
      */
     200: JobDetail;
 };
 
-export type GetJobApiV1DocumentsDocIdJobsGetResponse = GetJobApiV1DocumentsDocIdJobsGetResponses[keyof GetJobApiV1DocumentsDocIdJobsGetResponses];
+export type GetJobApiV1JobsJobIdGetResponse = GetJobApiV1JobsJobIdGetResponses[keyof GetJobApiV1JobsJobIdGetResponses];
 
-export type JobTokenStreamApiV1DocumentsDocIdJobsStreamGetData = {
-    body?: never;
+export type PatchJobApiV1JobsJobIdPatchData = {
+    body: PatchJobBody;
     path: {
         /**
-         * Doc Id
+         * Job Id
          */
-        doc_id: string;
+        job_id: string;
     };
     query?: never;
-    url: '/api/v1/documents/{doc_id}/jobs/stream';
+    url: '/api/v1/jobs/{job_id}';
 };
 
-export type JobTokenStreamApiV1DocumentsDocIdJobsStreamGetErrors = {
+export type PatchJobApiV1JobsJobIdPatchErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type JobTokenStreamApiV1DocumentsDocIdJobsStreamGetError = JobTokenStreamApiV1DocumentsDocIdJobsStreamGetErrors[keyof JobTokenStreamApiV1DocumentsDocIdJobsStreamGetErrors];
+export type PatchJobApiV1JobsJobIdPatchError = PatchJobApiV1JobsJobIdPatchErrors[keyof PatchJobApiV1JobsJobIdPatchErrors];
 
-export type JobTokenStreamApiV1DocumentsDocIdJobsStreamGetResponses = {
+export type PatchJobApiV1JobsJobIdPatchResponses = {
+    /**
+     * Successful Response
+     */
+    200: JobDetail;
+};
+
+export type PatchJobApiV1JobsJobIdPatchResponse = PatchJobApiV1JobsJobIdPatchResponses[keyof PatchJobApiV1JobsJobIdPatchResponses];
+
+export type JobTokenStreamApiV1JobsJobIdStreamGetData = {
+    body?: never;
+    path: {
+        /**
+         * Job Id
+         */
+        job_id: string;
+    };
+    query?: never;
+    url: '/api/v1/jobs/{job_id}/stream';
+};
+
+export type JobTokenStreamApiV1JobsJobIdStreamGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type JobTokenStreamApiV1JobsJobIdStreamGetError = JobTokenStreamApiV1JobsJobIdStreamGetErrors[keyof JobTokenStreamApiV1JobsJobIdStreamGetErrors];
+
+export type JobTokenStreamApiV1JobsJobIdStreamGetResponses = {
     /**
      * Successful Response
      */
     200: unknown;
 };
 
-export type ListJobEventsApiV1DocumentsDocIdJobsEventsGetData = {
+export type ListJobEventsApiV1JobsJobIdEventsGetData = {
     body?: never;
     path: {
         /**
-         * Doc Id
+         * Job Id
          */
-        doc_id: string;
+        job_id: string;
     };
     query?: {
         /**
@@ -1198,28 +1266,28 @@ export type ListJobEventsApiV1DocumentsDocIdJobsEventsGetData = {
          */
         pageToken?: string | null;
     };
-    url: '/api/v1/documents/{doc_id}/jobs/events';
+    url: '/api/v1/jobs/{job_id}/events';
 };
 
-export type ListJobEventsApiV1DocumentsDocIdJobsEventsGetErrors = {
+export type ListJobEventsApiV1JobsJobIdEventsGetErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type ListJobEventsApiV1DocumentsDocIdJobsEventsGetError = ListJobEventsApiV1DocumentsDocIdJobsEventsGetErrors[keyof ListJobEventsApiV1DocumentsDocIdJobsEventsGetErrors];
+export type ListJobEventsApiV1JobsJobIdEventsGetError = ListJobEventsApiV1JobsJobIdEventsGetErrors[keyof ListJobEventsApiV1JobsJobIdEventsGetErrors];
 
-export type ListJobEventsApiV1DocumentsDocIdJobsEventsGetResponses = {
+export type ListJobEventsApiV1JobsJobIdEventsGetResponses = {
     /**
      * Successful Response
      */
     200: PaginatedJobEvents;
 };
 
-export type ListJobEventsApiV1DocumentsDocIdJobsEventsGetResponse = ListJobEventsApiV1DocumentsDocIdJobsEventsGetResponses[keyof ListJobEventsApiV1DocumentsDocIdJobsEventsGetResponses];
+export type ListJobEventsApiV1JobsJobIdEventsGetResponse = ListJobEventsApiV1JobsJobIdEventsGetResponses[keyof ListJobEventsApiV1JobsJobIdEventsGetResponses];
 
-export type PostJobEventApiV1DocumentsDocIdJobsEventsPostData = {
+export type PostJobEventApiV1JobsJobIdEventsPostData = {
     /**
      * Body
      */
@@ -1242,31 +1310,31 @@ export type PostJobEventApiV1DocumentsDocIdJobsEventsPostData = {
     } & ClearErrorsEvent);
     path: {
         /**
-         * Doc Id
+         * Job Id
          */
-        doc_id: string;
+        job_id: string;
     };
     query?: never;
-    url: '/api/v1/documents/{doc_id}/jobs/events';
+    url: '/api/v1/jobs/{job_id}/events';
 };
 
-export type PostJobEventApiV1DocumentsDocIdJobsEventsPostErrors = {
+export type PostJobEventApiV1JobsJobIdEventsPostErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type PostJobEventApiV1DocumentsDocIdJobsEventsPostError = PostJobEventApiV1DocumentsDocIdJobsEventsPostErrors[keyof PostJobEventApiV1DocumentsDocIdJobsEventsPostErrors];
+export type PostJobEventApiV1JobsJobIdEventsPostError = PostJobEventApiV1JobsJobIdEventsPostErrors[keyof PostJobEventApiV1JobsJobIdEventsPostErrors];
 
-export type PostJobEventApiV1DocumentsDocIdJobsEventsPostResponses = {
+export type PostJobEventApiV1JobsJobIdEventsPostResponses = {
     /**
      * Successful Response
      */
     200: JobDetail;
 };
 
-export type PostJobEventApiV1DocumentsDocIdJobsEventsPostResponse = PostJobEventApiV1DocumentsDocIdJobsEventsPostResponses[keyof PostJobEventApiV1DocumentsDocIdJobsEventsPostResponses];
+export type PostJobEventApiV1JobsJobIdEventsPostResponse = PostJobEventApiV1JobsJobIdEventsPostResponses[keyof PostJobEventApiV1JobsJobIdEventsPostResponses];
 
 export type ListContextsApiV1ContextsGetData = {
     body?: never;

@@ -83,6 +83,7 @@ async def ingest_upload(
     db,
     vault_path: str,
     filesystem,
+    embed_image: bool = False,
 ) -> Optional[Document]:
     """Create a document from a direct upload. Returns None on duplicate."""
     content_hash = hashlib.sha256(file_bytes).hexdigest()
@@ -134,6 +135,7 @@ async def ingest_upload(
         date_month=date_month,
         png_path=png_path,
         context_ref=context_ref,
+        embed_image=embed_image,
         stage_data={"_ingest": ingest_meta},
     )
 

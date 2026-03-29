@@ -8,6 +8,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+import uuid as _uuid
+from dataclasses import replace as _dc_replace
+
 from core.domain.document import (
     Document,
     advance,
@@ -16,6 +19,7 @@ from core.domain.document import (
     set_running,
     set_waiting,
 )
+from core.domain.job import Job
 from core.domain.pipeline import PipelineConfig, StageDefinition
 
 logger = logging.getLogger(__name__)
@@ -93,8 +97,8 @@ def _extract_title(ingest_meta: dict, ocr_text: str) -> str:
 
 async def _run_ocr(
     doc: Document, stage: StageDefinition, filesystem, ollama_base_url: str
-) -> tuple[dict, str, str]:
-    """Returns (updated_stage_data, title, new_png_path)."""
+) -> tuple[dict, str, str, dict, dict]:
+    """Returns (updated_stage_data, title, new_png_path, input_ref, output_ref)."""
     from adapters.outbound.ollama import generate_vision
 
     if not doc.png_path:
@@ -126,8 +130,11 @@ async def _run_ocr(
     stage_data = dict(doc.stage_data)
     stage_data[stage.name] = {output_field: ocr_text}
 
+    input_refs = [{"type": "png"}]
+    output_refs = [{"stage": stage.name, "field": output_field}]
+
     if doc.title:
-        return stage_data, doc.title, doc.png_path
+        return stage_data, doc.title, doc.png_path, input_refs, output_refs
 
     title = _extract_title(stage_data.get("_ingest", {}), ocr_text)
     safe_title = _sanitize(title)
@@ -138,13 +145,13 @@ async def _run_ocr(
         logger.warning("PNG rename failed: %s", exc)
         new_png_path = doc.png_path
 
-    return stage_data, title, new_png_path
+    return stage_data, title, new_png_path, input_refs, output_refs
 
 
 async def _run_llm_text(
-    doc: Document, stage: StageDefinition, ollama_base_url: str, db=None
-) -> dict:
-    """Returns updated stage_data dict."""
+    doc: Document, stage: StageDefinition, ollama_base_url: str, db=None, job=None
+) -> tuple[dict, str, dict, dict]:
+    """Returns (updated_stage_data, raw_response, input_ref, output_ref)."""
     import json
     import re
     from jinja2 import Template
@@ -152,11 +159,18 @@ async def _run_llm_text(
 
     # Find input value — search all stage_data dicts for stage.input field
     input_text = ""
+    input_src_stage = None
     if stage.input:
-        for _, sdata in doc.stage_data.items():
+        for src_stage, sdata in doc.stage_data.items():
             if isinstance(sdata, dict) and stage.input in sdata:
                 input_text = sdata[stage.input]
+                input_src_stage = src_stage
                 break
+
+    input_refs = [
+        {"stage": input_src_stage, "field": stage.input}
+        if input_src_stage else {"type": "unknown"}
+    ]
 
     # Render Jinja2 prompt
     prompt_text = ""
@@ -172,7 +186,8 @@ async def _run_llm_text(
                     linked_context = e.get("text", "").strip()
                     linked_context_name = e.get("name", "").strip()
                     break
-        qa_history = existing.get("qa_history", [])
+        # Read qa_history from job row if available, else fall back to stage_data
+        qa_history = job.qa_rounds if job is not None else existing.get("qa_history", [])
         free_prompt = existing.get("free_prompt", "")
         previous_output = existing.get("clarified_text", "") if qa_history else ""
         prompt_text = Template(raw_template).render(
@@ -246,7 +261,9 @@ async def _run_llm_text(
     # Build new stage entry, preserving user inputs across re-runs
     existing = doc.stage_data.get(stage.name, {})
     new_entry: dict = {}
-    if existing.get("qa_history"):
+    # qa_history now lives in jobs.qa_rounds — keep in stage_data only as fallback for
+    # pre-migration documents that don't have a job row yet
+    if job is None and existing.get("qa_history"):
         new_entry["qa_history"] = existing["qa_history"]
     if existing.get("free_prompt"):
         new_entry["free_prompt"] = existing["free_prompt"]
@@ -272,24 +289,36 @@ async def _run_llm_text(
 
     stage_data = dict(doc.stage_data)
     stage_data[stage.name] = new_entry
+
+    # Build output_refs
+    if stage.output:
+        output_refs = [{"stage": stage.name, "field": stage.output}]
+    elif stage.outputs:
+        output_refs = [{"stage": stage.name, "field": o["field"]} for o in stage.outputs if o.get("field")]
+    else:
+        output_refs = []
+
     logger.info(
         "LLM text '%s' for %s: keys=%s", stage.name, doc.id[:8], list(new_entry.keys())
     )
-    return stage_data
+    return stage_data, raw_response, input_refs, output_refs
 
 
 async def _run_embed(
-    doc: Document, stage: StageDefinition, ollama_base_url: str, db
-) -> None:
+    doc: Document, stage: StageDefinition, ollama_base_url: str, db, job=None
+) -> tuple[list, list]:
+    """Returns (input_refs, output_refs)."""
     from adapters.outbound.ollama import generate_embed
     from adapters.outbound import qdrant as _qdrant
     from adapters.outbound import open_webui as _open_webui
 
     input_text = ""
+    input_src_stage = None
     if stage.input:
-        for _, sd in doc.stage_data.items():
+        for src_stage, sd in doc.stage_data.items():
             if isinstance(sd, dict) and stage.input in sd:
                 input_text = sd[stage.input]
+                input_src_stage = src_stage
                 break
 
     if not input_text:
@@ -320,7 +349,19 @@ async def _run_embed(
     if doc.date_month:
         metadata["date_month"] = doc.date_month
 
+    input_refs = [
+        {"stage": input_src_stage, "field": stage.input}
+        if input_src_stage else {"type": "unknown"}
+    ]
+    output_refs = []
     now_str = datetime.now(timezone.utc).isoformat()
+
+    # Determine whether to embed the image: job config > doc field > dest config
+    should_embed_image = (
+        (job.get_embed_image() if job is not None else False)
+        or doc.embed_image
+        or False
+    )
 
     for dest in stage.destinations or []:
         dtype = dest.get("type")
@@ -328,8 +369,9 @@ async def _run_embed(
         if dtype == "qdrant":
             text_vector = await generate_embed(ollama_base_url, stage.model, input_text)
 
+            dest_embed_image = should_embed_image or dest.get("embed_image", False)
             image_vector = None
-            if dest.get("embed_image") and doc.png_path:
+            if dest_embed_image and doc.png_path:
                 image_model = dest.get("image_model") or stage.model
                 try:
                     image_bytes = Path(doc.png_path).read_bytes()
@@ -342,7 +384,7 @@ async def _run_embed(
                         "Image embed failed for %s, continuing text-only: %s",
                         doc.id[:8], exc,
                     )
-            elif dest.get("embed_image") and not doc.png_path:
+            elif dest_embed_image and not doc.png_path:
                 logger.warning("embed_image=true but doc %s has no image", doc.id[:8])
 
             payload = {"doc_id": doc.id, "text": input_text, **metadata}
@@ -358,6 +400,7 @@ async def _run_embed(
             await db.append_event(
                 doc.id, stage.name, "synced", now_str, {"destination": "qdrant"}
             )
+            output_refs.append({"type": "qdrant", "collection": dest.get("collection", "remarkable")})
             logger.info(
                 "Embedded %s into qdrant/%s", doc.id[:8], dest.get("collection")
             )
@@ -375,11 +418,14 @@ async def _run_embed(
             await db.append_event(
                 doc.id, stage.name, "synced", now_str, {"destination": "open_webui"}
             )
+            output_refs.append({"type": "open_webui", "knowledge_id": dest.get("knowledge_id", "")})
 
         else:
             logger.warning(
                 "Unknown embed destination type '%s' for doc %s", dtype, doc.id[:8]
             )
+
+    return input_refs, output_refs
 
 
 async def _was_stopped(doc_id: str, db) -> bool:
@@ -391,6 +437,18 @@ async def _was_stopped(doc_id: str, db) -> bool:
     return False
 
 
+def _make_job(doc: Document, stage_name: str, now_str: str, config: dict = None) -> Job:
+    return Job(
+        id=str(_uuid.uuid4()),
+        document_id=doc.id,
+        stage=stage_name,
+        state="pending",
+        config=config or {},
+        created_at=now_str,
+        updated_at=now_str,
+    )
+
+
 async def _process_document(
     doc: Document,
     stage: StageDefinition,
@@ -400,7 +458,15 @@ async def _process_document(
     config: PipelineConfig,
 ):
     now_str = datetime.now(timezone.utc).isoformat()
+
+    # Ensure a job row exists for this stage; create one if missing
+    job = await db.get_job(doc.id, stage.name)
+    if job is None:
+        job = _make_job(doc, stage.name, now_str)
+        await db.upsert_job(job)
+
     await db.update(set_running(doc, now_str))
+    await db.upsert_job(_dc_replace(job, state="running", updated_at=now_str))
     await db.append_event(doc.id, stage.name, "started", now_str)
 
     try:
@@ -426,11 +492,20 @@ async def _process_document(
                     else set_done(updated, now_str)
                 )
                 await db.update(updated)
+                skip_input_refs = [{"type": "text", "stage": "_ingest", "field": "raw_text"}]
+                skip_output_refs = [{"stage": stage.name, "field": output_field}]
+                await db.upsert_job(_dc_replace(
+                    job, state="done",
+                    input_refs=skip_input_refs, output_refs=skip_output_refs,
+                    updated_at=now_str,
+                ))
+                if next_stage:
+                    await db.upsert_job(_make_job(updated, next_stage.name, now_str))
                 await db.append_event(doc.id, stage.name, "skipped", now_str)
                 logger.info("Doc %s — skipped %s (text upload)", doc.id[:8], stage.name)
                 return
 
-            stage_data, title, png_path = await _run_ocr(
+            stage_data, title, png_path, input_refs, output_refs = await _run_ocr(
                 doc, stage, filesystem, ollama_base_url
             )
             if await _was_stopped(doc.id, db):
@@ -450,20 +525,31 @@ async def _process_document(
                 else set_done(updated, now_str)
             )
             await db.update(updated)
+            await db.upsert_job(_dc_replace(
+                job, state="done",
+                input_refs=input_refs, output_refs=output_refs,
+                updated_at=now_str,
+            ))
+            if next_stage:
+                await db.upsert_job(_make_job(updated, next_stage.name, now_str))
             await db.append_event(doc.id, stage.name, "completed", now_str)
             logger.info("Doc %s → %s", doc.id[:8], updated.current_stage)
 
         elif stage.type == "llm_text":
             if not _check_start_if(doc, stage):
                 await db.update(set_waiting(doc, now_str))
+                await db.upsert_job(_dc_replace(job, state="waiting", updated_at=now_str))
                 return
-            stage_data = await _run_llm_text(doc, stage, ollama_base_url, db=db)
+            stage_data, raw_response, input_refs, output_refs = await _run_llm_text(
+                doc, stage, ollama_base_url, db=db, job=job
+            )
             from adapters.outbound import streams as _streams
 
             if await _was_stopped(doc.id, db):
                 await _streams.put_done(doc.id)
                 return
             now_str = datetime.now(timezone.utc).isoformat()
+            new_llm_log = list(job.llm_log) + [raw_response]
             if not _check_continue_if(stage_data, stage):
                 # Park for human review at current stage
                 updated = replace(
@@ -473,6 +559,11 @@ async def _process_document(
                     updated_at=now_str,
                 )
                 await db.update(updated)
+                await db.upsert_job(_dc_replace(
+                    job, state="waiting",
+                    input_refs=input_refs, llm_log=new_llm_log,
+                    updated_at=now_str,
+                ))
                 await db.append_event(doc.id, stage.name, "awaiting_review", now_str)
                 await _streams.put_done(doc.id)
                 return
@@ -484,12 +575,20 @@ async def _process_document(
                 else set_done(updated, now_str)
             )
             await db.update(updated)
+            await db.upsert_job(_dc_replace(
+                job, state="done",
+                input_refs=input_refs, output_refs=output_refs,
+                llm_log=new_llm_log,
+                updated_at=now_str,
+            ))
+            if next_stage:
+                await db.upsert_job(_make_job(updated, next_stage.name, now_str))
             await db.append_event(doc.id, stage.name, "completed", now_str)
             await _streams.put_done(doc.id)
             logger.info("Doc %s → %s", doc.id[:8], updated.current_stage)
 
         elif stage.type == "embed":
-            await _run_embed(doc, stage, ollama_base_url, db)
+            input_refs, output_refs = await _run_embed(doc, stage, ollama_base_url, db, job=job)
             now_str = datetime.now(timezone.utc).isoformat()
             next_stage = config.next_stage(stage.name)
             updated = (
@@ -498,6 +597,13 @@ async def _process_document(
                 else set_done(doc, now_str)
             )
             await db.update(updated)
+            await db.upsert_job(_dc_replace(
+                job, state="done",
+                input_refs=input_refs, output_refs=output_refs,
+                updated_at=now_str,
+            ))
+            if next_stage:
+                await db.upsert_job(_make_job(updated, next_stage.name, now_str))
             await db.append_event(doc.id, stage.name, "completed", now_str)
             logger.info("Doc %s → %s", doc.id[:8], updated.current_stage)
 
@@ -531,9 +637,11 @@ async def _process_document(
             )
             await asyncio.sleep(backoff)
             await db.update(replace(doc, stage_state="pending", updated_at=now_str))
+            await db.upsert_job(_dc_replace(job, state="pending", updated_at=now_str))
         else:
             logger.error("Doc %s exhausted retries for '%s'", doc.id[:8], stage.name)
             await db.update(set_error(doc, now_str))
+            await db.upsert_job(_dc_replace(job, state="error", updated_at=now_str))
 
 
 async def run_worker(config: PipelineConfig, db, vault_path: str, ollama_base_url: str):

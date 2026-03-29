@@ -17,6 +17,7 @@ class Document:
     png_path: Optional[str] = None
     duplicate_of: Optional[str] = None
     context_ref: Optional[str] = None
+    embed_image: bool = False
     stage_data: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
@@ -31,6 +32,7 @@ class Document:
             "date_month": self.date_month,
             "png_path": self.png_path,
             "duplicate_of": self.duplicate_of,
+            "embed_image": self.embed_image,
             "stage_data": self.stage_data,
         }
 

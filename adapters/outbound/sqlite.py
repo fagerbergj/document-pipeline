@@ -8,6 +8,7 @@ from typing import Optional
 import aiosqlite
 
 from core.domain.document import Document
+from core.domain.job import Job
 
 _CREATE_CONTEXTS = """
 CREATE TABLE IF NOT EXISTS contexts (
@@ -85,11 +86,29 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 )
 """
 
+_CREATE_JOBS = """
+CREATE TABLE IF NOT EXISTS jobs (
+    id          TEXT PRIMARY KEY,
+    document_id TEXT NOT NULL REFERENCES documents(id),
+    stage       TEXT NOT NULL,
+    state       TEXT NOT NULL DEFAULT 'pending',
+    config      TEXT NOT NULL DEFAULT '{}',
+    input_refs  TEXT NOT NULL DEFAULT '[]',
+    output_refs TEXT NOT NULL DEFAULT '[]',
+    llm_log     TEXT NOT NULL DEFAULT '[]',
+    qa_rounds   TEXT NOT NULL DEFAULT '[]',
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL,
+    UNIQUE(document_id, stage)
+)
+"""
+
 _INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_documents_stage ON documents(current_stage, stage_state)",
     "CREATE INDEX IF NOT EXISTS idx_documents_hash ON documents(content_hash)",
     "CREATE INDEX IF NOT EXISTS idx_events_document ON stage_events(document_id, stage, event_type)",
     "CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id, id ASC)",
+    "CREATE INDEX IF NOT EXISTS idx_jobs_document ON jobs(document_id, stage)",
 ]
 
 
@@ -111,6 +130,7 @@ class Database:
         await self._conn.execute(_CREATE_KEY_VALUE)
         await self._conn.execute(_CREATE_CHAT_SESSIONS)
         await self._conn.execute(_CREATE_CHAT_MESSAGES)
+        await self._conn.execute(_CREATE_JOBS)
         for idx in _INDEXES:
             await self._conn.execute(idx)
         # Migration: add context_ref column if this is an existing DB
@@ -121,26 +141,53 @@ class Database:
             )
         except Exception:
             pass  # column already exists
+        # Migration: add embed_image column if this is an existing DB
+        try:
+            await self._conn.execute(
+                "ALTER TABLE documents ADD COLUMN embed_image INTEGER NOT NULL DEFAULT 0"
+            )
+        except Exception:
+            pass  # column already exists
         await self._conn.commit()
+        # Backfill jobs table from existing documents (idempotent — INSERT OR IGNORE)
+        await self._backfill_jobs()
 
     async def close(self):
         if self._conn:
             await self._conn.close()
 
     def _row_to_doc(self, row) -> Document:
+        d = dict(row)
         return Document(
-            id=row["id"],
-            content_hash=row["content_hash"],
-            created_at=row["created_at"],
-            updated_at=row["updated_at"],
-            current_stage=row["current_stage"],
-            stage_state=row["stage_state"],
-            title=row["title"],
-            date_month=row["date_month"],
-            png_path=row["png_path"],
-            duplicate_of=row["duplicate_of"],
-            context_ref=row["context_ref"],
-            stage_data=json.loads(row["stage_data"] or "{}"),
+            id=d["id"],
+            content_hash=d["content_hash"],
+            created_at=d["created_at"],
+            updated_at=d["updated_at"],
+            current_stage=d["current_stage"],
+            stage_state=d["stage_state"],
+            title=d["title"],
+            date_month=d["date_month"],
+            png_path=d["png_path"],
+            duplicate_of=d["duplicate_of"],
+            context_ref=d.get("context_ref"),
+            embed_image=bool(d.get("embed_image", 0)),
+            stage_data=json.loads(d["stage_data"] or "{}"),
+        )
+
+    def _row_to_job(self, row) -> Job:
+        d = dict(row)
+        return Job(
+            id=d["id"],
+            document_id=d["document_id"],
+            stage=d["stage"],
+            state=d["state"],
+            config=json.loads(d["config"] or "{}"),
+            input_refs=json.loads(d.get("input_refs") or "[]"),
+            output_refs=json.loads(d.get("output_refs") or "[]"),
+            llm_log=json.loads(d["llm_log"] or "[]"),
+            qa_rounds=json.loads(d["qa_rounds"] or "[]"),
+            created_at=d["created_at"],
+            updated_at=d["updated_at"],
         )
 
     async def get_by_hash(self, content_hash: str) -> Optional[Document]:
@@ -154,12 +201,13 @@ class Database:
         await self._conn.execute(
             """INSERT INTO documents
                (id, content_hash, created_at, updated_at, current_stage, stage_state,
-                title, date_month, png_path, duplicate_of, context_ref, stage_data)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                title, date_month, png_path, duplicate_of, context_ref, embed_image, stage_data)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 doc.id, doc.content_hash, doc.created_at, doc.updated_at,
                 doc.current_stage, doc.stage_state, doc.title, doc.date_month,
                 doc.png_path, doc.duplicate_of, doc.context_ref,
+                1 if doc.embed_image else 0,
                 json.dumps(doc.stage_data),
             ),
         )
@@ -169,12 +217,14 @@ class Database:
         await self._conn.execute(
             """UPDATE documents SET
                updated_at=?, current_stage=?, stage_state=?,
-               title=?, date_month=?, png_path=?, duplicate_of=?, context_ref=?, stage_data=?
+               title=?, date_month=?, png_path=?, duplicate_of=?, context_ref=?,
+               embed_image=?, stage_data=?
                WHERE id=?""",
             (
                 doc.updated_at, doc.current_stage, doc.stage_state,
                 doc.title, doc.date_month, doc.png_path, doc.duplicate_of,
-                doc.context_ref, json.dumps(doc.stage_data), doc.id,
+                doc.context_ref, 1 if doc.embed_image else 0,
+                json.dumps(doc.stage_data), doc.id,
             ),
         )
         await self._conn.commit()
@@ -187,11 +237,14 @@ class Database:
             return self._row_to_doc(row) if row else None
 
     async def reset_running(self) -> int:
-        """On startup, reset any docs stuck in 'running' back to 'pending'."""
+        """On startup, reset any docs/jobs stuck in 'running' back to 'pending'."""
         async with self._conn.execute(
             "UPDATE documents SET stage_state='pending' WHERE stage_state='running'"
         ) as cur:
             count = cur.rowcount
+        await self._conn.execute(
+            "UPDATE jobs SET state='pending' WHERE state='running'"
+        )
         await self._conn.commit()
         return count
 
@@ -271,6 +324,7 @@ class Database:
     async def delete(self, document_id: str) -> None:
         await self._conn.execute("DELETE FROM stage_events WHERE document_id=?", (document_id,))
         await self._conn.execute("DELETE FROM document_destinations WHERE document_id=?", (document_id,))
+        await self._conn.execute("DELETE FROM jobs WHERE document_id=?", (document_id,))
         await self._conn.execute("DELETE FROM documents WHERE id=?", (document_id,))
         await self._conn.commit()
 
@@ -301,6 +355,167 @@ class Database:
         ) as cur:
             stage_counts = {row["current_stage"]: row["cnt"] for row in await cur.fetchall()}
         return {**state_counts, "by_stage": stage_counts}
+
+    # ── Jobs ──────────────────────────────────────────────────────────────────
+
+    async def upsert_job(self, job: Job) -> None:
+        await self._conn.execute(
+            """INSERT INTO jobs
+               (id, document_id, stage, state, config, input_refs, output_refs,
+                llm_log, qa_rounds, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(document_id, stage) DO UPDATE SET
+                 state=excluded.state,
+                 config=excluded.config,
+                 input_refs=excluded.input_refs,
+                 output_refs=excluded.output_refs,
+                 llm_log=excluded.llm_log,
+                 qa_rounds=excluded.qa_rounds,
+                 updated_at=excluded.updated_at""",
+            (
+                job.id, job.document_id, job.stage, job.state,
+                json.dumps(job.config),
+                json.dumps(job.input_refs),
+                json.dumps(job.output_refs),
+                json.dumps(job.llm_log),
+                json.dumps(job.qa_rounds),
+                job.created_at, job.updated_at,
+            ),
+        )
+        await self._conn.commit()
+
+    async def get_job(self, document_id: str, stage: str) -> Optional[Job]:
+        async with self._conn.execute(
+            "SELECT * FROM jobs WHERE document_id=? AND stage=?", (document_id, stage)
+        ) as cur:
+            row = await cur.fetchone()
+            return self._row_to_job(row) if row else None
+
+    async def get_job_by_id(self, job_id: str) -> Optional[Job]:
+        async with self._conn.execute(
+            "SELECT * FROM jobs WHERE id=?", (job_id,)
+        ) as cur:
+            row = await cur.fetchone()
+            return self._row_to_job(row) if row else None
+
+    async def update_job_config(self, job_id: str, config: dict, now: str) -> Optional[Job]:
+        await self._conn.execute(
+            "UPDATE jobs SET config=?, updated_at=? WHERE id=?",
+            (json.dumps(config), now, job_id),
+        )
+        await self._conn.commit()
+        return await self.get_job_by_id(job_id)
+
+    async def list_jobs_for_document(self, document_id: str) -> list[Job]:
+        async with self._conn.execute(
+            "SELECT * FROM jobs WHERE document_id=? ORDER BY created_at ASC",
+            (document_id,),
+        ) as cur:
+            return [self._row_to_job(r) for r in await cur.fetchall()]
+
+    async def get_events_for_job(
+        self,
+        document_id: str,
+        stage: str,
+        page_size: int = 100,
+        after_id: Optional[int] = None,
+    ) -> tuple[list[dict], Optional[int]]:
+        """Return paginated events for a specific (document_id, stage) pair."""
+        params: list = [document_id, stage]
+        where_extra = ""
+        if after_id is not None:
+            where_extra = " AND id > ?"
+            params.append(after_id)
+        async with self._conn.execute(
+            f"SELECT id, timestamp, stage, event_type, data FROM stage_events"
+            f" WHERE document_id=? AND stage=?{where_extra} ORDER BY id ASC LIMIT ?",
+            params + [page_size + 1],
+        ) as cur:
+            rows = await cur.fetchall()
+        events = [
+            {
+                "id": r["id"],
+                "timestamp": r["timestamp"],
+                "stage": r["stage"],
+                "event_type": r["event_type"],
+                "data": json.loads(r["data"]) if r["data"] else None,
+            }
+            for r in rows
+        ]
+        has_more = len(events) > page_size
+        if has_more:
+            events = events[:page_size]
+        next_after = events[-1]["id"] if has_more and events else None
+        return events, next_after
+
+    async def _backfill_jobs(self) -> None:
+        """Create job rows for existing documents that predate the jobs table (idempotent)."""
+        import datetime as _dt
+        _EXCLUDE = {
+            "qa_history", "clarification_requests", "confidence",
+            "document_context_update", "linked_context_update", "free_prompt",
+        }
+        async with self._conn.execute("SELECT * FROM documents") as cur:
+            rows = await cur.fetchall()
+        now = _dt.datetime.utcnow().isoformat() + "Z"
+        for row in rows:
+            doc = self._row_to_doc(row)
+            if doc.current_stage in ("done", "deleted"):
+                # Create done job rows for all stages in stage_data
+                for stage_name, sdata in doc.stage_data.items():
+                    if stage_name == "_ingest" or not isinstance(sdata, dict):
+                        continue
+                    qa_rounds = sdata.get("qa_history", [])
+                    output = {k: v for k, v in sdata.items() if k not in _EXCLUDE}
+                    output_refs = [{"stage": stage_name, "fields": list(output.keys())}] if output else []
+                    await self._conn.execute(
+                        """INSERT OR IGNORE INTO jobs
+                           (id, document_id, stage, state, config, input_refs, output_refs,
+                            llm_log, qa_rounds, created_at, updated_at)
+                           VALUES (?, ?, ?, 'done', '{}', '[]', ?, '[]', ?, ?, ?)""",
+                        (
+                            str(uuid.uuid4()), doc.id, stage_name,
+                            json.dumps(output_refs),
+                            json.dumps(qa_rounds),
+                            doc.created_at, now,
+                        ),
+                    )
+            else:
+                # Create done rows for completed stages (those with data but not current)
+                for stage_name, sdata in doc.stage_data.items():
+                    if stage_name == "_ingest" or not isinstance(sdata, dict):
+                        continue
+                    is_current = (stage_name == doc.current_stage)
+                    state = doc.stage_state if is_current else "done"
+                    qa_rounds = sdata.get("qa_history", [])
+                    output = {k: v for k, v in sdata.items() if k not in _EXCLUDE}
+                    output_refs = [{"stage": stage_name, "fields": list(output.keys())}] if output else []
+                    await self._conn.execute(
+                        """INSERT OR IGNORE INTO jobs
+                           (id, document_id, stage, state, config, input_refs, output_refs,
+                            llm_log, qa_rounds, created_at, updated_at)
+                           VALUES (?, ?, ?, ?, '{}', '[]', ?, '[]', ?, ?, ?)""",
+                        (
+                            str(uuid.uuid4()), doc.id, stage_name, state,
+                            json.dumps(output_refs),
+                            json.dumps(qa_rounds),
+                            doc.created_at, now,
+                        ),
+                    )
+                # Ensure the current stage has a job row even if no stage_data entry yet
+                if doc.current_stage not in doc.stage_data:
+                    await self._conn.execute(
+                        """INSERT OR IGNORE INTO jobs
+                           (id, document_id, stage, state, config, input_refs, output_refs,
+                            llm_log, qa_rounds, created_at, updated_at)
+                           VALUES (?, ?, ?, ?, '{}', '[]', '[]', '[]', '[]', ?, ?)""",
+                        (
+                            str(uuid.uuid4()), doc.id, doc.current_stage,
+                            doc.stage_state,
+                            doc.created_at, now,
+                        ),
+                    )
+        await self._conn.commit()
 
     async def list_documents_paginated(
         self,

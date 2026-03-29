@@ -2,7 +2,7 @@
 
 import { type Client, formDataBodySerializer, type Options as Options2, type TDataShape } from './client';
 import { client } from './client.gen';
-import type { CreateChatSessionApiV1ChatsPostData, CreateChatSessionApiV1ChatsPostErrors, CreateChatSessionApiV1ChatsPostResponses, CreateContextApiV1ContextsPostData, CreateContextApiV1ContextsPostErrors, CreateContextApiV1ContextsPostResponses, DeleteChatSessionApiV1ChatsSessionIdDeleteData, DeleteChatSessionApiV1ChatsSessionIdDeleteErrors, DeleteChatSessionApiV1ChatsSessionIdDeleteResponses, DeleteContextApiV1ContextsContextIdDeleteData, DeleteContextApiV1ContextsContextIdDeleteErrors, DeleteContextApiV1ContextsContextIdDeleteResponses, DeleteDocumentApiV1DocumentsDocIdDeleteData, DeleteDocumentApiV1DocumentsDocIdDeleteErrors, DeleteDocumentApiV1DocumentsDocIdDeleteResponses, GetChatSessionApiV1ChatsSessionIdGetData, GetChatSessionApiV1ChatsSessionIdGetErrors, GetChatSessionApiV1ChatsSessionIdGetResponses, GetDocumentApiV1DocumentsDocIdGetData, GetDocumentApiV1DocumentsDocIdGetErrors, GetDocumentApiV1DocumentsDocIdGetResponses, GetDocumentImageApiV1DocumentsDocIdImageGetData, GetDocumentImageApiV1DocumentsDocIdImageGetErrors, GetDocumentImageApiV1DocumentsDocIdImageGetResponses, GetJobApiV1DocumentsDocIdJobsGetData, GetJobApiV1DocumentsDocIdJobsGetErrors, GetJobApiV1DocumentsDocIdJobsGetResponses, GetPipelineApiV1PipelinesPipelineIdGetData, GetPipelineApiV1PipelinesPipelineIdGetErrors, GetPipelineApiV1PipelinesPipelineIdGetResponses, JobTokenStreamApiV1DocumentsDocIdJobsStreamGetData, JobTokenStreamApiV1DocumentsDocIdJobsStreamGetErrors, JobTokenStreamApiV1DocumentsDocIdJobsStreamGetResponses, ListChatSessionsApiV1ChatsGetData, ListChatSessionsApiV1ChatsGetErrors, ListChatSessionsApiV1ChatsGetResponses, ListContextsApiV1ContextsGetData, ListContextsApiV1ContextsGetResponses, ListDocumentsApiV1DocumentsGetData, ListDocumentsApiV1DocumentsGetErrors, ListDocumentsApiV1DocumentsGetResponses, ListJobEventsApiV1DocumentsDocIdJobsEventsGetData, ListJobEventsApiV1DocumentsDocIdJobsEventsGetErrors, ListJobEventsApiV1DocumentsDocIdJobsEventsGetResponses, ListJobsApiV1JobsGetData, ListJobsApiV1JobsGetErrors, ListJobsApiV1JobsGetResponses, ListPipelinesApiV1PipelinesGetData, ListPipelinesApiV1PipelinesGetResponses, PatchChatSessionApiV1ChatsSessionIdPatchData, PatchChatSessionApiV1ChatsSessionIdPatchErrors, PatchChatSessionApiV1ChatsSessionIdPatchResponses, PatchDocumentApiV1DocumentsDocIdPatchData, PatchDocumentApiV1DocumentsDocIdPatchErrors, PatchDocumentApiV1DocumentsDocIdPatchResponses, PostJobEventApiV1DocumentsDocIdJobsEventsPostData, PostJobEventApiV1DocumentsDocIdJobsEventsPostErrors, PostJobEventApiV1DocumentsDocIdJobsEventsPostResponses, SendChatMessageApiV1ChatsSessionIdMessagesPostData, SendChatMessageApiV1ChatsSessionIdMessagesPostErrors, SendChatMessageApiV1ChatsSessionIdMessagesPostResponses, UpdateContextApiV1ContextsContextIdPatchData, UpdateContextApiV1ContextsContextIdPatchErrors, UpdateContextApiV1ContextsContextIdPatchResponses, UploadDocumentApiV1DocumentsPostData, UploadDocumentApiV1DocumentsPostErrors, UploadDocumentApiV1DocumentsPostResponses } from './types.gen';
+import type { CreateChatSessionApiV1ChatsPostData, CreateChatSessionApiV1ChatsPostErrors, CreateChatSessionApiV1ChatsPostResponses, CreateContextApiV1ContextsPostData, CreateContextApiV1ContextsPostErrors, CreateContextApiV1ContextsPostResponses, DeleteChatSessionApiV1ChatsSessionIdDeleteData, DeleteChatSessionApiV1ChatsSessionIdDeleteErrors, DeleteChatSessionApiV1ChatsSessionIdDeleteResponses, DeleteContextApiV1ContextsContextIdDeleteData, DeleteContextApiV1ContextsContextIdDeleteErrors, DeleteContextApiV1ContextsContextIdDeleteResponses, DeleteDocumentApiV1DocumentsDocIdDeleteData, DeleteDocumentApiV1DocumentsDocIdDeleteErrors, DeleteDocumentApiV1DocumentsDocIdDeleteResponses, GetChatSessionApiV1ChatsSessionIdGetData, GetChatSessionApiV1ChatsSessionIdGetErrors, GetChatSessionApiV1ChatsSessionIdGetResponses, GetDocumentApiV1DocumentsDocIdGetData, GetDocumentApiV1DocumentsDocIdGetErrors, GetDocumentApiV1DocumentsDocIdGetResponses, GetDocumentImageApiV1DocumentsDocIdImageGetData, GetDocumentImageApiV1DocumentsDocIdImageGetErrors, GetDocumentImageApiV1DocumentsDocIdImageGetResponses, GetJobApiV1JobsJobIdGetData, GetJobApiV1JobsJobIdGetErrors, GetJobApiV1JobsJobIdGetResponses, GetPipelineApiV1PipelinesPipelineIdGetData, GetPipelineApiV1PipelinesPipelineIdGetErrors, GetPipelineApiV1PipelinesPipelineIdGetResponses, JobTokenStreamApiV1JobsJobIdStreamGetData, JobTokenStreamApiV1JobsJobIdStreamGetErrors, JobTokenStreamApiV1JobsJobIdStreamGetResponses, ListChatSessionsApiV1ChatsGetData, ListChatSessionsApiV1ChatsGetErrors, ListChatSessionsApiV1ChatsGetResponses, ListContextsApiV1ContextsGetData, ListContextsApiV1ContextsGetResponses, ListDocumentsApiV1DocumentsGetData, ListDocumentsApiV1DocumentsGetErrors, ListDocumentsApiV1DocumentsGetResponses, ListJobEventsApiV1JobsJobIdEventsGetData, ListJobEventsApiV1JobsJobIdEventsGetErrors, ListJobEventsApiV1JobsJobIdEventsGetResponses, ListJobsApiV1JobsGetData, ListJobsApiV1JobsGetErrors, ListJobsApiV1JobsGetResponses, ListPipelinesApiV1PipelinesGetData, ListPipelinesApiV1PipelinesGetResponses, PatchChatSessionApiV1ChatsSessionIdPatchData, PatchChatSessionApiV1ChatsSessionIdPatchErrors, PatchChatSessionApiV1ChatsSessionIdPatchResponses, PatchDocumentApiV1DocumentsDocIdPatchData, PatchDocumentApiV1DocumentsDocIdPatchErrors, PatchDocumentApiV1DocumentsDocIdPatchResponses, PatchJobApiV1JobsJobIdPatchData, PatchJobApiV1JobsJobIdPatchErrors, PatchJobApiV1JobsJobIdPatchResponses, PostJobEventApiV1JobsJobIdEventsPostData, PostJobEventApiV1JobsJobIdEventsPostErrors, PostJobEventApiV1JobsJobIdEventsPostResponses, SendChatMessageApiV1ChatsSessionIdMessagesPostData, SendChatMessageApiV1ChatsSessionIdMessagesPostErrors, SendChatMessageApiV1ChatsSessionIdMessagesPostResponses, UpdateContextApiV1ContextsContextIdPatchData, UpdateContextApiV1ContextsContextIdPatchErrors, UpdateContextApiV1ContextsContextIdPatchResponses, UploadDocumentApiV1DocumentsPostData, UploadDocumentApiV1DocumentsPostErrors, UploadDocumentApiV1DocumentsPostResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -81,25 +81,37 @@ export const listJobsApiV1JobsGet = <ThrowOnError extends boolean = false>(optio
 /**
  * Get Job
  */
-export const getJobApiV1DocumentsDocIdJobsGet = <ThrowOnError extends boolean = false>(options: Options<GetJobApiV1DocumentsDocIdJobsGetData, ThrowOnError>) => (options.client ?? client).get<GetJobApiV1DocumentsDocIdJobsGetResponses, GetJobApiV1DocumentsDocIdJobsGetErrors, ThrowOnError>({ url: '/api/v1/documents/{doc_id}/jobs', ...options });
+export const getJobApiV1JobsJobIdGet = <ThrowOnError extends boolean = false>(options: Options<GetJobApiV1JobsJobIdGetData, ThrowOnError>) => (options.client ?? client).get<GetJobApiV1JobsJobIdGetResponses, GetJobApiV1JobsJobIdGetErrors, ThrowOnError>({ url: '/api/v1/jobs/{job_id}', ...options });
+
+/**
+ * Patch Job
+ */
+export const patchJobApiV1JobsJobIdPatch = <ThrowOnError extends boolean = false>(options: Options<PatchJobApiV1JobsJobIdPatchData, ThrowOnError>) => (options.client ?? client).patch<PatchJobApiV1JobsJobIdPatchResponses, PatchJobApiV1JobsJobIdPatchErrors, ThrowOnError>({
+    url: '/api/v1/jobs/{job_id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 /**
  * Job Token Stream
  *
- * SSE stream of LLM tokens while the document's job is running.
+ * SSE stream of LLM tokens while the job is running.
  */
-export const jobTokenStreamApiV1DocumentsDocIdJobsStreamGet = <ThrowOnError extends boolean = false>(options: Options<JobTokenStreamApiV1DocumentsDocIdJobsStreamGetData, ThrowOnError>) => (options.client ?? client).get<JobTokenStreamApiV1DocumentsDocIdJobsStreamGetResponses, JobTokenStreamApiV1DocumentsDocIdJobsStreamGetErrors, ThrowOnError>({ url: '/api/v1/documents/{doc_id}/jobs/stream', ...options });
+export const jobTokenStreamApiV1JobsJobIdStreamGet = <ThrowOnError extends boolean = false>(options: Options<JobTokenStreamApiV1JobsJobIdStreamGetData, ThrowOnError>) => (options.client ?? client).get<JobTokenStreamApiV1JobsJobIdStreamGetResponses, JobTokenStreamApiV1JobsJobIdStreamGetErrors, ThrowOnError>({ url: '/api/v1/jobs/{job_id}/stream', ...options });
 
 /**
  * List Job Events
  */
-export const listJobEventsApiV1DocumentsDocIdJobsEventsGet = <ThrowOnError extends boolean = false>(options: Options<ListJobEventsApiV1DocumentsDocIdJobsEventsGetData, ThrowOnError>) => (options.client ?? client).get<ListJobEventsApiV1DocumentsDocIdJobsEventsGetResponses, ListJobEventsApiV1DocumentsDocIdJobsEventsGetErrors, ThrowOnError>({ url: '/api/v1/documents/{doc_id}/jobs/events', ...options });
+export const listJobEventsApiV1JobsJobIdEventsGet = <ThrowOnError extends boolean = false>(options: Options<ListJobEventsApiV1JobsJobIdEventsGetData, ThrowOnError>) => (options.client ?? client).get<ListJobEventsApiV1JobsJobIdEventsGetResponses, ListJobEventsApiV1JobsJobIdEventsGetErrors, ThrowOnError>({ url: '/api/v1/jobs/{job_id}/events', ...options });
 
 /**
  * Post Job Event
  */
-export const postJobEventApiV1DocumentsDocIdJobsEventsPost = <ThrowOnError extends boolean = false>(options: Options<PostJobEventApiV1DocumentsDocIdJobsEventsPostData, ThrowOnError>) => (options.client ?? client).post<PostJobEventApiV1DocumentsDocIdJobsEventsPostResponses, PostJobEventApiV1DocumentsDocIdJobsEventsPostErrors, ThrowOnError>({
-    url: '/api/v1/documents/{doc_id}/jobs/events',
+export const postJobEventApiV1JobsJobIdEventsPost = <ThrowOnError extends boolean = false>(options: Options<PostJobEventApiV1JobsJobIdEventsPostData, ThrowOnError>) => (options.client ?? client).post<PostJobEventApiV1JobsJobIdEventsPostResponses, PostJobEventApiV1JobsJobIdEventsPostErrors, ThrowOnError>({
+    url: '/api/v1/jobs/{job_id}/events',
     ...options,
     headers: {
         'Content-Type': 'application/json',
