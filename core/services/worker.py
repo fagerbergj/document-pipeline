@@ -101,6 +101,7 @@ def _make_run(
         "confidence": confidence,
         "questions": questions,
         "suggestions": suggestions,
+        "id": str(_uuid.uuid4()),
         "created_at": now,
         "updated_at": now,
     }

@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, conint
 
@@ -175,7 +175,7 @@ class Confidence(Enum):
 
 
 class Run(BaseModel):
-    id: UUID = Field(..., description='Unique run identifier.')
+    id: UUID = Field(default_factory=uuid4, description='Unique run identifier.')
     inputs: list[RunIOField] = Field(..., description='Fields fed into the LLM.')
     outputs: list[RunIOField] = Field(..., description='Fields produced by the LLM.')
     confidence: Confidence = Field(
