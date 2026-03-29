@@ -88,18 +88,37 @@ export default function Document() {
       </div>
 
       {/* Content */}
-      <div className="p-6 space-y-4">
-        <TitleSection doc={doc} onRefresh={refresh} />
-        <ContextSection doc={doc} onRefresh={refresh} />
-        {job?.status === 'running' && <LiveLogSection jobId={job.id} onDone={refresh} />}
-        {job?.status === 'waiting' && latestRun && (
-          <ReviewSection job={job} run={latestRun} doc={doc} onRefresh={refresh} />
+      <div className="p-6 space-y-8">
+        <section className="space-y-3">
+          <TitleSection doc={doc} onRefresh={refresh} />
+        </section>
+
+        <section className="space-y-3">
+          <h2 className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-widest">Context</h2>
+          <ContextSection doc={doc} onRefresh={refresh} />
+        </section>
+
+        <section className="space-y-3">
+          <h2 className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-widest">Jobs</h2>
+          {job?.status === 'running' && <LiveLogSection jobId={job.id} onDone={refresh} />}
+          {job?.status === 'waiting' && latestRun && (
+            <ReviewSection job={job} run={latestRun} doc={doc} onRefresh={refresh} />
+          )}
+          {job?.status === 'error' && (
+            <ErrorSection job={job} onRefresh={refresh} />
+          )}
+          {doneJobs.length > 0 && <PipelineResultsSection jobs={doneJobs} currentJobId={jobId} />}
+          {!job && doneJobs.length === 0 && (
+            <div className="text-xs text-gray-400 dark:text-gray-500">No jobs yet.</div>
+          )}
+        </section>
+
+        {(doc.artifacts?.length ?? 0) > 0 && (
+          <section className="space-y-3">
+            <h2 className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-widest">Artifacts</h2>
+            <ArtifactsSection doc={doc} />
+          </section>
         )}
-        {job?.status === 'error' && (
-          <ErrorSection job={job} onRefresh={refresh} />
-        )}
-        {doneJobs.length > 0 && <PipelineResultsSection jobs={doneJobs} currentJobId={jobId} />}
-        {(doc.artifacts?.length ?? 0) > 0 && <ArtifactsSection doc={doc} />}
       </div>
     </div>
   )
