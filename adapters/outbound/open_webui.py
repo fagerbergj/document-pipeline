@@ -71,10 +71,13 @@ async def upsert(
             headers={**headers, "Content-Type": "application/json"},
             json={"file_id": file_id},
         )
-        if kb_resp.is_error:
+        if kb_resp.status_code == 400 and "duplicate" in kb_resp.text.lower():
+            logger.warning("Open WebUI duplicate content for %s — file uploaded but not added to KB", doc_id[:8])
+        elif kb_resp.is_error:
             logger.error("Open WebUI knowledge add error %s: %s", kb_resp.status_code, kb_resp.text[:200])
-        kb_resp.raise_for_status()
-        logger.info("Added %s to knowledge base %s", doc_id[:8], knowledge_id)
+            kb_resp.raise_for_status()
+        else:
+            logger.info("Added %s to knowledge base %s", doc_id[:8], knowledge_id)
 
 
 async def delete(
