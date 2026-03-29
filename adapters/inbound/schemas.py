@@ -100,6 +100,8 @@ class DocumentSummary(BaseModel):
     current_job_id: UUID | None = Field(
         None, description='UUID of the most recently active job for this document.'
     )
+    current_job_stage: str | None = Field(None, description='Stage of the current job.')
+    current_job_status: str | None = Field(None, description='Status of the current job.')
     created_at: datetime = Field(..., description='ISO 8601 creation timestamp.')
     updated_at: datetime = Field(..., description='ISO 8601 last-updated timestamp.')
 
