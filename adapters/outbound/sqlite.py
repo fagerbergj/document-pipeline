@@ -480,6 +480,7 @@ class Database:
 
     async def list_jobs_paginated(
         self,
+        job_id: Optional[list[str]] = None,
         document_id: Optional[str | list[str]] = None,
         stages: Optional[list] = None,
         statuses: Optional[list] = None,
@@ -492,6 +493,9 @@ class Database:
         conditions: list[str] = []
         params: list = []
 
+        if job_id:
+            conditions.append(f"id IN ({','.join('?'*len(job_id))})")
+            params.extend(job_id)
         if document_id:
             ids = [document_id] if isinstance(document_id, str) else document_id
             conditions.append(f"document_id IN ({','.join('?'*len(ids))})")

@@ -53,9 +53,7 @@ def _doc_summary(doc, current_job=None) -> dict:
     return {
         "id": str(doc.id),
         "title": doc.title,
-        "current_job_id":     current_job.id     if current_job else None,
-        "current_job_stage":  current_job.stage  if current_job else None,
-        "current_job_status": current_job.status if current_job else None,
+        "current_job_id": current_job.id if current_job else None,
         "created_at": doc.created_at,
         "updated_at": doc.updated_at,
     }
@@ -303,6 +301,7 @@ async def get_artifact(request: Request, doc_id: str, artifact_id: str):
 @router.get("/jobs", response_model=PaginatedJobs, tags=["Jobs"])
 async def list_jobs(
     request: Request,
+    job_id: Optional[str] = Query(default=None),
     document_id: Optional[str] = Query(default=None),
     stages: Optional[str] = Query(default=None),
     statuses: Optional[str] = Query(default=None),
@@ -311,11 +310,13 @@ async def list_jobs(
     page_token: Optional[str] = Query(default=None),
 ):
     db = request.app.state.db
+    job_id_list = [s.strip() for s in job_id.split(",")] if job_id else None
     doc_id_list = [s.strip() for s in document_id.split(",")] if document_id else None
     stage_list = [s.strip() for s in stages.split(",")] if stages else None
     status_list = [s.strip() for s in statuses.split(",")] if statuses else None
     token = decode_page_token(page_token) if page_token else None
     jobs, next_token = await db.list_jobs_paginated(
+        job_id=job_id_list,
         document_id=doc_id_list,
         stages=stage_list,
         statuses=status_list,

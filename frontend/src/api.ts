@@ -52,8 +52,6 @@ export interface DocSummary {
   id: string
   title: string | null
   current_job_id: string | null
-  current_job_stage: string | null
-  current_job_status: string | null
   created_at: string
   updated_at: string
 }
@@ -135,8 +133,9 @@ export const api = {
     unwrap(deleteDocumentApiV1DocumentsDocIdDelete({ path: { doc_id: id } })),
 
   // ── Jobs ──────────────────────────────────────────────────────────────────
-  jobs: (params?: { document_id?: string; stages?: string; statuses?: string; sort?: string; page_token?: string; page_size?: number }) =>
+  jobs: (params?: { job_id?: string; document_id?: string; stages?: string; statuses?: string; sort?: string; page_token?: string; page_size?: number }) =>
     unwrap(listJobsApiV1JobsGet({ query: {
+      job_id: params?.job_id,
       document_id: params?.document_id,
       stages: params?.stages,
       statuses: params?.statuses,

@@ -94,7 +94,7 @@
               "type": "integer",
               "maximum": 200,
               "minimum": 1,
-              "default": 50,
+              "default": 20,
               "title": "Page Size"
             }
           },
@@ -112,6 +112,38 @@
                 }
               ],
               "title": "Page Token"
+            }
+          },
+          {
+            "name": "stages",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stages"
+            }
+          },
+          {
+            "name": "statuses",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Statuses"
             }
           }
         ],
@@ -367,6 +399,22 @@
         "summary": "List Jobs",
         "operationId": "list_jobs_api_v1_jobs_get",
         "parameters": [
+          {
+            "name": "job_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Job Id"
+            }
+          },
           {
             "name": "document_id",
             "in": "query",

@@ -54,6 +54,16 @@ export default function Dashboard() {
   })
 
   const docs = page?.data ?? []
+  const jobIds = docs.map(d => d.current_job_id).filter(Boolean).join(',')
+
+  const { data: jobsPage } = useQuery({
+    queryKey: ['jobs-for-page', jobIds],
+    queryFn: () => api.jobs({ job_id: jobIds, page_size: pageSize }),
+    enabled: !!jobIds,
+    refetchInterval: 10_000,
+  })
+
+  const jobById = Object.fromEntries((jobsPage?.data ?? []).map(j => [j.id, j]))
   const hasNext = !!page?.next_page_token
   const hasPrev = tokenStack.length > 1
 
@@ -142,7 +152,9 @@ export default function Dashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {docs.map(doc => (
+                  {docs.map(doc => {
+                    const job = doc.current_job_id ? jobById[doc.current_job_id] : undefined
+                    return (
                     <tr key={doc.id}
                       onClick={() => navigate(`/documents/${doc.id}`)}
                       className="hover:bg-gray-50 transition-colors group cursor-pointer">
@@ -154,10 +166,10 @@ export default function Dashboard() {
                         />
                       </td>
                       <td className="px-4 py-3">
-                        <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{doc.current_job_stage ?? '—'}</span>
+                        <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{job?.stage ?? '—'}</span>
                       </td>
                       <td className="px-4 py-3">
-                        <StatusBadge state={doc.current_job_status ?? ''} />
+                        <StatusBadge state={job?.status ?? ''} />
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-400 hidden sm:table-cell">
                         {doc.created_at.slice(0, 16).replace('T', ' ')}
@@ -165,15 +177,16 @@ export default function Dashboard() {
                       <td className="px-2 py-3 text-right" onClick={e => e.stopPropagation()}>
                         <DocKebabMenu
                           docId={doc.id}
-                          jobId={doc.current_job_id ?? undefined}
-                          status={doc.current_job_status ?? ''}
+                          jobId={job?.id}
+                          status={job?.status ?? ''}
                           onDelete={() => qc.invalidateQueries({ queryKey: ['documents'] })}
                           onSuccess={() => qc.invalidateQueries({ queryKey: ['documents'] })}
                           buttonClassName="w-7 h-7 flex items-center justify-center rounded text-gray-300 hover:text-gray-600 hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-all text-base leading-none"
                         />
                       </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             )}

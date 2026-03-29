@@ -74,6 +74,8 @@ paths:
         - $ref: '#/components/parameters/page_token'
         - $ref: '#/components/parameters/page_size'
         - $ref: '#/components/parameters/sort_order'
+        - $ref: '#/components/parameters/stages_filter'
+        - $ref: '#/components/parameters/statuses_filter'
       responses:
         '200':
           description: Paginated list of document summaries.
@@ -209,16 +211,21 @@ paths:
       summary: List jobs
       description: |
         Returns a paginated list of jobs with denormalized document title.
-        When `document_id` is provided, returns all jobs for that document (one per stage).
+        `job_id` and `document_id` each accept a comma-separated list of UUIDs.
       operationId: listJobs
       parameters:
+        - name: job_id
+          in: query
+          required: false
+          description: Comma-separated list of job UUIDs for a 1:1 fetch by ID.
+          schema:
+            type: string
         - name: document_id
           in: query
           required: false
-          description: Filter to jobs for a specific document UUID.
+          description: Comma-separated list of document UUIDs to filter jobs by.
           schema:
             type: string
-            format: uuid
         - $ref: '#/components/parameters/page_token'
         - $ref: '#/components/parameters/page_size'
         - $ref: '#/components/parameters/stages_filter'

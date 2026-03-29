@@ -902,6 +902,14 @@ export type ListDocumentsApiV1DocumentsGetData = {
          * Page Token
          */
         page_token?: string | null;
+        /**
+         * Stages
+         */
+        stages?: string | null;
+        /**
+         * Statuses
+         */
+        statuses?: string | null;
     };
     url: '/api/v1/documents';
 };
@@ -1075,6 +1083,10 @@ export type ListJobsApiV1JobsGetData = {
     body?: never;
     path?: never;
     query?: {
+        /**
+         * Job Id
+         */
+        job_id?: string | null;
         /**
          * Document Id
          */
