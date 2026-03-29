@@ -50,8 +50,13 @@ export default function Chat() {
   })
   const contextLibrary = contextsPage?.data ?? []
 
+  // Scroll to bottom only when a new message is added (not on streaming token updates)
+  const messageCountRef = useRef(0)
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (messages.length > messageCountRef.current) {
+      messageCountRef.current = messages.length
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
   }, [messages])
 
   const loadChats = useCallback(async () => {
