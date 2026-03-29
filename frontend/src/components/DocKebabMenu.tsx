@@ -1,13 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { api } from '../api'
-import type { JobStatus } from '../api'
 
 interface DocKebabMenuProps {
   docId: string
-  jobId?: string
-  status: JobStatus | string
   /** Called after delete succeeds — caller decides navigation. */
   onDelete: () => void
   /** Called after stop/retry succeeds. */
@@ -18,8 +15,6 @@ interface DocKebabMenuProps {
 
 export default function DocKebabMenu({
   docId,
-  jobId,
-  status,
   onDelete,
   onSuccess,
   buttonClassName,
@@ -49,14 +44,27 @@ export default function DocKebabMenu({
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  const done = (cb: () => void) => { setOpen(false); cb() }
+  // Fetch jobs for this document when the menu is open
+  const { data: jobsPage } = useQuery({
+    queryKey: ['jobs-for-doc', docId],
+    queryFn: () => api.jobs({ document_id: docId, page_size: 50 }),
+    enabled: open,
+  })
 
+  const jobs = jobsPage?.data ?? []
+  // Current job: first non-done/non-error, else last by updated_at
+  const STATUS_PRI: Record<string, number> = { running: 0, waiting: 1, pending: 2, error: 3, done: 4 }
+  const currentJob = jobs.length
+    ? [...jobs].sort((a, b) => (STATUS_PRI[a.status] ?? 5) - (STATUS_PRI[b.status] ?? 5))[0]
+    : undefined
+
+  const done = (cb: () => void) => { setOpen(false); cb() }
   const [mutError, setMutError] = useState<string | null>(null)
   const onErr = (e: unknown) => setMutError(e instanceof Error ? e.message : String(e))
 
-  const stopMut   = useMutation({ mutationFn: () => api.putJobStatus(jobId!, 'error'),   onSuccess: () => done(onSuccess), onError: onErr })
-  const retryMut  = useMutation({ mutationFn: () => api.putJobStatus(jobId!, 'pending'), onSuccess: () => done(onSuccess), onError: onErr })
-  const deleteMut = useMutation({ mutationFn: () => api.deleteDocument(docId),           onSuccess: () => done(onDelete),  onError: onErr })
+  const stopMut   = useMutation({ mutationFn: () => api.putJobStatus(currentJob!.id, 'error'),   onSuccess: () => done(onSuccess), onError: onErr })
+  const retryMut  = useMutation({ mutationFn: () => api.putJobStatus(currentJob!.id, 'pending'), onSuccess: () => done(onSuccess), onError: onErr })
+  const deleteMut = useMutation({ mutationFn: () => api.deleteDocument(docId),                   onSuccess: () => done(onDelete),  onError: onErr })
 
   return (
     <div ref={wrapRef} className="relative">
@@ -77,13 +85,13 @@ export default function DocKebabMenu({
           {mutError && (
             <div className="px-3 py-2 text-xs text-red-600 bg-red-50 border-b border-red-100">{mutError}</div>
           )}
-          {status === 'running' && (
+          {currentJob?.status === 'running' && (
             <button onClick={() => stopMut.mutate()}
               className="w-full text-left px-4 py-2.5 text-sm text-amber-700 hover:bg-amber-50">
               Stop
             </button>
           )}
-          {status === 'error' && (
+          {(currentJob?.status === 'error' || currentJob?.status === 'waiting') && (
             <button onClick={() => retryMut.mutate()}
               className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">
               Retry

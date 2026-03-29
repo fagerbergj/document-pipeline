@@ -80,8 +80,6 @@ export default function Document() {
         )}
         <DocKebabMenu
           docId={doc.id}
-          jobId={job?.id}
-          status={job?.status ?? 'pending'}
           onDelete={handleDelete}
           onSuccess={refresh}
         />

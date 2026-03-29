@@ -177,8 +177,6 @@ export default function Dashboard() {
                       <td className="px-2 py-3 text-right" onClick={e => e.stopPropagation()}>
                         <DocKebabMenu
                           docId={doc.id}
-                          jobId={job?.id}
-                          status={job?.status ?? ''}
                           onDelete={() => qc.invalidateQueries({ queryKey: ['documents'] })}
                           onSuccess={() => qc.invalidateQueries({ queryKey: ['documents'] })}
                           buttonClassName="w-7 h-7 flex items-center justify-center rounded text-gray-300 hover:text-gray-600 hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-all text-base leading-none"
