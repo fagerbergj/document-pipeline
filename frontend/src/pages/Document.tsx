@@ -266,15 +266,26 @@ function ArtifactsSection({ doc }: { doc: DocumentDetail }) {
 }
 
 function PipelineResultsSection({ jobs, currentJobId }: { jobs: JobSummary[]; currentJobId: string | null }) {
+  const sorted = [...jobs].sort((a, b) => a.updated_at.localeCompare(b.updated_at))
+  const [expandedId, setExpandedId] = useState<string | null>(currentJobId)
+
+  useEffect(() => { setExpandedId(currentJobId) }, [currentJobId])
+
   return (
     <div className="space-y-2">
-      {jobs.map(j => <StageOutputCard key={j.id} jobSummary={j} defaultExpanded={j.id === currentJobId} />)}
+      {sorted.map(j => (
+        <StageOutputCard
+          key={j.id}
+          jobSummary={j}
+          expanded={j.id === expandedId}
+          onToggle={() => setExpandedId(id => id === j.id ? null : j.id)}
+        />
+      ))}
     </div>
   )
 }
 
-function StageOutputCard({ jobSummary, defaultExpanded }: { jobSummary: JobSummary; defaultExpanded: boolean }) {
-  const [expanded, setExpanded] = useState(defaultExpanded)
+function StageOutputCard({ jobSummary, expanded, onToggle }: { jobSummary: JobSummary; expanded: boolean; onToggle: () => void }) {
   const { data: job } = useQuery({
     queryKey: ['job', jobSummary.id],
     queryFn: () => api.job(jobSummary.id),
@@ -286,7 +297,7 @@ function StageOutputCard({ jobSummary, defaultExpanded }: { jobSummary: JobSumma
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
       <button
-        onClick={() => setExpanded(e => !e)}
+        onClick={onToggle}
         className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
       >
         <span className="text-xs font-mono text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded">{jobSummary.stage}</span>

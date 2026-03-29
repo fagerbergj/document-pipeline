@@ -12,5 +12,5 @@ services:
       - VAULT_PATH=/vault
     volumes:
       - ./data:/data
-      - /mnt/personal01/remarkable:/vault
+      - /mnt/personal01/documents:/vault
     restart: unless-stopped
