@@ -49,11 +49,10 @@ def _job_detail(job, title: Optional[str] = None) -> dict:
     }
 
 
-def _pick_current_job(jobs, stage_names=None):
+def _pick_current_job(jobs):
     """Select the most relevant job for display.
 
-    Priority: running > waiting > pending > error > done (most advanced stage).
-    When all jobs are done, stage_names is used to pick the furthest-along stage.
+    Priority: running > waiting > pending > error > done (most recently updated).
     """
     if not jobs:
         return None
@@ -61,15 +60,7 @@ def _pick_current_job(jobs, stage_names=None):
         match = next((j for j in jobs if j.status == status), None)
         if match:
             return match
-    # All done — pick the most advanced stage
-    if stage_names:
-        def _idx(j):
-            try:
-                return stage_names.index(j.stage)
-            except ValueError:
-                return -1
-        return max(jobs, key=_idx)
-    return jobs[-1]
+    return max(jobs, key=lambda j: j.updated_at)
 
 
 def _doc_summary(doc, current_job=None) -> dict:
@@ -82,10 +73,10 @@ def _doc_summary(doc, current_job=None) -> dict:
     }
 
 
-async def _build_doc_detail(doc, db, stage_names=None) -> dict:
+async def _build_doc_detail(doc, db) -> dict:
     artifacts = await db.list_artifacts(doc.id)
     jobs = await db.list_jobs_for_document(doc.id)
-    current_job = _pick_current_job(jobs, stage_names)
+    current_job = _pick_current_job(jobs)
     return {
         "id": str(doc.id),
         "title": doc.title,
@@ -183,11 +174,10 @@ async def list_documents(
     )
 
     # Batch fetch current_job_id for each document
-    stage_names = [s.name for s in request.app.state.pipeline.stages]
     result = []
     for doc in docs:
         jobs = await db.list_jobs_for_document(doc.id)
-        result.append(_doc_summary(doc, _pick_current_job(jobs, stage_names)))
+        result.append(_doc_summary(doc, _pick_current_job(jobs)))
 
     return {"data": result, "next_page_token": next_token}
 
@@ -260,17 +250,15 @@ async def upload_document(
 @router.get("/documents/{doc_id}", response_model=DocumentDetail, tags=["Documents"])
 async def get_document(request: Request, doc_id: str):
     db = request.app.state.db
-    stage_names = [s.name for s in request.app.state.pipeline.stages]
     doc = await db.get(doc_id)
     if doc is None:
         return JSONResponse({"error": "not found"}, status_code=404)
-    return await _build_doc_detail(doc, db, stage_names)
+    return await _build_doc_detail(doc, db)
 
 
 @router.patch("/documents/{doc_id}", response_model=DocumentDetail, tags=["Documents"])
 async def patch_document(request: Request, doc_id: str, body: PatchDocumentBody):
     db = request.app.state.db
-    stage_names = [s.name for s in request.app.state.pipeline.stages]
     doc = await db.get(doc_id)
     if doc is None:
         return JSONResponse({"error": "not found"}, status_code=404)
@@ -291,7 +279,7 @@ async def patch_document(request: Request, doc_id: str, body: PatchDocumentBody)
         await db.update(updated)
         doc = await db.get(doc_id)
 
-    return await _build_doc_detail(doc, db, stage_names)
+    return await _build_doc_detail(doc, db)
 
 
 @router.delete("/documents/{doc_id}", response_model=OkResponse, tags=["Documents"])
