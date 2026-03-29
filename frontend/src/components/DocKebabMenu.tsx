@@ -5,22 +5,15 @@ import { api } from '../api'
 
 interface DocKebabMenuProps {
   docId: string
-  /** Called after delete succeeds — caller decides navigation. */
   onDelete: () => void
-  /** Called after stop/retry succeeds. */
   onSuccess: () => void
-  /** Extra classes for the trigger button. */
   buttonClassName?: string
 }
 
-export default function DocKebabMenu({
-  docId,
-  onDelete,
-  onSuccess,
-  buttonClassName,
-}: DocKebabMenuProps) {
+export default function DocKebabMenu({ docId, onDelete, onSuccess, buttonClassName }: DocKebabMenuProps) {
   const [open, setOpen] = useState(false)
   const [menuPos, setMenuPos] = useState({ top: 0, right: 0 })
+  const [replayOpen, setReplayOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -30,6 +23,7 @@ export default function DocKebabMenu({
       const r = btnRef.current.getBoundingClientRect()
       setMenuPos({ top: r.bottom + 4, right: window.innerWidth - r.right })
     }
+    setReplayOpen(false)
     setOpen(true)
   }
 
@@ -38,13 +32,12 @@ export default function DocKebabMenu({
       if (
         wrapRef.current && !wrapRef.current.contains(e.target as Node) &&
         dropdownRef.current && !dropdownRef.current.contains(e.target as Node)
-      ) setOpen(false)
+      ) { setOpen(false); setReplayOpen(false) }
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  // Fetch jobs for this document when the menu is open
   const { data: jobsPage } = useQuery({
     queryKey: ['jobs-for-doc', docId],
     queryFn: () => api.jobs({ document_id: docId, page_size: 50 }),
@@ -52,25 +45,26 @@ export default function DocKebabMenu({
   })
 
   const jobs = jobsPage?.data ?? []
-  // Current job: first non-done/non-error, else last by updated_at
   const STATUS_PRI: Record<string, number> = { running: 0, waiting: 1, pending: 2, error: 3, done: 4 }
   const currentJob = jobs.length
     ? [...jobs].sort((a, b) => (STATUS_PRI[a.status] ?? 5) - (STATUS_PRI[b.status] ?? 5))[0]
     : undefined
+  const replayableJobs = jobs.filter(j => j.status === 'done')
 
-  const done = (cb: () => void) => { setOpen(false); cb() }
+  const closeAll = () => { setOpen(false); setReplayOpen(false) }
   const [mutError, setMutError] = useState<string | null>(null)
   const onErr = (e: unknown) => setMutError(e instanceof Error ? e.message : String(e))
 
-  const stopMut   = useMutation({ mutationFn: () => api.putJobStatus(currentJob!.id, 'error'),   onSuccess: () => done(onSuccess), onError: onErr })
-  const retryMut  = useMutation({ mutationFn: () => api.putJobStatus(currentJob!.id, 'pending'), onSuccess: () => done(onSuccess), onError: onErr })
-  const deleteMut = useMutation({ mutationFn: () => api.deleteDocument(docId),                   onSuccess: () => done(onDelete),  onError: onErr })
+  const stopMut   = useMutation({ mutationFn: () => api.putJobStatus(currentJob!.id, 'error'),   onSuccess: () => { closeAll(); onSuccess() }, onError: onErr })
+  const retryMut  = useMutation({ mutationFn: () => api.putJobStatus(currentJob!.id, 'pending'), onSuccess: () => { closeAll(); onSuccess() }, onError: onErr })
+  const replayMut = useMutation({ mutationFn: (jobId: string) => api.putJobStatus(jobId, 'pending'), onSuccess: () => { closeAll(); onSuccess() }, onError: onErr })
+  const deleteMut = useMutation({ mutationFn: () => api.deleteDocument(docId), onSuccess: () => { closeAll(); onDelete() }, onError: onErr })
 
   return (
     <div ref={wrapRef} className="relative">
       <button
         ref={btnRef}
-        onClick={() => open ? setOpen(false) : openMenu()}
+        onClick={() => open ? closeAll() : openMenu()}
         className={buttonClassName ?? 'w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors text-lg leading-none'}
       >
         ⋯
@@ -85,6 +79,7 @@ export default function DocKebabMenu({
           {mutError && (
             <div className="px-3 py-2 text-xs text-red-600 bg-red-50 border-b border-red-100">{mutError}</div>
           )}
+
           {currentJob?.status === 'running' && (
             <button onClick={() => stopMut.mutate()}
               className="w-full text-left px-4 py-2.5 text-sm text-amber-700 hover:bg-amber-50">
@@ -97,6 +92,39 @@ export default function DocKebabMenu({
               Retry
             </button>
           )}
+
+          {/* Replay submenu */}
+          {replayableJobs.length > 0 && (
+            <div className="relative">
+              <button
+                onMouseEnter={() => setReplayOpen(true)}
+                onClick={() => setReplayOpen(r => !r)}
+                className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center justify-between"
+              >
+                Replay
+                <span className="text-gray-400 text-xs">▶</span>
+              </button>
+              {replayOpen && (
+                <div
+                  onMouseLeave={() => setReplayOpen(false)}
+                  style={{ position: 'fixed', top: menuPos.top, right: menuPos.right + 192, zIndex: 10000 }}
+                  className="w-36 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden"
+                >
+                  {replayableJobs.map(j => (
+                    <button
+                      key={j.id}
+                      onClick={() => replayMut.mutate(j.id)}
+                      disabled={replayMut.isPending}
+                      className="w-full text-left px-4 py-2.5 text-sm font-mono text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      {j.stage}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           <button
             onClick={() => { if (confirm('Delete this document? This cannot be undone.')) deleteMut.mutate() }}
             className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50">
