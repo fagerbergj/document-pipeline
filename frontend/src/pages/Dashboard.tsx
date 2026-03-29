@@ -14,6 +14,8 @@ const SORT_COLS: Record<string, { asc: SortKey; desc: SortKey }> = {
   created: { asc: 'created_asc',  desc: 'created_desc' },
 }
 
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
+
 export default function Dashboard() {
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
@@ -23,29 +25,57 @@ export default function Dashboard() {
   const statuses = searchParams.get('statuses') ?? ''
   const sort = (searchParams.get('sort') ?? 'pipeline') as SortKey
 
+  const [pageSize, setPageSizeState] = useState(20)
+  // Stack of page tokens for prev navigation; current token is last entry (null = first page)
+  const [tokenStack, setTokenStack] = useState<(string | null)[]>([null])
+  const currentToken = tokenStack[tokenStack.length - 1]
+
+  // Reset to page 1 when filters change
+  const resetPage = () => setTokenStack([null])
+  const prevFilters = useRef({ stages, statuses, sort })
+  useEffect(() => {
+    const p = prevFilters.current
+    if (p.stages !== stages || p.statuses !== statuses || p.sort !== sort) {
+      resetPage()
+      prevFilters.current = { stages, statuses, sort }
+    }
+  }, [stages, statuses, sort])
+
   const { data: page, isLoading, dataUpdatedAt } = useQuery({
-    queryKey: ['documents', sort],
-    queryFn: () => api.documents({ sort, page_size: 200 }),
+    queryKey: ['documents', sort, stages, statuses, pageSize, currentToken],
+    queryFn: () => api.documents({
+      sort,
+      page_size: pageSize,
+      page_token: currentToken ?? undefined,
+      stages: stages || undefined,
+      statuses: statuses || undefined,
+    }),
     refetchInterval: 10_000,
   })
 
-  const selectedStages = stages ? stages.split(',') : []
-  const selectedStatuses = statuses ? statuses.split(',') : []
+  const docs = page?.data ?? []
+  const hasNext = !!page?.next_page_token
+  const hasPrev = tokenStack.length > 1
 
-  const docs = (page?.data ?? []).filter(doc => {
-    if (selectedStages.length && !selectedStages.includes(doc.current_job_stage ?? '')) return false
-    if (selectedStatuses.length && !selectedStatuses.includes(doc.current_job_status ?? '')) return false
-    return true
-  })
+  function goNext() {
+    if (page?.next_page_token) setTokenStack(s => [...s, page.next_page_token!])
+  }
+  function goPrev() {
+    setTokenStack(s => s.slice(0, -1))
+  }
+  function setPageSize(n: number) {
+    setPageSizeState(n)
+    resetPage()
+  }
 
   function setSort(col: string) {
     const next = new URLSearchParams(searchParams)
     const cols = SORT_COLS[col]
     if (!cols) { next.delete('sort'); setSearchParams(next); return }
-    const current = sort
-    const newSort = current === cols.asc ? cols.desc : cols.asc
+    const newSort = sort === cols.asc ? cols.desc : cols.asc
     next.set('sort', newSort)
     setSearchParams(next)
+    resetPage()
   }
 
   function sortIcon(col: string) {
@@ -146,6 +176,38 @@ export default function Dashboard() {
                   ))}
                 </tbody>
               </table>
+            )}
+            {/* Pagination footer */}
+            {(hasPrev || hasNext || docs.length > 0) && (
+              <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-400">Rows per page</span>
+                  <select
+                    value={pageSize}
+                    onChange={e => setPageSize(Number(e.target.value))}
+                    className="text-xs border border-gray-200 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-blue-200"
+                  >
+                    {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={goPrev}
+                    disabled={!hasPrev}
+                    className="px-2.5 py-1 text-xs text-gray-600 border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    ← Prev
+                  </button>
+                  <span className="px-2 text-xs text-gray-400">page {tokenStack.length}</span>
+                  <button
+                    onClick={goNext}
+                    disabled={!hasNext}
+                    className="px-2.5 py-1 text-xs text-gray-600 border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Next →
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         )}

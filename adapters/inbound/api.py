@@ -149,12 +149,19 @@ async def get_pipeline(request: Request, pipeline_id: str):
 async def list_documents(
     request: Request,
     sort: str = Query(default="pipeline"),
-    page_size: int = Query(default=50, ge=1, le=200, alias="page_size"),
+    page_size: int = Query(default=20, ge=1, le=200),
     page_token: Optional[str] = Query(default=None),
+    stages: Optional[str] = Query(default=None),
+    statuses: Optional[str] = Query(default=None),
 ):
     db = request.app.state.db
     token = decode_page_token(page_token) if page_token else None
-    docs, next_token = await db.list_documents_paginated(sort=sort, page_size=page_size, page_token=token)
+    stage_list = [s.strip() for s in stages.split(",")] if stages else None
+    status_list = [s.strip() for s in statuses.split(",")] if statuses else None
+    docs, next_token = await db.list_documents_paginated(
+        sort=sort, page_size=page_size, page_token=token,
+        stages=stage_list, statuses=status_list,
+    )
 
     # Batch fetch current_job_id for each document
     result = []
@@ -304,11 +311,12 @@ async def list_jobs(
     page_token: Optional[str] = Query(default=None),
 ):
     db = request.app.state.db
+    doc_id_list = [s.strip() for s in document_id.split(",")] if document_id else None
     stage_list = [s.strip() for s in stages.split(",")] if stages else None
     status_list = [s.strip() for s in statuses.split(",")] if statuses else None
     token = decode_page_token(page_token) if page_token else None
     jobs, next_token = await db.list_jobs_paginated(
-        document_id=document_id,
+        document_id=doc_id_list,
         stages=stage_list,
         statuses=status_list,
         sort=sort,

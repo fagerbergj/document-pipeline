@@ -112,11 +112,13 @@ export const api = {
     unwrap(getPipelineApiV1PipelinesPipelineIdGet({ path: { pipeline_id: id } })),
 
   // ── Documents ─────────────────────────────────────────────────────────────
-  documents: async (params?: { sort?: string; page_size?: number; page_token?: string }): Promise<{ data: DocSummary[]; next_page_token?: string | null }> => {
+  documents: async (params?: { sort?: string; page_size?: number; page_token?: string; stages?: string; statuses?: string }): Promise<{ data: DocSummary[]; next_page_token?: string | null }> => {
     const q = new URLSearchParams()
     if (params?.sort)       q.set('sort', params.sort)
     if (params?.page_size)  q.set('page_size', String(params.page_size))
     if (params?.page_token) q.set('page_token', params.page_token)
+    if (params?.stages)     q.set('stages', params.stages)
+    if (params?.statuses)   q.set('statuses', params.statuses)
     const res = await fetch(`/api/v1/documents?${q}`)
     const json = await res.json()
     if (!res.ok) throw Object.assign(new Error(json.error ?? 'Failed'), { status: res.status, body: json })

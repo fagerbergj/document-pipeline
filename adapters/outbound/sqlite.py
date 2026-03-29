@@ -219,29 +219,52 @@ class Database:
     async def list_documents_paginated(
         self,
         sort: str = "pipeline",
-        page_size: int = 50,
+        page_size: int = 20,
         page_token: Optional[dict] = None,
+        stages: Optional[list] = None,
+        statuses: Optional[list] = None,
     ) -> tuple[list[Document], Optional[str]]:
         from adapters.inbound.schemas import encode_page_token
 
         conditions: list[str] = []
         params: list = []
 
+        # Filter by current job stage/status using a correlated subquery
+        # "current job" = lowest priority number (running < waiting < pending < error < done)
+        _current_job_sql = """(
+            SELECT j.{col} FROM jobs j WHERE j.document_id = d.id
+            ORDER BY CASE j.status
+                WHEN 'running'  THEN 0 WHEN 'waiting' THEN 1
+                WHEN 'pending'  THEN 2 WHEN 'error'   THEN 3
+                ELSE 4 END, j.updated_at DESC
+            LIMIT 1
+        )"""
+        if stages:
+            conditions.append(
+                f"{_current_job_sql.format(col='stage')} IN ({','.join('?'*len(stages))})"
+            )
+            params.extend(stages)
+        if statuses:
+            conditions.append(
+                f"{_current_job_sql.format(col='status')} IN ({','.join('?'*len(statuses))})"
+            )
+            params.extend(statuses)
+
         _sort_map = {
-            "pipeline":     ("created_at ASC, id ASC",
-                             "(created_at, id) > (?, ?)",
+            "pipeline":     ("d.created_at ASC, d.id ASC",
+                             "(d.created_at, d.id) > (?, ?)",
                              lambda d: [d.created_at, d.id]),
-            "created_asc":  ("created_at ASC, id ASC",
-                             "(created_at, id) > (?, ?)",
+            "created_asc":  ("d.created_at ASC, d.id ASC",
+                             "(d.created_at, d.id) > (?, ?)",
                              lambda d: [d.created_at, d.id]),
-            "created_desc": ("created_at DESC, id DESC",
-                             "(created_at, id) < (?, ?)",
+            "created_desc": ("d.created_at DESC, d.id DESC",
+                             "(d.created_at, d.id) < (?, ?)",
                              lambda d: [d.created_at, d.id]),
-            "title_asc":    ("LOWER(COALESCE(title,'')) ASC, id ASC",
-                             "(LOWER(COALESCE(title,'')), id) > (?, ?)",
+            "title_asc":    ("LOWER(COALESCE(d.title,'')) ASC, d.id ASC",
+                             "(LOWER(COALESCE(d.title,'')), d.id) > (?, ?)",
                              lambda d: [(d.title or "").lower(), d.id]),
-            "title_desc":   ("LOWER(COALESCE(title,'')) DESC, id DESC",
-                             "(LOWER(COALESCE(title,'')), id) < (?, ?)",
+            "title_desc":   ("LOWER(COALESCE(d.title,'')) DESC, d.id DESC",
+                             "(LOWER(COALESCE(d.title,'')), d.id) < (?, ?)",
                              lambda d: [(d.title or "").lower(), d.id]),
         }
         order_clause, cursor_where, key_fn = _sort_map.get(sort, _sort_map["pipeline"])
@@ -254,7 +277,7 @@ class Database:
             params.extend(cursor_vals)
 
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-        sql = f"SELECT * FROM documents {where} ORDER BY {order_clause} LIMIT ?"
+        sql = f"SELECT d.* FROM documents d {where} ORDER BY {order_clause} LIMIT ?"
         params.append(page_size + 1)
 
         async with self._conn.execute(sql, params) as cur:
@@ -457,7 +480,7 @@ class Database:
 
     async def list_jobs_paginated(
         self,
-        document_id: Optional[str] = None,
+        document_id: Optional[str | list[str]] = None,
         stages: Optional[list] = None,
         statuses: Optional[list] = None,
         sort: str = "pipeline",
@@ -470,8 +493,9 @@ class Database:
         params: list = []
 
         if document_id:
-            conditions.append("document_id = ?")
-            params.append(document_id)
+            ids = [document_id] if isinstance(document_id, str) else document_id
+            conditions.append(f"document_id IN ({','.join('?'*len(ids))})")
+            params.extend(ids)
         if stages:
             conditions.append(f"stage IN ({','.join('?'*len(stages))})")
             params.extend(stages)
