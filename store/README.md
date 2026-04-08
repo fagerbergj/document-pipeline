@@ -1,6 +1,6 @@
-# store/
+# db/
 
-SQLite database schema. One database file, four tables.
+SQLite database schema. One database file, eight tables.
 
 The database file lives at `/data/pipeline.db` inside the container (bind-mounted from the host).
 
@@ -10,161 +10,252 @@ The database file lives at `/data/pipeline.db` inside the container (bind-mounte
 
 ### `documents`
 
-One row per document. The two columns `current_stage` and `stage_state` form the state machine — never collapsed into a single combined string.
+One row per document. Stores source metadata only — processing state lives in `jobs`.
 
 ```sql
 CREATE TABLE documents (
     id TEXT PRIMARY KEY,                          -- UUID
-    content_hash TEXT UNIQUE NOT NULL,            -- SHA-256 hex of the PNG bytes
+    content_hash TEXT UNIQUE NOT NULL,            -- SHA-256 hex of the file bytes
     created_at TEXT NOT NULL,                     -- ISO-8601 UTC
     updated_at TEXT NOT NULL,                     -- ISO-8601 UTC
-    current_stage TEXT NOT NULL,                  -- stage name, 'done', or 'deleted'
-    stage_state TEXT NOT NULL,                    -- 'pending'|'running'|'waiting'|'error'|'done'
-    title TEXT,                                   -- set post-OCR
+    title TEXT,                                   -- set post-OCR (or from filename at upload)
     date_month TEXT,                              -- 'YYYY-MM', set on receipt
-    png_path TEXT,                                -- absolute path to PNG on disk
-    duplicate_of TEXT REFERENCES documents(id),  -- set if duplicate_review resolved to keep_both
-    stage_data TEXT NOT NULL DEFAULT '{}'         -- JSON: keyed by stage name, free-form
+    png_path TEXT,                                -- absolute path to source image on disk
+    duplicate_of TEXT REFERENCES documents(id),  -- set if resolved to keep_both
+    additional_context TEXT NOT NULL DEFAULT '',  -- user-supplied per-document context
+    linked_contexts TEXT NOT NULL DEFAULT '[]'   -- JSON array of context entry IDs
 );
 
-CREATE INDEX idx_documents_stage ON documents(current_stage, stage_state);
 CREATE INDEX idx_documents_hash ON documents(content_hash);
 ```
 
-**`stage_data` shape** (grows as pipeline advances):
+---
 
+### `jobs`
+
+One row per pipeline stage per document. **Jobs are the primary processing unit** — status, runs, and options all live here.
+
+```sql
+CREATE TABLE jobs (
+    id          TEXT PRIMARY KEY,                           -- UUID
+    document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    stage       TEXT NOT NULL,                             -- stage name from pipeline.yaml
+    status      TEXT NOT NULL DEFAULT 'pending',           -- pending|running|waiting|error|done
+    options     TEXT NOT NULL DEFAULT '{}',                -- JSON: {require_context, embed: {embed_image}}
+    runs        TEXT NOT NULL DEFAULT '[]',                -- JSON array of Run objects (see below)
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL,
+    UNIQUE(document_id, stage)
+);
+
+CREATE INDEX idx_jobs_document ON jobs(document_id, stage);
+CREATE INDEX idx_jobs_status   ON jobs(status);
+```
+
+**`options` shape:**
 ```json
 {
-  "_ingest": {
-    "document_context": "User-supplied context about this document"
-  },
-  "ocr": {
-    "ocr_raw": "The quick brown fox..."
-  },
-  "clarify": {
-    "clarified_text": "The quick brown fox...",
-    "confidence": "high",
-    "clarification_requests": [
-      {"segment": "qu??k", "question": "Did you write 'quick' or 'quiet'?"}
-    ],
-    "qa_history": [
-      {
-        "responses": [{"segment": "qu??k", "answer": "quick"}],
-        "free_prompt": ""
-      }
-    ]
-  },
-  "classify": {
-    "tags": ["productivity", "notes"],
-    "summary": "A note about...",
-    "confidence": "high"
-  }
+  "require_context": false,
+  "embed": { "embed_image": false }
 }
 ```
+
+**`runs` shape** (appended on each LLM execution):
+```json
+[
+  {
+    "id": "uuid",
+    "inputs":  [{"field": "ocr_raw", "text": "..."}],
+    "outputs": [{"field": "clarified_text", "text": "..."}],
+    "confidence": "high",
+    "questions": [{"segment": "qu??k", "question": "Did you mean 'quick'?", "answer": "quick"}],
+    "suggestions": {
+      "additional_context": "",
+      "linked_context": "",
+      "linked_context_id": null
+    },
+    "created_at": "ISO-8601",
+    "updated_at": "ISO-8601"
+  }
+]
+```
+
+**`status` values:**
+
+| Value | Meaning |
+|---|---|
+| `pending` | Waiting for the worker to pick up |
+| `running` | Worker is actively processing |
+| `waiting` | Parked — needs context, low confidence, or human review |
+| `error` | Failed 3 times; needs manual retry |
+| `done` | Stage completed successfully |
+
+**Valid status transitions:**
+
+| From | To | How |
+|---|---|---|
+| `running` | `error` | Auto (3 failures) or `PUT /jobs/{id}/status` |
+| `waiting` | `pending` | `PUT /jobs/{id}/status` (reject) |
+| `waiting` | `done` | `PUT /jobs/{id}/status` (approve) |
+| `error` | `pending` | `PUT /jobs/{id}/status` (retry) |
+| `done` | `pending` | `PUT /jobs/{id}/status` (replay/cascade) |
+
+---
+
+### `artifacts`
+
+Files associated with a document (source image, generated text, diagrams).
+
+```sql
+CREATE TABLE artifacts (
+    id           TEXT PRIMARY KEY,
+    document_id  TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    filename     TEXT NOT NULL,
+    content_type TEXT NOT NULL,
+    created_job_id TEXT,                          -- job that created this artifact (null = upload)
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL
+);
+
+CREATE INDEX idx_artifacts_document ON artifacts(document_id);
+```
+
+Artifact files are stored at `<vault>/artifacts/<artifact_id>/<filename>`.
 
 ---
 
 ### `stage_events`
 
-Append-only audit log. Never updated, only inserted. Retry count is derived by counting `failed` events for a given `(document_id, stage)` pair — no retry column needed.
+Append-only audit log. Never updated, only inserted.
 
 ```sql
 CREATE TABLE stage_events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    document_id TEXT NOT NULL REFERENCES documents(id),
-    timestamp TEXT NOT NULL,         -- ISO-8601 UTC
-    stage TEXT NOT NULL,             -- stage name (matches pipeline.yaml)
-    event_type TEXT NOT NULL,        -- see values below
-    data TEXT                        -- optional JSON payload
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    timestamp   TEXT NOT NULL,                    -- ISO-8601 UTC
+    stage       TEXT NOT NULL,                    -- stage name or 'upload'/'webhook'
+    event_type  TEXT NOT NULL,                    -- see values below
+    data        TEXT                              -- optional JSON payload
 );
 
-CREATE INDEX idx_events_document ON stage_events(document_id, stage, event_type);
+CREATE INDEX idx_events_document ON stage_events(document_id, stage);
 ```
 
 **`event_type` values:**
 
 | Value | When |
 |---|---|
-| `received` | Webhook receipt (document created) |
+| `received` | Document created (upload or webhook receipt) |
 | `started` | Worker begins processing a stage |
 | `completed` | Stage succeeded |
 | `failed` | Stage raised an exception (may retry) |
-| `reviewed` | User approved in review UI |
-| `rejected` | User rejected (resets to current stage pending) |
-| `context_set` | User provided document context |
-| `replayed` | User triggered replay from a prior stage |
-| `stopped` | User manually stopped a running document |
-| `retried` | User manually retried an errored document |
+| `status_done` | Job manually approved via API |
+| `status_pending` | Job manually reset to pending via API |
+| `status_error` | Job manually stopped via API |
+
+Retry count is derived by counting `failed` events for a given `(document_id, stage)` pair — no retry column needed.
 
 ---
 
-### `document_destinations`
+### `contexts`
 
-Tracks external IDs per document per sink. Used to update or delete from sinks on re-processing or deletion.
+Reusable context snippets that can be linked to documents.
 
 ```sql
-CREATE TABLE document_destinations (
-    document_id TEXT NOT NULL REFERENCES documents(id),
-    destination_type TEXT NOT NULL,  -- e.g. 'qdrant'
-    external_id TEXT NOT NULL,       -- e.g. Qdrant point UUID
-    synced_at TEXT NOT NULL,         -- ISO-8601 UTC of last upsert
-    PRIMARY KEY (document_id, destination_type)
+CREATE TABLE contexts (
+    id         TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    text       TEXT NOT NULL,
+    created_at TEXT NOT NULL
 );
+```
+
+---
+
+### `chat_sessions`
+
+RAG-enabled chat conversation threads.
+
+```sql
+CREATE TABLE chat_sessions (
+    id            TEXT PRIMARY KEY,
+    title         TEXT NOT NULL DEFAULT '',
+    system_prompt TEXT NOT NULL DEFAULT '',
+    rag_retrieval TEXT NOT NULL DEFAULT '{"enabled": true, "max_sources": 5, "minimum_score": 0.0}',
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL
+);
+```
+
+**`rag_retrieval` shape:**
+```json
+{
+  "enabled": true,
+  "max_sources": 5,
+  "minimum_score": 0.0
+}
+```
+
+---
+
+### `chat_messages`
+
+Individual messages within a chat session.
+
+```sql
+CREATE TABLE chat_messages (
+    id          TEXT PRIMARY KEY,
+    external_id TEXT,
+    session_id  TEXT NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+    role        TEXT NOT NULL,                    -- 'user' | 'assistant' | 'system'
+    content     TEXT NOT NULL,
+    sources     TEXT,                             -- JSON array of source summaries (assistant only)
+    created_at  TEXT NOT NULL
+);
+
+CREATE INDEX idx_chat_messages_session ON chat_messages(session_id, created_at ASC);
+```
+
+**`sources` shape** (assistant messages only, when RAG is enabled):
+```json
+[
+  {
+    "document_id": "uuid",
+    "title": "My Note",
+    "summary": "...",
+    "date_month": "2026-01",
+    "score": 0.847
+  }
+]
 ```
 
 ---
 
 ### `key_value`
 
-General-purpose persistent key-value store. Used to store the context library so it survives container rebuilds.
+General-purpose persistent key-value store.
 
 ```sql
 CREATE TABLE key_value (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL               -- JSON
 );
 ```
 
 **Current keys:**
 
-| Key | Value |
+| Key pattern | Value |
 |---|---|
-| `context_library` | JSON array of `{name, text}` objects |
-
----
-
-## State machine values
-
-`current_stage` + `stage_state` combinations that appear in normal operation:
-
-| current_stage | stage_state | Meaning |
-|---|---|---|
-| `ocr` | `pending` | Waiting for OCR worker to pick up |
-| `ocr` | `running` | OCR in progress |
-| `ocr` | `error` | OCR failed 3 times, needs manual intervention |
-| `clarify` | `pending` | Waiting for clarify worker |
-| `clarify` | `running` | Clarify in progress |
-| `clarify` | `waiting` | Parked — context not set or LLM confidence not high |
-| `clarify` | `error` | Clarify failed 3 times |
-| `classify` | `pending` | Waiting for classify worker |
-| `classify` | `running` | Classify in progress |
-| `classify` | `waiting` | Parked — context not set or LLM confidence not high |
-| `classify` | `error` | Classify failed 3 times |
-| `embed` | `pending` | Waiting for embed worker |
-| `embed` | `running` | Embed in progress |
-| `embed` | `error` | Embed failed 3 times |
-| `duplicate_review` | `waiting` | Post-OCR title collision detected, needs resolution |
-| `done` | `done` | Fully processed and indexed |
-| `deleted` | `done` | Soft-deleted (not shown in UI by default) |
+| `ingest_meta:{doc_id}` | `{"meta": {...}, "attachment_filename": "..."}` — webhook/upload metadata for worker |
 
 ---
 
 ## Key query patterns
 
-**Worker fetch** — all pending documents for a given stage, ordered by created_at:
+**Worker fetch** — all pending jobs for a given stage, ordered by creation time:
 ```sql
-SELECT * FROM documents
-WHERE current_stage = ? AND stage_state = 'pending'
+SELECT * FROM jobs
+WHERE stage = ? AND status = 'pending'
 ORDER BY created_at ASC;
 ```
 
@@ -174,41 +265,47 @@ SELECT COUNT(*) FROM stage_events
 WHERE document_id = ? AND stage = ? AND event_type = 'failed';
 ```
 
-**Review inbox** — all documents waiting for human review:
+**Review inbox** — all jobs waiting for human review:
 ```sql
-SELECT * FROM documents
-WHERE stage_state = 'waiting'
-AND current_stage NOT IN ('deleted')
-ORDER BY updated_at ASC;
+SELECT j.*, d.title FROM jobs j
+JOIN documents d ON d.id = j.document_id
+WHERE j.status = 'waiting'
+ORDER BY j.updated_at ASC;
 ```
 
-**Duplicate detection** — find existing document with same title:
+**Current job for a document** — most active job (priority: running > waiting > pending > error > done):
 ```sql
-SELECT id FROM documents
-WHERE title = ? AND current_stage != 'deleted' AND id != ?
+SELECT * FROM jobs WHERE document_id = ?
+ORDER BY
+  CASE status
+    WHEN 'running' THEN 0
+    WHEN 'waiting' THEN 1
+    WHEN 'pending' THEN 2
+    WHEN 'error'   THEN 3
+    ELSE 4
+  END,
+  updated_at DESC
 LIMIT 1;
 ```
 
-**Diff data for review UI** — fetch stage_data snapshots before and after a stage:
-Stage data is stored cumulatively in `documents.stage_data`. To show a diff, compare `stage_data[prev_stage]` with `stage_data[current_stage]`.
-
-**Error list** — all documents in error state:
+**Paginated job list** (keyset, by created_at + id):
 ```sql
-SELECT * FROM documents
-WHERE stage_state = 'error'
-ORDER BY updated_at DESC;
+SELECT j.*, d.title FROM jobs j
+JOIN documents d ON d.id = j.document_id
+WHERE (j.created_at, j.id) > (?, ?)
+ORDER BY j.created_at ASC, j.id ASC
+LIMIT ?;
 ```
 
 ---
 
-## Duplicate detection flow
+## Indexes
 
-1. OCR stage completes → worker extracts `title` from `stage_data.ocr.ocr_raw`
-2. Query for existing document with same normalized title (case-insensitive)
-3. If collision found:
-   - Set `current_stage='duplicate_review', stage_state='waiting'`
-   - Store `stage_data.duplicate_review.existing_id = <existing doc id>`
-4. Duplicate review UI presents both documents side-by-side with three options:
-   - **Keep both** — advance current doc to clarify stage, leave existing untouched
-   - **Replace existing** — soft-delete existing (+ remove from Qdrant), advance current
-   - **Discard** — soft-delete current doc
+| Index | Columns | Purpose |
+|---|---|---|
+| `idx_documents_hash` | `documents(content_hash)` | Deduplication check on ingest |
+| `idx_jobs_document` | `jobs(document_id, stage)` | Fast job lookup per document |
+| `idx_jobs_status` | `jobs(status)` | Worker polling for pending jobs |
+| `idx_artifacts_document` | `artifacts(document_id)` | Artifact list per document |
+| `idx_events_document` | `stage_events(document_id, stage)` | Retry count and audit log |
+| `idx_chat_messages_session` | `chat_messages(session_id, created_at ASC)` | Message history retrieval |

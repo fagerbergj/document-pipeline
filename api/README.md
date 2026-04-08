@@ -1,285 +1,72 @@
 # api/
 
-HTTP API reference. All endpoints served by FastAPI on port `8000`.
+HTTP API reference. All endpoints served on port `8000` under `/api/v1/`.
 
-The UI is a React SPA (`frontend/`) served at `/`. All data endpoints are under `/api/v1/`.
+The React SPA is served at `/`. The OpenAPI schema is at `/openapi.json`.
+
+All list endpoints return cursor-based paginated responses: `{"data": [...], "next_page_token": "..."}`.
 
 ---
 
-## Webhook
+## Pipelines
 
-### `POST /webhook`
-
-Receives a document from the reMarkable tablet via rmfakecloud.
-
-**This URL must not change.** rmfakecloud is configured to POST to `http://remarkable-bridge:8000/webhook`.
-
-**Content-Type:** `multipart/form-data`
-
-| Field | Type | Description |
+| Method | Path | Description |
 |---|---|---|
-| `data` | string (JSON) | Document metadata from rmfakecloud |
-| `attachment` | file (PNG) | Rendered image of the current sheet |
-
-**Response (200):** `{"status": "ok"}`
-
-The webhook returns immediately. OCR and all subsequent stages run asynchronously.
+| `GET` | `/pipelines` | List pipelines (always returns one) |
+| `GET` | `/pipelines/{id}` | Pipeline detail with stage specs, inputs, outputs, and conditions |
 
 ---
 
 ## Documents
 
-### `GET /api/v1/documents`
+Documents are metadata containers. Processing state lives in jobs.
 
-List all non-deleted documents.
-
-**Query parameters:**
-
-| Param | Type | Default | Description |
-|---|---|---|---|
-| `stages` | string | — | Comma-separated stage names to filter by |
-| `states` | string | — | Comma-separated state values to filter by |
-| `sort` | string | `pipeline` | `pipeline` (stage ASC, created ASC) \| `created_desc` \| `created_asc` \| `title_asc` \| `title_desc` |
-
-**Response:** array of document summary objects:
-```json
-[{
-  "id": "uuid",
-  "title": "string or null",
-  "current_stage": "ocr",
-  "stage_state": "pending|running|waiting|error|done",
-  "created_at": "ISO-8601",
-  "updated_at": "ISO-8601",
-  "needs_context": false
-}]
-```
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/documents` | List documents — filterable by stage/status, sortable, paginated |
+| `POST` | `/documents` | Upload a file (PNG/JPG/TXT/MD) — returns first pipeline job |
+| `GET` | `/documents/{id}` | Document detail with artifacts, context, and current job |
+| `PATCH` | `/documents/{id}` | Update title, additional context, or linked contexts |
+| `DELETE` | `/documents/{id}` | Delete document (cascades to jobs, artifacts, events) |
+| `GET` | `/documents/{id}/artifacts/{artifact_id}` | Download an artifact file |
 
 ---
 
-### `GET /api/v1/documents/{id}`
+## Jobs
 
-Full document detail including stage outputs, review payload, event log, and replay options.
+Jobs are the primary processing unit — one per pipeline stage per document.
 
-**Response:**
-```json
-{
-  "id": "uuid",
-  "title": "string or null",
-  "current_stage": "clarify",
-  "stage_state": "waiting",
-  "created_at": "ISO-8601",
-  "updated_at": "ISO-8601",
-  "document_context": "string",
-  "context_required": false,
-  "needs_context": false,
-  "stage_displays": [{"name": "ocr", "fields": {"ocr_raw": "..."}}],
-  "review": null,
-  "replay_stages": [{"name": "ocr"}],
-  "events": [{"timestamp": "ISO-8601", "stage": "ocr", "event_type": "completed", "data": null}]
-}
-```
-
-`review` is non-null when `stage_state == "waiting"` and the current stage has LLM output:
-```json
-{
-  "stage_name": "clarify",
-  "input_field": "ocr_raw",
-  "output_field": "clarified_text",
-  "input_text": "...",
-  "output_text": "...",
-  "is_single_output": true,
-  "confidence": "high|medium|low",
-  "qa_rounds": 0,
-  "clarification_requests": [{"segment": "...", "question": "..."}]
-}
-```
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/jobs` | List jobs — filterable by id/document/stage/status, paginated |
+| `GET` | `/jobs/{id}` | Job detail with options and full runs history |
+| `PATCH` | `/jobs/{id}` | Update job options (require_context, embed_image) |
+| `PATCH` | `/jobs/{id}/runs/{run_id}` | Answer clarification questions or accept suggestions |
+| `PUT` | `/jobs/{id}/status` | Transition status: approve (waiting→done), reject (waiting→pending), retry (error→pending), replay (done→pending) |
+| `GET` | `/jobs/{id}/stream` | SSE stream of LLM tokens while job is running |
 
 ---
 
-### `DELETE /api/v1/documents/{id}`
+## Contexts
 
-Permanently deletes a document and all its events and destinations.
-
-**Response:** `{"ok": true}`
-
----
-
-### `POST /api/v1/documents/{id}/title`
-
-Update document title.
-
-**Body:** `{"title": "new title"}`
-
-**Response:** full document detail
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/contexts` | List all context entries |
+| `POST` | `/contexts` | Create a context entry |
+| `PATCH` | `/contexts/{id}` | Update name or text |
+| `DELETE` | `/contexts/{id}` | Delete a context entry |
 
 ---
 
-### `POST /api/v1/documents/{id}/context`
-
-Save document context without changing stage state.
-
-**Body:** `{"document_context": "..."}`
-
-**Response:** full document detail
-
----
-
-### `POST /api/v1/documents/{id}/set-context`
-
-Save document context and reset stage to `pending` so the worker picks it up.
-
-**Body:** `{"document_context": "..."}`
-
-**Response:** full document detail
-
----
-
-### `POST /api/v1/documents/{id}/approve`
-
-Advance a waiting document to the next stage. Optionally save edited output text first.
-
-**Body:** `{"edited_text": ""}` (empty string = no edit)
-
-**Response:** full document detail
-
----
-
-### `POST /api/v1/documents/{id}/reject`
-
-Reset current stage to `pending` so the worker re-runs it.
-
-**Response:** full document detail
-
----
-
-### `POST /api/v1/documents/{id}/clarify`
-
-Append a Q&A round to `qa_history` and reset stage to `pending`.
-
-**Body:**
-```json
-{
-  "answers": {"0": "answer to first clarification", "1": "..."},
-  "free_prompt": "optional additional instructions"
-}
-```
-
-**Response:** full document detail
-
----
-
-### `POST /api/v1/documents/{id}/stop`
-
-Stop a running document (sets `stage_state='error'`).
-
-**Response:** full document detail
-
----
-
-### `POST /api/v1/documents/{id}/retry`
-
-Reset an errored document back to `pending`.
-
-**Response:** full document detail
-
----
-
-### `POST /api/v1/documents/{id}/replay/{stage_name}`
-
-Replay from a prior stage — clears all `stage_data` from that stage onward and resets to `pending`.
-
-**Response:** full document detail
-
----
-
-### `GET /api/v1/documents/{id}/stream`
-
-SSE endpoint. Streams LLM tokens while a document is `running`, then emits a `done` event when the stage completes or the document state changes.
-
-**Events:**
-- `event: token` — `{"text": "..."}` — one chunk of LLM output
-- `event: done` — `{}` — stage finished or state changed (client should reload)
-- `: ping` — keepalive comment
-
----
-
-## Counts
-
-### `GET /api/v1/counts`
-
-Returns document counts grouped by state and by stage.
-
-**Response:**
-```json
-{
-  "pending": 2,
-  "running": 1,
-  "waiting": 3,
-  "error": 0,
-  "done": 14,
-  "by_stage": {
-    "ocr": 1,
-    "clarify": 4,
-    "embed": 1
-  }
-}
-```
-
----
-
-## Pipeline
-
-### `GET /api/v1/pipeline/stages`
-
-Returns the ordered list of stage names from `pipeline.yaml`.
-
-**Response:** `{"stages": ["ocr", "clarify", "classify", "embed"]}`
-
----
-
-## Context library
-
-### `GET /api/v1/context-library`
-
-Returns all saved context entries.
-
-**Response:** `[{"name": "...", "text": "..."}]`
-
----
-
-### `POST /api/v1/context-library`
-
-Add or update a context entry (matched by name).
-
-**Body:** `{"name": "...", "text": "..."}`
-
-**Response:** updated full list
-
----
-
-### `DELETE /api/v1/context-library/{name}`
-
-Delete a context entry by name.
-
-**Response:** updated full list
-
----
-
-## Qdrant MCP server (Claude Code)
-
-Add to `~/.claude/settings.json` to query the `remarkable` collection from Claude Code:
-
-```json
-{
-  "mcpServers": {
-    "qdrant": {
-      "command": "uvx",
-      "args": ["mcp-server-qdrant"],
-      "env": {
-        "QDRANT_URL": "http://localhost:6333",
-        "COLLECTION_NAME": "remarkable"
-      }
-    }
-  }
-}
-```
+## Chat
+
+RAG-enabled chat backed by Qdrant vector search and Ollama.
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/chats` | List sessions (cursor: `before_id`) |
+| `POST` | `/chats` | Create session (system prompt + RAG config) |
+| `GET` | `/chats/{id}` | Session with full message history |
+| `PATCH` | `/chats/{id}` | Update title, system prompt, or RAG config |
+| `DELETE` | `/chats/{id}` | Delete session |
+| `POST` | `/chats/{id}/messages` | Send message — SSE stream: `sources` event then `token` events |

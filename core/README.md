@@ -1,89 +1,93 @@
 # core/
 
-Domain logic for the document pipeline. No external I/O — this package never imports FastAPI, SQLite, httpx, or any adapter by name. It calls functions that adapters provide, but those are injected at the `app.py` level.
+Domain logic for the document pipeline. This package has no I/O imports — it never imports FastAPI, SQLite, httpx, or any adapter by name. All I/O is injected at the `app.py` level via function arguments.
 
 ## Hexagonal architecture
 
 ```
 adapters/inbound/      →  core/services/  →  adapters/outbound/
-  webhook.py                ingest.py           sqlite.py
-  api.py                    worker.py           filesystem.py
-                            review.py           ollama.py
+  api.py                    ingest.py           sqlite.py
+                            worker.py           filesystem.py
+                                                ollama.py
                                                 qdrant.py
                                                 open_webui.py
 ```
 
-Inbound adapters translate external requests into core service calls. Core services contain all business logic. Outbound adapters implement I/O. Core never knows about HTTP status codes, SQL syntax, or file paths — it reasons in terms of `Document` entities and service results.
-
-Swapping an adapter (e.g. replacing SQLite with Postgres) means editing one file in `adapters/outbound/` and updating `app.py`.
+Inbound adapters translate external requests into core service calls. Core services contain all business logic. Outbound adapters implement I/O.
 
 ---
 
 ## Domain model
 
-### `core/domain/document.py`
-
-#### `Document` entity
+### `core/domain/document.py` — `Document`
 
 ```python
 @dataclass
 class Document:
     id: str                  # UUID
-    content_hash: str        # SHA-256 of the PNG bytes
+    content_hash: str        # SHA-256 hex of the file bytes
     created_at: str          # ISO-8601 UTC
     updated_at: str          # ISO-8601 UTC
-    current_stage: str       # stage name from pipeline.yaml, or 'done'/'deleted'
-    stage_state: str         # 'pending'|'running'|'waiting'|'error'|'done'
-    title: str | None
+    title: str | None        # set post-OCR or from filename
     date_month: str | None   # 'YYYY-MM'
-    png_path: str | None
-    duplicate_of: str | None # references documents.id
-    stage_data: dict         # keyed by stage name, free-form JSON
+    png_path: str | None     # absolute path to source image
+    duplicate_of: str | None # references another document id
+    additional_context: str  # per-document LLM context
+    linked_contexts: list    # list of context entry IDs
 ```
 
-#### State machine helpers
+Documents are lightweight — they store source metadata. All processing state is in `Job`.
 
-`advance(doc, next_stage)` — returns a new `Document` with `current_stage=next_stage, stage_state='pending'`.
+---
 
-`set_waiting(doc)` — sets `stage_state='waiting'` (for stages parked awaiting context or review).
+### `core/domain/job.py` — `Job`
 
-`set_running(doc)` — sets `stage_state='running'`.
+```python
+@dataclass
+class Job:
+    id: str
+    document_id: str
+    stage: str               # stage name from pipeline.yaml
+    status: str              # pending|running|waiting|error|done
+    options: dict            # {require_context, embed: {embed_image}}
+    runs: list               # list of Run dicts (LLM round-trips)
+    created_at: str
+    updated_at: str
+```
 
-`set_error(doc)` — sets `stage_state='error'`.
+Jobs are the primary processing unit. One job per pipeline stage per document. `runs` is appended on each LLM execution and stores structured inputs, outputs, confidence, questions, and suggestions.
 
-`set_done(doc)` — sets `current_stage='done', stage_state='done'`.
+---
 
-`set_deleted(doc)` — sets `current_stage='deleted', stage_state='done'`.
-
-### `core/domain/pipeline.py`
-
-#### `PipelineConfig`
-
-Loaded once at startup from `config/pipeline.yaml`. Performs `${VAR}` env var substitution at load time.
+### `core/domain/pipeline.py` — `PipelineConfig` and `StageDefinition`
 
 ```python
 @dataclass
 class PipelineConfig:
     max_concurrent: int
     stages: list[StageDefinition]
-```
 
-#### `StageDefinition`
-
-```python
 @dataclass
 class StageDefinition:
     name: str
-    type: str          # 'computer_vision'|'llm_text'|'embed'
+    type: str               # 'computer_vision' | 'llm_text' | 'embed'
     model: str | None
-    prompt: str | None  # path to prompt file, e.g. 'prompts/ocr.txt'
-    input: str | None   # field name in stage_data to pass as input
-    output: str | None  # field name to write result to in stage_data
-    outputs: list[dict] | None   # multi-output spec [{field, type}]
-    destinations: list[dict] | None  # embed stage only
-    start_if: dict | None        # conditions to start stage (else park as waiting)
-    continue_if: list[dict] | None   # conditions to auto-advance (else park for review)
+    prompt: str | None      # path to prompt file, e.g. 'prompts/clarify.txt'
+    input: str | None       # single input field name in stage data
+    inputs: list | None     # multi-input field names
+    output: str | None      # single output field name
+    outputs: list | None    # multi-output specs [{field, type}]
+    destinations: list | None  # embed stage only: [{type, url, collection, ...}]
+    require_context: bool | None
+    start_if: dict | None   # conditions to check before starting (else park as waiting)
+    continue_if: list | None   # conditions to check after running (else park for review)
+    skip_if: dict | None    # conditions to skip this stage entirely
+    vision: bool | None     # pass original image to LLM alongside text
+    save_as_artifact: bool | None  # persist LLM output as artifact
+    max_concurrent: int | None     # override global concurrency
 ```
+
+`PipelineConfig.from_yaml(path)` loads `config/pipeline.yaml` and performs `${VAR}` environment variable substitution at load time.
 
 ---
 
@@ -91,86 +95,73 @@ class StageDefinition:
 
 ### `core/services/ingest.py`
 
-Called by `adapters/inbound/webhook.py` on each `POST /webhook`.
+Two ingest paths:
 
-**`ingest(image_bytes, meta_json, attachment_filename) → Document | None`**
+**`ingest(image_bytes, meta_json, attachment_filename, db, vault_path, filesystem)`**
+- Called for webhook-received images (reMarkable)
+- Hash → dedup check → save artifact → create Document → store ingest metadata in KV
 
-1. Compute `content_hash = sha256(image_bytes).hexdigest()`
-2. Check for existing document with same hash → if found, return `None` (caller returns 200)
-3. Determine `date_month` from current UTC datetime
-4. Write PNG to filesystem: `<vault>/<YYYY-MM>/<hash[:8]>.png`
-5. Insert `Document` row with `current_stage='ocr', stage_state='pending'`
-6. Append `stage_events` row: `event_type='started'` (for the webhook receipt, not the OCR stage)
-7. Return the new `Document`
+**`ingest_upload(file_bytes, filename, file_type, title, additional_context, linked_contexts, db, vault_path, filesystem)`**
+- Called by `POST /api/v1/documents`
+- Same dedup and artifact logic; additionally handles `.txt`/`.md` (no image saved, raw text stored in KV meta)
+- Auto-extracts title from filename stem or first non-blank line for text files
+- Returns `None` on exact duplicate (SHA-256 collision)
 
-Returns `None` on exact duplicate (same PNG bytes), returns the `Document` on success. All I/O calls go through outbound adapters passed as function arguments.
+Both functions return the created `Document`. The HTTP handler in `api.py` creates the first pipeline `Job` after ingest.
 
 ---
 
 ### `core/services/worker.py`
 
-Runs as a background asyncio task started in `app.py`. Processes documents stage by stage in pipeline order.
+Background asyncio task started in `app.py` lifespan. Processes jobs stage by stage in pipeline order.
 
-**Batching loop:**
+**Main loop:**
 
 ```
 loop:
-  processed = False
   for each stage in pipeline.yaml (in order):
-    docs = db.get_pending(stage.name)
-    if not docs:
-      continue
-    await process_batch(stage, docs)
-    await ollama.unload(stage.model)   # keep_alive=0
-    processed = True
-  if not processed:
+    jobs = db.get_pending_jobs(stage.name)
+    if not jobs: continue
+    await process_batch(stage, jobs)
+    await ollama.unload(stage.model)   # keep_alive=0 to free VRAM
+    break  # restart from first stage (OCR has priority)
+  else:
     await asyncio.sleep(5)
 ```
 
-`max_concurrent` from `PipelineConfig` governs an `asyncio.Semaphore` applied within `process_batch`.
+`max_concurrent` from `PipelineConfig` (or per-stage override) governs an `asyncio.Semaphore`.
 
-**`process_batch(stage, docs)`**
-
-For each doc:
-1. Mark `stage_state='running'`, append `stage_events` row `event_type='started'`
+**`process_batch(stage, jobs)`** — for each job:
+1. Set status to `running`, append `stage_events` row
 2. Dispatch to stage handler by `stage.type`
-3. On success: write outputs to `doc.stage_data[stage.name]`, determine next stage, call `advance()`
-4. On failure: increment retry check via `stage_events` COUNT for this stage; if `< 3` reset to `pending`; else set `error`
-5. Backoff: 2s / 4s / 8s (exponential, based on retry count)
+3. On success: write outputs to job `runs`, determine next stage, upsert next job at `pending`
+4. On failure: count `failed` events for this stage; if `< 3` → reset to `pending` with backoff (2s/4s/8s); if `≥ 3` → set `error`
 
 **Stage handlers:**
 
-| Stage type | Handler |
+| Stage type | What it does |
 |---|---|
-| `computer_vision` | Call `ollama.generate_vision(model, prompt, image_bytes)` |
-| `llm_text` | Check `start_if` (park as waiting if not met); call `ollama.generate_text`; check `continue_if` (park for review if not met) |
-| `embed` | Call `ollama.embed(model, text)` → upsert to each destination (qdrant, open_webui) |
+| `computer_vision` | Call `ollama.generate_vision(model, prompt, image_bytes)` — skip if text file |
+| `llm_text` | Check `start_if` (park if not met); render prompt with Jinja2 (context, Q&A history); call `ollama.generate_text`; parse outputs; check `continue_if` (park for review if not met) |
+| `embed` | Call `ollama.generate_embed` on clarified text; upsert to each destination (Qdrant, Open WebUI) |
 
-**Post-OCR duplicate title check:**
-After OCR completes, before advancing to the next stage, check if another document with the same `title` and `stage_state != 'deleted'` exists. If so, set `current_stage='duplicate_review', stage_state='waiting'`.
+**Model unloading:** After each batch, `POST /api/generate` with `keep_alive=0` to free VRAM. Only called if the model was used.
 
-**Model unloading:**
-After each batch, `POST /api/generate` with `keep_alive=0` to Ollama to free VRAM. Only called if the model was actually used (batch was non-empty).
+**Startup recovery:** On startup, `db.reset_running()` resets any jobs stuck at `running` (from a crash) back to `pending`.
 
 ---
 
-### `core/services/review.py`
+## Prompt templates
 
-Called by `adapters/inbound/api.py` for review actions.
+Plain text files in `prompts/` using [Jinja2](https://jinja.palletsprojects.com/) syntax. Available template variables depend on stage:
 
-**`approve(doc, config, db, now_str) → Document`**
-- Advance document to the next stage in pipeline order
-- Append `stage_events` row `event_type='approved'`
-- Return updated document
+| Variable | Available in |
+|---|---|
+| `additional_context` | All LLM stages |
+| `linked_context` | All LLM stages |
+| `document_context` | All LLM stages |
+| `ocr_raw` | clarify prompt |
+| `clarified_text` | classify prompt |
+| `qa_history` | clarify prompt (Q&A loop history) |
 
-**`reject(doc, config, db, now_str) → Document`**
-- Reset `stage_state='pending'` on the current stage so the worker re-runs it
-- Append `stage_events` row `event_type='rejected'`
-- Return updated document
-
-**`reject_with_clarifications(doc, clarification_responses, config, db, now_str, free_prompt="") → Document`**
-- Appends a Q&A round to `stage_data.<stage>.qa_history`
-- Clears `clarification_requests` (will be regenerated on re-run)
-- Resets `stage_state='pending'` (worker re-runs with Q&A history as additional context)
-- Append `stage_events` row `event_type='clarified'`
-- Return updated document
+The worker renders prompts fresh on each stage run — no restart required to pick up prompt changes in development.
