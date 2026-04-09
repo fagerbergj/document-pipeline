@@ -35,6 +35,7 @@ type WorkerService struct {
 	llm       port.LLMInference
 	embed     port.EmbedStore
 	streams   port.StreamManager
+	prompts   port.PromptRenderer
 	pipeline  model.PipelineConfig
 	vaultPath string
 }
@@ -50,12 +51,13 @@ func NewWorkerService(
 	llm port.LLMInference,
 	embed port.EmbedStore,
 	streams port.StreamManager,
+	prompts port.PromptRenderer,
 	pipeline model.PipelineConfig,
 	vaultPath string,
 ) *WorkerService {
 	return &WorkerService{
 		docs, jobs, artifacts, events, contexts, kv, store,
-		llm, embed, streams, pipeline, vaultPath,
+		llm, embed, streams, prompts, pipeline, vaultPath,
 	}
 }
 
@@ -241,7 +243,7 @@ func (w *WorkerService) runOCR(
 	if stage.Prompt != "" {
 		data := OCRPromptData{DocumentContext: doc.AdditionalContext}
 		var err error
-		promptText, err = RenderPrompt(stage.Prompt, data)
+		promptText, err = w.prompts.Render(stage.Prompt, data)
 		if err != nil {
 			return fmt.Errorf("render OCR prompt: %w", err)
 		}
@@ -342,7 +344,7 @@ func (w *WorkerService) runLLMText(
 			PreviousOutput:    previousOutput,
 		}
 		var err error
-		promptText, err = RenderPrompt(stage.Prompt, data)
+		promptText, err = w.prompts.Render(stage.Prompt, data)
 		if err != nil {
 			return fmt.Errorf("render LLM prompt: %w", err)
 		}
