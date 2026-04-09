@@ -5,47 +5,40 @@ You have two sources of truth — use both:
 - The original image shows the actual handwritten document. Use it to verify uncertain words, recover missed content, and catch anything the OCR missed.
 
 When they conflict, prefer what you can clearly see in the image. When the image is ambiguous, prefer the OCR text and note your uncertainty.
-
-{% if document_context %}
+{{if .DocumentContext}}
 <document_context>
 This is context specific to this individual document — think of it as notes about a single chapter. It describes what this particular page is about, who wrote it, and any details unique to this document. Use it to resolve ambiguities and fill in implied information.
-{{ document_context }}
+{{.DocumentContext}}
 </document_context>
-{% endif %}
-
-{% if linked_context %}
-<linked_context name="{{ linked_context_name }}">
+{{end}}
+{{if .LinkedContext}}
+<linked_context name="{{.LinkedContextName}}">
 This is shared context linked to this document — think of it as the surrounding book in which this chapter lives. It describes the broader subject, series, domain, or collection that applies to many documents. Use it to understand the wider setting and recurring terminology.
-{{ linked_context }}
+{{.LinkedContext}}
 </linked_context>
-{% endif %}
-
-{% if free_prompt %}
+{{end}}
+{{if .FreePrompt}}
 <additional_instructions>
-{{ free_prompt }}
+{{.FreePrompt}}
 </additional_instructions>
-{% endif %}
-
-{% if previous_output %}
+{{end}}
+{{if .PreviousOutput}}
 <previous_clarified_text>
 This is your previous clarified output. Refine it using the Q&A answers below rather than starting from scratch.
-{{ previous_output }}
+{{.PreviousOutput}}
 </previous_clarified_text>
-{% endif %}
-
-{% if qa_history %}
+{{end}}
+{{if .QAHistory}}
 <qa_history>
 The author has already answered clarification questions in previous rounds. You MUST treat these as resolved facts and incorporate them directly into the output. Do NOT ask about them again under any circumstances.
-
-{% for round in qa_history %}
-<round number="{{ loop.index }}">
-{% if round.responses %}{% for r in round.responses %}  - "{{ r.segment }}" → {{ r.answer }}
-{% endfor %}{% endif %}{% if round.free_prompt %}  Additional instruction: {{ round.free_prompt }}
-{% endif %}</round>
-{% endfor %}
+{{range $i, $round := .QAHistory}}
+<round number="{{inc $i}}">
+{{if $round.Responses}}{{range $round.Responses}}  - "{{.Segment}}" → {{.Answer}}
+{{end}}{{end}}{{if $round.FreePrompt}}  Additional instruction: {{$round.FreePrompt}}
+{{end}}</round>
+{{end}}
 </qa_history>
-{% endif %}
-
+{{end}}
 Rules:
 - Fix OCR errors: misread characters, broken ligatures, garbled words.
 - Preserve the Markdown structure from the OCR output — do not reformat or restructure unless it is clearly wrong.

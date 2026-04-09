@@ -24,8 +24,8 @@ type Job struct {
 }
 
 type JobOptions struct {
-	RequireContext bool      `json:"require_context,omitempty"`
-	Embed         *EmbedOpts `json:"embed,omitempty"`
+	RequireContext bool       `json:"require_context,omitempty"`
+	Embed          *EmbedOpts `json:"embed,omitempty"`
 }
 
 type EmbedOpts struct {
@@ -67,4 +67,3 @@ type Suggestions struct {
 	LinkedContext     string  `json:"linked_context"`
 	LinkedContextID   *string `json:"linked_context_id"`
 }
-

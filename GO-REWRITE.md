@@ -2,9 +2,26 @@
 
 Full backend rewrite of the Python/FastAPI service in Go. The React frontend, `config/pipeline.yaml`, `prompts/`, and SQLite data are all unchanged. The REST API contract is preserved so the frontend works without modification.
 
-**Approach:** schema-first, TDD, hexagonal architecture, `golang-migrate` for migrations, rewrite in-place on the `go-rewrite` branch.
+**Approach:** schema-first, TDD, hexagonal architecture, custom migration runner, rewrite in-place on the `go-rewrite` branch.
 
 **Deleted before merge to `main`:** this file and all Python source files.
+
+---
+
+## Phase status
+
+| Phase | Branch | Status |
+|---|---|---|
+| 1 — Go module + migrations | `go/phase-1-migrate` | ✅ merged |
+| 2 — Core interfaces and models | `go/phase-2-interfaces` | ✅ merged |
+| 3 — Core implementation | `go/phase-3-core` | ✅ merged |
+| 4 — HTTP endpoints | `go/phase-4-http` | ⬜ not started |
+| 5 — SQLite store adapter | `go/phase-5-sqlite` | ⬜ not started |
+| 6 — Ollama adapter | `go/phase-6-ollama` | ⬜ not started |
+| 7 — Qdrant, Open WebUI, filesystem adapters | `go/phase-7-adapters` | ⬜ not started |
+| 8 — E2E integration tests + docs | `go/phase-8-e2e` | ⬜ not started |
+| 9 — Docker full swap | `go/phase-9-docker` | ⬜ not started |
+| 10 — React UI tests | `go/phase-10-ui-tests` | ⬜ not started |
 
 ---
 
@@ -20,7 +37,7 @@ document-pipeline/
 ├── docker-compose.yml
 │
 ├── db/
-│   ├── README.md
+│   ├── migrations.go                  # //go:embed migrations/*.sql
 │   └── migrations/
 │       ├── 001_create_documents.{up,down}.sql
 │       ├── 002_create_jobs.{up,down}.sql
@@ -42,7 +59,7 @@ document-pipeline/
     ├── README.md
     ├── main.go                        # package main
     │
-    ├── api/                           # OpenAPI .yaml docs (non-Go)
+    ├── api/
     │   └── rest/                      # Chi handlers — package rest
     │       ├── router.go
     │       ├── documents.go
@@ -57,7 +74,7 @@ document-pipeline/
     ├── core/                          # package core — business logic
     │   ├── model/                     # package model — domain types
     │   │   ├── document.go
-    │   │   ├── job.go
+    │   │   ├── job.go                 # JobStatus, Confidence typed string enums
     │   │   ├── artifact.go
     │   │   ├── context.go
     │   │   ├── chat.go
@@ -65,25 +82,24 @@ document-pipeline/
     │   │   ├── event.go
     │   │   └── pagination.go
     │   │
-    │   ├── port/                      # package port — interfaces
+    │   ├── port/                      # package port — interfaces named after domain concepts
     │   │   ├── repository.go          # DocumentRepo, JobRepo, ArtifactRepo, ContextRepo,
     │   │   │                          #   ChatRepo, ChatMessageRepo, StageEventRepo, KeyValueRepo
-    │   │   ├── ollama.go
-    │   │   ├── qdrant.go
-    │   │   ├── openwebui.go
-    │   │   ├── filesystem.go
+    │   │   ├── llm.go                 # LLMInference (vision, text, embed, unload)
+    │   │   ├── embed.go               # EmbedStore (upsert, search, delete)
+    │   │   ├── artifact.go            # DocumentArtifactStore (save, read)
     │   │   └── stream.go              # StreamManager (SSE channels)
     │   │
-    │   ├── ingest.go                  # IngestService
-    │   ├── worker.go                  # WorkerService
-    │   ├── pipeline.go                # Config loader (pipeline.yaml + ${VAR})
-    │   ├── prompts.go                 # text/template renderer
-    │   ├── pagination.go              # PageToken encode/decode
-    │   └── hash.go
+    │   ├── ingest.go                  # IngestService — Ingest(IngestRequest)
+    │   ├── worker.go                  # WorkerService — stage loop, retry, backoff
+    │   ├── pipeline.go                # YAML config loader + ${VAR} substitution
+    │   ├── prompts.go                 # text/template renderer + prompt data types
+    │   ├── pagination.go              # PageToken encode/decode (base64 JSON)
+    │   └── hash.go                    # SHA-256 content hash
     │
     └── store/                         # outbound adapters
-        ├── sqlite/                    # package sqlite
-        │   ├── db.go                  # Open, WAL, migrations
+        ├── sqlite/                    # package sqlite — all DB repositories
+        │   ├── db.go                  # Open, WAL, custom migration runner
         │   ├── documents.go
         │   ├── jobs.go
         │   ├── artifacts.go
@@ -91,16 +107,18 @@ document-pipeline/
         │   ├── contexts.go
         │   ├── chat.go
         │   ├── key_value.go
-        │   └── pagination.go
-        ├── ollama/                    # package ollama
+        │   └── pagination.go          # keyset pagination SQL builder
+        ├── ollama/                    # package ollama — implements LLMInference
         │   ├── client.go
         │   ├── generate.go            # vision + text (streaming NDJSON)
         │   ├── embed.go
         │   └── unload.go
-        ├── qdrant/                    # package qdrant
-        ├── openwebui/                 # package openwebui
-        ├── filesystem/                # package filesystem
-        └── stream/                    # package stream — SSE channel manager
+        ├── embed/                     # package embed — implements EmbedStore
+        │   └── coordinator.go         # EmbedStoreCoordinator: wraps qdrant + openwebui
+        ├── qdrant/                    # package qdrant — used by embed.EmbedStoreCoordinator
+        ├── openwebui/                 # package openwebui — used by embed.EmbedStoreCoordinator
+        ├── filesystem/                # package filesystem — implements DocumentArtifactStore
+        └── stream/                    # package stream — implements StreamManager
 ```
 
 **Removed in Phase 9:** `app.py`, `core/`, `adapters/`, `migrate.py`, `backfill_clarify_artifacts.py`, `requirements.txt`, `pyproject.toml`, `uv.lock`, `GO-REWRITE.md`.
@@ -114,10 +132,13 @@ document-pipeline/
 | HTTP router | Chi (`github.com/go-chi/chi/v5`) | Standard `http.Handler` — no lock-in; SSE works natively |
 | SQLite driver | `modernc.org/sqlite` | Pure Go, CGO-free — simpler Docker builds |
 | DB layer | `database/sql` + repository interfaces | Swap to Postgres by changing one file |
-| Migrations | `golang-migrate/migrate/v4` | Schema-first; embedded via `//go:embed` |
+| Migrations | Custom runner (`db/migrations.go`) | `golang-migrate`'s sqlite3 driver pulls in CGO; custom ~80-line runner using `modernc.org/sqlite` directly |
 | Concurrency | `errgroup` + `semaphore` | Replaces `asyncio.gather` + `asyncio.Semaphore` |
 | SSE tokens | `chan StreamEvent` per job | Replaces `asyncio.Queue` |
 | Prompts | `text/template` | Prompt files updated to `{{.VariableName}}` syntax |
+| Port naming | Domain concepts, not technologies | `LLMInference` not `OllamaClient`; `EmbedStore` not `QdrantClient` |
+| Embed coordination | `EmbedStoreCoordinator` in `store/embed/` | Qdrant + Open WebUI are implementation details; core only sees `EmbedStore` |
+| Ingest API | `Ingest(IngestRequest)` | Single generic method — HTTP handlers do transport-specific parsing |
 
 ### Async → goroutine translation
 
@@ -134,75 +155,64 @@ document-pipeline/
 - Enable WAL at open: `PRAGMA journal_mode=WAL` (concurrent readers + one writer)
 - JSON columns (`options`, `runs`, `sources`, `rag_retrieval`): use a `jsonColumn[T]` helper implementing `sql.Scanner` + `driver.Valuer`
 - Keyset pagination: `(sort_col, id) > (?, ?)` — no OFFSET
+- Migration tracking: `_migrations` table, applied once, idempotent on re-open
 
-### Prompt templates
+### CI
 
-Current `prompts/*.txt` use Jinja2 `{{ variable_name }}`. Go `text/template` uses `{{.VariableName}}`. Update prompt files during Phase 3 (one-time change, no user-facing impact).
+- GitHub Actions runs `go test ./...` and `gofmt -l .` on every push and PR
+- Both checks are required on `main` and `go-rewrite` via branch protection
 
 ---
 
 ## Phases
 
-### Phase 1 — Go module + golang-migrate
+### Phase 1 — Go module + migrations ✅
 
 **Goal:** Go toolchain bootstrapped; migrations define the schema.
 
-- `go.mod` at repo root
-- `server/main.go` skeleton (runs migrations, exits)
+- `go.mod` at repo root (module `github.com/fagerbergj/document-pipeline`, Go 1.25)
+- `server/main.go` skeleton
 - `db/migrations/` — 8 tables matching current SQLite schema exactly
-- Migration runner embeds `db/migrations` via `//go:embed`
+- `db/migrations.go` — `//go:embed` package at repo root (embed can't use `../` paths)
+- Custom migration runner in `server/store/sqlite/db.go` — tracks applied migrations in `_migrations` table
 
-**Packages:** `golang-migrate/migrate/v4`, `modernc.org/sqlite`
-
-**TDD:** Verify all up/down migrations round-trip against in-memory SQLite.
-
-**Branch:** `go/phase-1-migrate` → merge to `go-rewrite`
+**Tests:** Up/down round-trip; idempotent re-open.
 
 ---
 
-### Phase 2 — Core interfaces and models
+### Phase 2 — Core interfaces and models ✅
 
-**Goal:** All domain types and port interfaces defined. No implementations yet.
+**Goal:** All domain types and port interfaces defined. No implementations.
 
-- `server/core/model/` — all domain structs
-- `server/core/port/` — all repository and client interfaces
+- `server/core/model/` — all domain structs; `JobStatus` and `Confidence` are typed string enums
+- `server/core/port/` — all interfaces named after domain concepts, not technologies
 
-**TDD:** Compile-time interface compliance assertions:
-```go
-var _ port.DocumentRepo = (*sqlite.DocumentRepo)(nil)
-```
-
-**Branch:** `go/phase-2-interfaces` → merge to `go-rewrite`
+**Port design:**
+- `EmbedStore` is the core-facing interface; `EmbedStoreCoordinator` implements it by coordinating `store/qdrant` and `store/openwebui` — those are not ports
+- Port files named after domain (`llm.go`, `embed.go`, `artifact.go`) not implementation
 
 ---
 
-### Phase 3 — Core implementation
+### Phase 3 — Core implementation ✅
 
 **Goal:** All business logic implemented and tested. No HTTP, no real DB.
 
-- `server/core/ingest.go` — IngestService
-- `server/core/worker.go` — WorkerService (stage loop, retry, backoff)
-- `server/core/pipeline.go` — YAML config loader + `${VAR}` substitution
-- `server/core/prompts.go` — `text/template` renderer
-- `server/core/pagination.go` — PageToken encode/decode
-- Update `prompts/*.txt` to Go template syntax
+- `ingest.go` — `IngestService.Ingest(IngestRequest)`: hash, dedup, save artifact, create doc + first job
+- `worker.go` — `WorkerService.Run(ctx)`: stage loop, OCR/LLM/embed handlers, retry with 2^n backoff (max 3 → error)
+- `pipeline.go` — YAML loader with `os.Expand` for `${VAR}` substitution
+- `prompts.go` — `text/template` renderer; typed data structs per stage (`OCRPromptData`, `ClarifyPromptData`, `ClassifyPromptData`)
+- `pagination.go` — base64 JSON encode/decode
+- `prompts/*.txt` — converted from Jinja2 to Go `text/template` syntax
 
-**TDD:** Table-driven tests with mock port implementations:
-- Hash dedup
-- Retry count + exponential backoff
-- `continue_if` evaluation
-- Pagination token round-trip
-- Config loading with env var substitution
-
-**Branch:** `go/phase-3-core` → merge to `go-rewrite`
+**Tests:** 11 unit tests — hash, pagination round-trip, pipeline loading, `continue_if`, `start_if`, `skip_if`, LLM response parsing (XML and JSON formats).
 
 ---
 
-### Phase 4 — HTTP endpoint implementation
+### Phase 4 — HTTP endpoints
 
-**Goal:** All 20+ endpoints running in Go, backed by mock adapters.
+**Goal:** All endpoints running in Go, backed by real adapters once available.
 
-- `server/api/rest/` — Chi router, all handlers, SSE helpers, middleware
+- `server/api/rest/` — Chi router, all handlers, SSE helpers, CORS middleware
 - Static file serving + SPA fallback from embedded `frontend/dist`
 
 **SSE pattern:**
@@ -223,9 +233,7 @@ func (h *handler) streamJob(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-**TDD:** `net/http/httptest` handler tests — request parsing, response shapes, pagination, SSE sequence, error responses.
-
-**Branch:** `go/phase-4-http` → merge to `go-rewrite`
+**Tests:** `net/http/httptest` handler tests — request parsing, response shapes, pagination, SSE sequence, error responses.
 
 ---
 
@@ -234,38 +242,33 @@ func (h *handler) streamJob(w http.ResponseWriter, r *http.Request) {
 **Goal:** Full SQLite repository implementation.
 
 - `server/store/sqlite/` — all repos implementing `port.*Repo` interfaces
-- `db.go` runs migrations via `golang-migrate` on open
+- Interface compliance assertions: `var _ port.DocumentRepo = (*DocumentRepo)(nil)`
 
-**TDD:** Integration tests with `t.TempDir()` SQLite files — CRUD round-trips, pagination cursor continuity, concurrent reads, migration idempotency.
-
-**Branch:** `go/phase-5-sqlite` → merge to `go-rewrite`
+**Tests:** Integration tests with `t.TempDir()` SQLite files — CRUD round-trips, pagination cursor continuity, concurrent reads, migration idempotency.
 
 ---
 
 ### Phase 6 — Ollama adapter
 
-**Goal:** HTTP client for vision, text generation (streaming), embeddings, model unload.
+**Goal:** HTTP client implementing `port.LLMInference`.
 
-- `server/store/ollama/` — NDJSON stream → `chan string`, base64 image encoding, cancellation via `context.WithCancel`
+- `server/store/ollama/` — NDJSON streaming, base64 image encoding, cancellation via context
 
-**TDD:** `httptest.Server` mock Ollama — streaming delivery, vision request, embed, cancellation, unload call.
-
-**Branch:** `go/phase-6-ollama` → merge to `go-rewrite`
+**Tests:** `httptest.Server` mock — streaming delivery, vision request, embed, cancellation, unload.
 
 ---
 
-### Phase 7 — Qdrant, Open WebUI, filesystem adapters
+### Phase 7 — Qdrant, Open WebUI, filesystem, stream adapters
 
-**Goal:** All remaining outbound adapters implemented and tested.
+**Goal:** All remaining outbound adapters.
 
+- `server/store/embed/coordinator.go` — `EmbedStoreCoordinator` implements `port.EmbedStore`
 - `server/store/qdrant/` — named vectors (text + optional image), search, delete
-- `server/store/openwebui/` — markdown + YAML frontmatter upload, 400 treated as warning
-- `server/store/filesystem/` — artifact file I/O
-- `server/store/stream/` — `sync.Map` of `job_id → chan StreamEvent`
+- `server/store/openwebui/` — markdown + YAML frontmatter upload; 400 treated as warning
+- `server/store/filesystem/` — implements `port.DocumentArtifactStore`
+- `server/store/stream/` — `sync.Map` of `job_id → chan StreamEvent`, implements `port.StreamManager`
 
-**TDD:** Mock HTTP server tests for Qdrant + Open WebUI; `t.TempDir()` for filesystem.
-
-**Branch:** `go/phase-7-adapters` → merge to `go-rewrite`
+**Tests:** Mock HTTP servers for Qdrant + Open WebUI; `t.TempDir()` for filesystem.
 
 ---
 
@@ -276,14 +279,11 @@ func (h *handler) streamJob(w http.ResponseWriter, r *http.Request) {
 - `server/test/integration/` — mock Ollama + real SQLite + temp vault
 - Update `db/README.md`, `api/README.md`, `server/README.md`, root `README.md`, `CONTRIBUTING.md`
 
-**Test commands:**
 ```bash
 go test ./...                              # all tests
 go test ./server/test/integration/... -v  # E2E only
 go run ./server --db /tmp/test.db --vault /tmp/vault
 ```
-
-**Branch:** `go/phase-8-e2e` → merge to `go-rewrite`
 
 ---
 
@@ -291,7 +291,6 @@ go run ./server --db /tmp/test.db --vault /tmp/vault
 
 **Goal:** Python code removed; Go binary runs in production.
 
-**Dockerfile:**
 ```dockerfile
 FROM node:22-alpine AS frontend
 WORKDIR /app/frontend
@@ -300,7 +299,7 @@ RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
-FROM golang:1.23-alpine AS builder
+FROM golang:1.25-alpine AS builder
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
@@ -324,8 +323,6 @@ rm -f requirements.txt pyproject.toml uv.lock GO-REWRITE.md
 
 **Validation:** `docker compose up --build` — service starts, UI loads, test document processes end-to-end.
 
-**Branch:** `go/phase-9-docker` → merge to `go-rewrite` → merge `go-rewrite` to `main`
-
 ---
 
 ### Phase 10 — React UI tests
@@ -346,8 +343,6 @@ test('approve button advances job to next stage', async () => {
 
 **Test command:** `cd frontend && npm run test`
 
-**Branch:** `go/phase-10-ui-tests` → merge to `go-rewrite`
-
 ---
 
 ## Branching strategy
@@ -355,9 +350,9 @@ test('approve button advances job to next stage', async () => {
 ```
 main  ←──────────────────────────────── merge after Phase 9
   │
-go-rewrite  ←── go/phase-1-migrate
-            ←── go/phase-2-interfaces
-            ←── go/phase-3-core
+go-rewrite  ←── go/phase-1-migrate      ✅
+            ←── go/phase-2-interfaces   ✅
+            ←── go/phase-3-core         ✅
             ←── go/phase-4-http
             ←── go/phase-5-sqlite
             ←── go/phase-6-ollama
@@ -367,8 +362,7 @@ go-rewrite  ←── go/phase-1-migrate
             ←── go/phase-10-ui-tests
 ```
 
-- Each phase branch merges to `go-rewrite` (not `main`) once tests pass
-- `main` continues receiving Python bugfixes independently — merge `main → go-rewrite` periodically to pick up changes
-- Do not rebase `go-rewrite` against `main` (preserves phase merge history)
+- Each phase branch merges to `go-rewrite` (not `main`) once CI passes
+- `main` continues receiving Python bugfixes independently — merge `main → go-rewrite` periodically
+- Do not rebase `go-rewrite` against `main`
 - `go-rewrite` merges to `main` only after Phase 9 validation — one-way cutover
-- Optional: open each `go/phase-N-*` as a PR targeting `go-rewrite` for review
