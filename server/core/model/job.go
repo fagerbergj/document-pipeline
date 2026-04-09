@@ -2,11 +2,21 @@ package model
 
 import "time"
 
+type JobStatus string
+
+const (
+	JobStatusPending JobStatus = "pending"
+	JobStatusRunning JobStatus = "running"
+	JobStatusWaiting JobStatus = "waiting"
+	JobStatusError   JobStatus = "error"
+	JobStatusDone    JobStatus = "done"
+)
+
 type Job struct {
 	ID         string
 	DocumentID string
 	Stage      string
-	Status     string // pending|running|waiting|error|done
+	Status     JobStatus
 	Options    JobOptions
 	Runs       []Run
 	CreatedAt  time.Time
@@ -22,11 +32,19 @@ type EmbedOpts struct {
 	EmbedImage bool `json:"embed_image,omitempty"`
 }
 
+type Confidence string
+
+const (
+	ConfidenceLow    Confidence = "low"
+	ConfidenceMedium Confidence = "medium"
+	ConfidenceHigh   Confidence = "high"
+)
+
 type Run struct {
 	ID          string
 	Inputs      []Field
 	Outputs     []Field
-	Confidence  string
+	Confidence  Confidence
 	Questions   []Question
 	Suggestions Suggestions
 	CreatedAt   time.Time
@@ -50,10 +68,3 @@ type Suggestions struct {
 	LinkedContextID   *string `json:"linked_context_id"`
 }
 
-const (
-	StatusPending = "pending"
-	StatusRunning = "running"
-	StatusWaiting = "waiting"
-	StatusError   = "error"
-	StatusDone    = "done"
-)
