@@ -1,4 +1,4 @@
-package core
+package config
 
 import (
 	"fmt"
@@ -8,19 +8,26 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// LoadPipeline parses a pipeline YAML file, expanding ${VAR} references from env.
-func LoadPipeline(path string) (model.PipelineConfig, error) {
-	data, err := os.ReadFile(path)
+// YAMLPipelineSource loads PipelineConfig from a YAML file, expanding ${VAR} env references.
+type YAMLPipelineSource struct {
+	Path string
+}
+
+var _ interface {
+	Load() (model.PipelineConfig, error)
+} = (*YAMLPipelineSource)(nil)
+
+func (s *YAMLPipelineSource) Load() (model.PipelineConfig, error) {
+	data, err := os.ReadFile(s.Path)
 	if err != nil {
 		return model.PipelineConfig{}, fmt.Errorf("read pipeline config: %w", err)
 	}
 
-	// Expand ${VAR} before YAML parsing so env vars substitute into all fields.
 	expanded := os.Expand(string(data), func(key string) string {
 		if v, ok := os.LookupEnv(key); ok {
 			return v
 		}
-		return "${" + key + "}" // leave unexpanded if not set
+		return "${" + key + "}"
 	})
 
 	var raw struct {
@@ -49,9 +56,7 @@ func LoadPipeline(path string) (model.PipelineConfig, error) {
 		return model.PipelineConfig{}, fmt.Errorf("parse pipeline config: %w", err)
 	}
 
-	cfg := model.PipelineConfig{
-		MaxConcurrent: raw.MaxConcurrent,
-	}
+	cfg := model.PipelineConfig{MaxConcurrent: raw.MaxConcurrent}
 	if cfg.MaxConcurrent == 0 {
 		cfg.MaxConcurrent = 1
 	}

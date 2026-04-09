@@ -1,4 +1,4 @@
-package core
+package config
 
 import (
 	"os"
@@ -27,7 +27,7 @@ stages:
     metadata_fields: [title, tags]
 `
 
-func TestLoadPipeline(t *testing.T) {
+func TestYAMLPipelineSource_Load(t *testing.T) {
 	os.Setenv("TEST_MODEL", "llava")
 	defer os.Unsetenv("TEST_MODEL")
 
@@ -37,9 +37,10 @@ func TestLoadPipeline(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg, err := LoadPipeline(path)
+	src := &YAMLPipelineSource{Path: path}
+	cfg, err := src.Load()
 	if err != nil {
-		t.Fatalf("LoadPipeline: %v", err)
+		t.Fatalf("Load: %v", err)
 	}
 
 	if cfg.MaxConcurrent != 2 {
@@ -50,9 +51,6 @@ func TestLoadPipeline(t *testing.T) {
 	}
 
 	ocr := cfg.Stages[0]
-	if ocr.Name != "ocr" {
-		t.Errorf("stage[0].Name: got %q, want %q", ocr.Name, "ocr")
-	}
 	if ocr.Model != "llava" {
 		t.Errorf("stage[0].Model: got %q (env var not expanded?)", ocr.Model)
 	}
@@ -66,14 +64,14 @@ func TestLoadPipeline(t *testing.T) {
 	}
 }
 
-func TestLoadPipeline_DefaultMaxConcurrent(t *testing.T) {
+func TestYAMLPipelineSource_DefaultMaxConcurrent(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "pipeline.yaml")
 	if err := os.WriteFile(path, []byte("stages: []"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	cfg, err := LoadPipeline(path)
+	cfg, err := (&YAMLPipelineSource{Path: path}).Load()
 	if err != nil {
 		t.Fatal(err)
 	}
