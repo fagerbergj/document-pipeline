@@ -2,6 +2,16 @@ package model
 
 import "time"
 
+type FileType string
+
+const (
+	FileTypePNG  FileType = "png"
+	FileTypeJPG  FileType = "jpg"
+	FileTypeJPEG FileType = "jpeg"
+	FileTypeTXT  FileType = "txt"
+	FileTypeMD   FileType = "md"
+)
+
 type Document struct {
 	ID                string
 	ContentHash       string

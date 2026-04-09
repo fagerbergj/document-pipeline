@@ -53,13 +53,13 @@ func TestIsSkipFileType(t *testing.T) {
 		SkipIf: map[string]any{"file_type": []any{"txt", "md"}},
 	}
 
-	if !isSkipFileType(stage, "txt") {
+	if !isSkipFileType(stage, model.FileTypeTXT) {
 		t.Error("txt should be skipped")
 	}
-	if !isSkipFileType(stage, "md") {
+	if !isSkipFileType(stage, model.FileTypeMD) {
 		t.Error("md should be skipped")
 	}
-	if isSkipFileType(stage, "png") {
+	if isSkipFileType(stage, model.FileTypePNG) {
 		t.Error("png should not be skipped")
 	}
 }

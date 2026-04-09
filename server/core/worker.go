@@ -637,7 +637,7 @@ func checkContinueIf(stage model.StageDefinition, confidence model.Confidence) b
 	return false
 }
 
-func isSkipFileType(stage model.StageDefinition, fileType string) bool {
+func isSkipFileType(stage model.StageDefinition, fileType model.FileType) bool {
 	if stage.SkipIf == nil {
 		return false
 	}
@@ -646,7 +646,7 @@ func isSkipFileType(stage model.StageDefinition, fileType string) bool {
 		return false
 	}
 	for _, t := range types {
-		if fmt.Sprint(t) == fileType {
+		if model.FileType(fmt.Sprint(t)) == fileType {
 			return true
 		}
 	}

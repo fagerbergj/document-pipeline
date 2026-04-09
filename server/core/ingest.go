@@ -27,7 +27,7 @@ var genericFilenames = map[string]bool{
 type IngestRequest struct {
 	FileBytes         []byte
 	Filename          string
-	FileType          string // png, jpg, jpeg, txt, md
+	FileType          model.FileType
 	Title             string
 	AdditionalContext string
 	LinkedContexts    []string
@@ -39,7 +39,7 @@ type IngestMeta struct {
 	Meta               map[string]any `json:"meta,omitempty"`
 	AttachmentFilename string         `json:"attachment_filename,omitempty"`
 	RawText            string         `json:"raw_text,omitempty"`
-	FileType           string         `json:"file_type,omitempty"`
+	FileType           model.FileType `json:"file_type,omitempty"`
 }
 
 // IngestService creates documents from incoming files.
@@ -89,7 +89,7 @@ func (s *IngestService) Ingest(ctx context.Context, req IngestRequest) (model.Jo
 	var sourceArtifactID string
 
 	switch req.FileType {
-	case "png", "jpg", "jpeg":
+	case model.FileTypePNG, model.FileTypeJPG, model.FileTypeJPEG:
 		sourceArtifactID = uuid.NewString()
 		artifactFilename := hash[:8] + ".png"
 		if err := s.store.Save(s.vaultPath, sourceArtifactID, artifactFilename, req.FileBytes); err != nil {
