@@ -12,17 +12,17 @@ type StageDefinition struct {
 	Model          string
 	Prompt         string
 	Input          string
-	Inputs         []string
 	Output         string
 	Outputs        []StageOutput
 	Destinations   []map[string]any
+	MetadataFields []string
 	RequireContext bool
 	StartIf        map[string]any
 	ContinueIf     []map[string]any
 	SkipIf         map[string]any
 	Vision         bool
 	SaveAsArtifact bool
-	MaxConcurrent  int
+	MaxConcurrent  *int // nil means use PipelineConfig.MaxConcurrent
 }
 
 type StageOutput struct {

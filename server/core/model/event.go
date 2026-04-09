@@ -12,8 +12,11 @@ type StageEvent struct {
 }
 
 const (
-	EventReceived  = "received"
-	EventStarted   = "started"
-	EventCompleted = "completed"
-	EventFailed    = "failed"
+	EventReceived         = "received"
+	EventStarted          = "started"
+	EventCompleted        = "completed"
+	EventFailed           = "failed"
+	EventSkipped          = "skipped"
+	EventWaitingForContext = "waiting_for_context"
+	EventAwaitingReview   = "awaiting_review"
 )
