@@ -22,6 +22,26 @@ var genericFilenames = map[string]bool{
 	"document":   true,
 }
 
+// IngestRequest carries all inputs needed to ingest a file.
+// The HTTP layer is responsible for populating this from the request.
+type IngestRequest struct {
+	FileBytes         []byte
+	Filename          string
+	FileType          string // png, jpg, jpeg, txt, md
+	Title             string
+	AdditionalContext string
+	LinkedContexts    []string
+	Meta              IngestMeta // stored in kv for worker use
+}
+
+// IngestMeta is arbitrary metadata stored in kv for the worker to read at processing time.
+type IngestMeta struct {
+	Meta               map[string]any `json:"meta,omitempty"`
+	AttachmentFilename string         `json:"attachment_filename,omitempty"`
+	RawText            string         `json:"raw_text,omitempty"`
+	FileType           string         `json:"file_type,omitempty"`
+}
+
 // IngestService creates documents from incoming files.
 type IngestService struct {
 	docs      port.DocumentRepo
@@ -47,146 +67,63 @@ func NewIngestService(
 	return &IngestService{docs, jobs, artifacts, events, kv, store, pipeline, vaultPath}
 }
 
-// IngestMeta is the webhook ingest metadata stored in kv for the worker.
-type IngestMeta struct {
-	Meta               map[string]any `json:"meta"`
-	AttachmentFilename string         `json:"attachment_filename"`
-	RawText            string         `json:"raw_text,omitempty"`
-	FileType           string         `json:"file_type,omitempty"`
-}
-
-// IngestWebhook ingests a PNG from the reMarkable webhook.
-// Returns (job, nil) on success, (zero, nil) on duplicate, (zero, err) on failure.
-func (s *IngestService) IngestWebhook(ctx context.Context, imageBytes []byte, meta map[string]any, attachmentFilename string) (model.Job, bool, error) {
-	hash := ContentHash(imageBytes)
+// Ingest hashes the file, checks for duplicates, saves the artifact, and creates the
+// document and first pipeline job. Returns (job, true, nil) on success,
+// (zero, false, nil) on duplicate, or (zero, false, err) on failure.
+func (s *IngestService) Ingest(ctx context.Context, req IngestRequest) (model.Job, bool, error) {
+	hash := ContentHash(req.FileBytes)
 
 	_, isDuplicate, err := s.docs.GetByHash(ctx, hash)
 	if err != nil {
 		return model.Job{}, false, fmt.Errorf("check duplicate: %w", err)
 	}
 	if isDuplicate {
-		slog.Info("duplicate hash — skipping webhook ingest", "hash_prefix", hash[:8])
+		slog.Info("duplicate hash — skipping ingest", "hash_prefix", hash[:8])
 		return model.Job{}, false, nil
 	}
 
 	now := time.Now().UTC()
-	artifactID := uuid.NewString()
-	filename := hash[:8] + ".png"
-
-	if err := s.store.Save(s.vaultPath, artifactID, filename, imageBytes); err != nil {
-		return model.Job{}, false, fmt.Errorf("save artifact: %w", err)
-	}
-	pngPath := filepath.Join(s.vaultPath, "artifacts", artifactID, filename)
-
-	title := titleFromWebhookMeta(meta, attachmentFilename)
-	doc := model.Document{
-		ID:          uuid.NewString(),
-		ContentHash: hash,
-		PNGPath:     &pngPath,
-		Title:       title,
-		DateMonth:   strPtr(now.Format("2006-01")),
-		CreatedAt:   now,
-		UpdatedAt:   now,
-	}
-
-	if err := s.docs.Insert(ctx, doc); err != nil {
-		return model.Job{}, false, fmt.Errorf("insert document: %w", err)
-	}
-
-	artifact := model.Artifact{
-		ID:          artifactID,
-		DocumentID:  doc.ID,
-		Filename:    filename,
-		ContentType: "image/png",
-		CreatedAt:   now,
-		UpdatedAt:   now,
-	}
-	if err := s.artifacts.Insert(ctx, artifact); err != nil {
-		return model.Job{}, false, fmt.Errorf("insert artifact: %w", err)
-	}
-
-	ingestMeta := IngestMeta{Meta: meta, AttachmentFilename: attachmentFilename}
-	if err := s.storeIngestMeta(ctx, doc.ID, ingestMeta); err != nil {
-		return model.Job{}, false, err
-	}
-
-	if err := s.events.Append(ctx, model.StageEvent{
-		DocumentID: doc.ID,
-		Stage:      "webhook",
-		EventType:  model.EventReceived,
-		Timestamp:  now,
-	}); err != nil {
-		return model.Job{}, false, fmt.Errorf("append event: %w", err)
-	}
-
-	job, err := s.createFirstJob(ctx, doc, now)
-	if err != nil {
-		return model.Job{}, false, err
-	}
-
-	slog.Info("created document via webhook", "doc_id", doc.ID[:8], "hash_prefix", hash[:8])
-	return job, true, nil
-}
-
-// IngestUpload ingests a file from a direct API upload.
-// Returns (job, true, nil) on success, (zero, false, nil) on duplicate, (zero, false, err) on failure.
-func (s *IngestService) IngestUpload(
-	ctx context.Context,
-	fileBytes []byte,
-	filename, fileType string,
-	title, additionalContext string,
-	linkedContexts []string,
-) (model.Job, bool, error) {
-	hash := ContentHash(fileBytes)
-
-	_, isDuplicate, err := s.docs.GetByHash(ctx, hash)
-	if err != nil {
-		return model.Job{}, false, fmt.Errorf("check duplicate: %w", err)
-	}
-	if isDuplicate {
-		slog.Info("duplicate hash — skipping upload", "hash_prefix", hash[:8])
-		return model.Job{}, false, nil
-	}
-
-	now := time.Now().UTC()
-	ingestMeta := IngestMeta{AttachmentFilename: filename}
+	meta := req.Meta
 
 	var pngPath *string
 	var sourceArtifactID string
 
-	switch fileType {
+	switch req.FileType {
 	case "png", "jpg", "jpeg":
 		sourceArtifactID = uuid.NewString()
 		artifactFilename := hash[:8] + ".png"
-		if err := s.store.Save(s.vaultPath, sourceArtifactID, artifactFilename, fileBytes); err != nil {
+		if err := s.store.Save(s.vaultPath, sourceArtifactID, artifactFilename, req.FileBytes); err != nil {
 			return model.Job{}, false, fmt.Errorf("save artifact: %w", err)
 		}
 		p := filepath.Join(s.vaultPath, "artifacts", sourceArtifactID, artifactFilename)
 		pngPath = &p
 
 	default: // txt, md
-		rawText := string(fileBytes)
-		ingestMeta.RawText = rawText
-		ingestMeta.FileType = fileType
-		if title == "" {
-			title = titleFromText(filename, rawText)
+		rawText := string(req.FileBytes)
+		meta.RawText = rawText
+		meta.FileType = req.FileType
+		if req.Title == "" {
+			req.Title = titleFromText(req.Filename, rawText)
 		}
 	}
 
+	title := req.Title
 	if title == "" {
-		title = titleFromFilename(filename)
+		title = titleFromFilename(req.Filename)
 	}
 
 	doc := model.Document{
 		ID:                uuid.NewString(),
 		ContentHash:       hash,
 		PNGPath:           pngPath,
-		Title:             strPtr(title),
+		AdditionalContext: req.AdditionalContext,
+		LinkedContexts:    req.LinkedContexts,
 		DateMonth:         strPtr(now.Format("2006-01")),
-		AdditionalContext: additionalContext,
-		LinkedContexts:    linkedContexts,
 		CreatedAt:         now,
 		UpdatedAt:         now,
+	}
+	if title != "" {
+		doc.Title = &title
 	}
 
 	if err := s.docs.Insert(ctx, doc); err != nil {
@@ -207,13 +144,17 @@ func (s *IngestService) IngestUpload(
 		}
 	}
 
-	if err := s.storeIngestMeta(ctx, doc.ID, ingestMeta); err != nil {
-		return model.Job{}, false, err
+	b, err := json.Marshal(meta)
+	if err != nil {
+		return model.Job{}, false, fmt.Errorf("marshal ingest meta: %w", err)
+	}
+	if err := s.kv.Set(ctx, "ingest_meta:"+doc.ID, string(b)); err != nil {
+		return model.Job{}, false, fmt.Errorf("store ingest meta: %w", err)
 	}
 
 	if err := s.events.Append(ctx, model.StageEvent{
 		DocumentID: doc.ID,
-		Stage:      "upload",
+		Stage:      "ingest",
 		EventType:  model.EventReceived,
 		Timestamp:  now,
 	}); err != nil {
@@ -225,7 +166,7 @@ func (s *IngestService) IngestUpload(
 		return model.Job{}, false, err
 	}
 
-	slog.Info("created document via upload", "doc_id", doc.ID[:8], "hash_prefix", hash[:8])
+	slog.Info("document ingested", "doc_id", doc.ID[:8], "hash_prefix", hash[:8])
 	return job, true, nil
 }
 
@@ -249,31 +190,6 @@ func (s *IngestService) createFirstJob(ctx context.Context, doc model.Document, 
 		return model.Job{}, fmt.Errorf("upsert job: %w", err)
 	}
 	return job, nil
-}
-
-func (s *IngestService) storeIngestMeta(ctx context.Context, docID string, meta IngestMeta) error {
-	b, err := json.Marshal(meta)
-	if err != nil {
-		return fmt.Errorf("marshal ingest meta: %w", err)
-	}
-	if err := s.kv.Set(ctx, "ingest_meta:"+docID, string(b)); err != nil {
-		return fmt.Errorf("store ingest meta: %w", err)
-	}
-	return nil
-}
-
-func titleFromWebhookMeta(meta map[string]any, attachmentFilename string) *string {
-	if dests, ok := meta["destinations"].([]any); ok {
-		for _, d := range dests {
-			if name := strings.TrimSpace(fmt.Sprint(d)); name != "" {
-				return &name
-			}
-		}
-	}
-	if t := titleFromFilename(attachmentFilename); t != "" {
-		return &t
-	}
-	return nil
 }
 
 func titleFromFilename(filename string) string {
