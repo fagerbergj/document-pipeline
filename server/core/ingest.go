@@ -94,12 +94,12 @@ func (s *IngestService) IngestWebhook(ctx context.Context, imageBytes []byte, me
 	}
 
 	artifact := model.Artifact{
-		ID:         artifactID,
-		DocumentID: doc.ID,
-		Filename:   filename,
+		ID:          artifactID,
+		DocumentID:  doc.ID,
+		Filename:    filename,
 		ContentType: "image/png",
-		CreatedAt:  now,
-		UpdatedAt:  now,
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
 	if err := s.artifacts.Insert(ctx, artifact); err != nil {
 		return model.Job{}, false, fmt.Errorf("insert artifact: %w", err)

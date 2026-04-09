@@ -26,22 +26,22 @@ func LoadPipeline(path string) (model.PipelineConfig, error) {
 	var raw struct {
 		MaxConcurrent int `yaml:"max_concurrent"`
 		Stages        []struct {
-			Name           string         `yaml:"name"`
-			Type           string         `yaml:"type"`
-			Model          string         `yaml:"model"`
-			Prompt         string         `yaml:"prompt"`
-			Input          string         `yaml:"input"`
-			Output         string         `yaml:"output"`
+			Name           string              `yaml:"name"`
+			Type           string              `yaml:"type"`
+			Model          string              `yaml:"model"`
+			Prompt         string              `yaml:"prompt"`
+			Input          string              `yaml:"input"`
+			Output         string              `yaml:"output"`
 			Outputs        []model.StageOutput `yaml:"outputs"`
-			RequireContext bool           `yaml:"require_context"`
-			Destinations   []map[string]any `yaml:"destinations"`
-			MetadataFields []string       `yaml:"metadata_fields"`
-			StartIf        map[string]any `yaml:"start_if"`
-			ContinueIf     []map[string]any `yaml:"continue_if"`
-			SkipIf         map[string]any `yaml:"skip_if"`
-			MaxConcurrent  *int           `yaml:"max_concurrent"`
-			Vision         bool           `yaml:"vision"`
-			SaveAsArtifact bool           `yaml:"save_as_artifact"`
+			RequireContext bool                `yaml:"require_context"`
+			Destinations   []map[string]any    `yaml:"destinations"`
+			MetadataFields []string            `yaml:"metadata_fields"`
+			StartIf        map[string]any      `yaml:"start_if"`
+			ContinueIf     []map[string]any    `yaml:"continue_if"`
+			SkipIf         map[string]any      `yaml:"skip_if"`
+			MaxConcurrent  *int                `yaml:"max_concurrent"`
+			Vision         bool                `yaml:"vision"`
+			SaveAsArtifact bool                `yaml:"save_as_artifact"`
 		} `yaml:"stages"`
 	}
 
