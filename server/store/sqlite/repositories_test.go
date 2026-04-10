@@ -14,7 +14,7 @@ import (
 func openTestDB(t *testing.T) *DB {
 	t.Helper()
 	path := t.TempDir() + "/test.db"
-	db, err := Open(path)
+	db, err := Open(path, migrationsDir(t))
 	if err != nil {
 		t.Fatalf("open test db: %v", err)
 	}
