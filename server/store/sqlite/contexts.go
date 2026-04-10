@@ -18,7 +18,7 @@ type ContextRepo struct{ db *sql.DB }
 var _ port.ContextRepo = (*ContextRepo)(nil)
 
 func (r *ContextRepo) List(ctx context.Context) ([]model.Context, error) {
-	rows, err := r.db.QueryContext(ctx, "SELECT id, name, text, created_at FROM contexts ORDER BY created_at ASC")
+	rows, err := r.db.QueryContext(ctx, q["contexts.List"])
 	if err != nil {
 		return nil, err
 	}
@@ -38,10 +38,7 @@ func (r *ContextRepo) List(ctx context.Context) ([]model.Context, error) {
 func (r *ContextRepo) Create(ctx context.Context, name, text string) (model.Context, error) {
 	id := uuid.NewString()
 	now := time.Now().UTC().Format(time.RFC3339Nano)
-	_, err := r.db.ExecContext(ctx,
-		"INSERT INTO contexts (id, name, text, created_at) VALUES (?, ?, ?, ?)",
-		id, name, text, now)
-	if err != nil {
+	if _, err := r.db.ExecContext(ctx, q["contexts.Create"], id, name, text, now); err != nil {
 		return model.Context{}, err
 	}
 	t, _ := time.Parse(time.RFC3339Nano, now)
@@ -49,6 +46,7 @@ func (r *ContextRepo) Create(ctx context.Context, name, text string) (model.Cont
 }
 
 func (r *ContextRepo) Update(ctx context.Context, id string, name, text *string) (model.Context, error) {
+	// Build a partial UPDATE for whichever fields are non-nil.
 	sets := []string{}
 	params := []any{}
 	if name != nil {
@@ -61,14 +59,13 @@ func (r *ContextRepo) Update(ctx context.Context, id string, name, text *string)
 	}
 	if len(sets) > 0 {
 		params = append(params, id)
-		_, err := r.db.ExecContext(ctx,
-			"UPDATE contexts SET "+strings.Join(sets, ", ")+" WHERE id=?", params...)
-		if err != nil {
+		stmt := "UPDATE contexts SET " + strings.Join(sets, ", ") + " WHERE id=?"
+		if _, err := r.db.ExecContext(ctx, stmt, params...); err != nil {
 			return model.Context{}, err
 		}
 	}
 
-	row := r.db.QueryRowContext(ctx, "SELECT id, name, text, created_at FROM contexts WHERE id=?", id)
+	row := r.db.QueryRowContext(ctx, q["contexts.Get"], id)
 	e, err := scanContext(row)
 	if err == sql.ErrNoRows {
 		return model.Context{}, fmt.Errorf("context not found: %s", id)
@@ -77,7 +74,7 @@ func (r *ContextRepo) Update(ctx context.Context, id string, name, text *string)
 }
 
 func (r *ContextRepo) Delete(ctx context.Context, id string) (bool, error) {
-	res, err := r.db.ExecContext(ctx, "DELETE FROM contexts WHERE id=?", id)
+	res, err := r.db.ExecContext(ctx, q["contexts.Delete"], id)
 	if err != nil {
 		return false, err
 	}
@@ -90,8 +87,7 @@ func scanContext(row rowScanner) (model.Context, error) {
 		e         model.Context
 		createdAt string
 	)
-	err := row.Scan(&e.ID, &e.Name, &e.Text, &createdAt)
-	if err != nil {
+	if err := row.Scan(&e.ID, &e.Name, &e.Text, &createdAt); err != nil {
 		return model.Context{}, err
 	}
 	e.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)

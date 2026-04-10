@@ -25,9 +25,7 @@ func (r *ChatRepo) Create(ctx context.Context, systemPrompt string, rag model.RA
 	if err != nil {
 		return model.ChatSession{}, err
 	}
-	_, err = r.db.ExecContext(ctx, `
-		INSERT INTO chat_sessions (id, title, system_prompt, rag_retrieval, created_at, updated_at)
-		VALUES (?, '', ?, ?, ?, ?)`,
+	_, err = r.db.ExecContext(ctx, q["chat.SessionCreate"],
 		id, systemPrompt, string(ragJSON), now, now)
 	if err != nil {
 		return model.ChatSession{}, err
@@ -43,7 +41,7 @@ func (r *ChatRepo) Create(ctx context.Context, systemPrompt string, rag model.RA
 }
 
 func (r *ChatRepo) Get(ctx context.Context, id string) (model.ChatSession, bool, error) {
-	row := r.db.QueryRowContext(ctx, "SELECT * FROM chat_sessions WHERE id=?", id)
+	row := r.db.QueryRowContext(ctx, q["chat.SessionGet"], id)
 	s, err := scanChatSession(row)
 	if err == sql.ErrNoRows {
 		return model.ChatSession{}, false, nil
@@ -82,7 +80,7 @@ func (r *ChatRepo) Update(ctx context.Context, id string, u port.ChatSessionUpda
 		}
 	}
 
-	row := r.db.QueryRowContext(ctx, "SELECT * FROM chat_sessions WHERE id=?", id)
+	row := r.db.QueryRowContext(ctx, q["chat.SessionGet"], id)
 	s, err := scanChatSession(row)
 	if err == sql.ErrNoRows {
 		return model.ChatSession{}, fmt.Errorf("chat not found: %s", id)
@@ -91,7 +89,7 @@ func (r *ChatRepo) Update(ctx context.Context, id string, u port.ChatSessionUpda
 }
 
 func (r *ChatRepo) Delete(ctx context.Context, id string) (bool, error) {
-	res, err := r.db.ExecContext(ctx, "DELETE FROM chat_sessions WHERE id=?", id)
+	res, err := r.db.ExecContext(ctx, q["chat.SessionDelete"], id)
 	if err != nil {
 		return false, err
 	}
@@ -100,22 +98,17 @@ func (r *ChatRepo) Delete(ctx context.Context, id string) (bool, error) {
 }
 
 func (r *ChatRepo) List(ctx context.Context, pageSize int, beforeID *string) ([]model.ChatSession, error) {
-	params := []any{}
-	where := ""
+	var (
+		rows *sql.Rows
+		err  error
+	)
 	if beforeID != nil {
-		// Fetch the created_at of the reference row for keyset cursor
 		var refCreatedAt string
-		err := r.db.QueryRowContext(ctx,
-			"SELECT created_at FROM chat_sessions WHERE id=?", *beforeID,
-		).Scan(&refCreatedAt)
-		if err == nil {
-			where = " WHERE (created_at, id) < (?, ?)"
-			params = append(params, refCreatedAt, *beforeID)
-		}
+		r.db.QueryRowContext(ctx, q["chat.SessionGetCreatedAt"], *beforeID).Scan(&refCreatedAt)
+		rows, err = r.db.QueryContext(ctx, q["chat.SessionListBefore"], refCreatedAt, *beforeID, pageSize)
+	} else {
+		rows, err = r.db.QueryContext(ctx, q["chat.SessionListNoFilter"], pageSize)
 	}
-	params = append(params, pageSize)
-	q := "SELECT * FROM chat_sessions" + where + " ORDER BY created_at DESC, id DESC LIMIT ?"
-	rows, err := r.db.QueryContext(ctx, q, params...)
 	if err != nil {
 		return nil, err
 	}
@@ -165,9 +158,7 @@ func (r *ChatMessageRepo) Append(ctx context.Context, sessionID, role, content s
 		s := string(b)
 		sourcesJSON = &s
 	}
-	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO chat_messages (id, external_id, session_id, role, content, sources, created_at)
-		VALUES (?, NULL, ?, ?, ?, ?, ?)`,
+	_, err := r.db.ExecContext(ctx, q["chat.MessageAppend"],
 		id, sessionID, role, content, sourcesJSON, now)
 	if err != nil {
 		return model.ChatMessage{}, err
@@ -184,10 +175,7 @@ func (r *ChatMessageRepo) Append(ctx context.Context, sessionID, role, content s
 }
 
 func (r *ChatMessageRepo) List(ctx context.Context, sessionID string) ([]model.ChatMessage, error) {
-	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, external_id, session_id, role, content, sources, created_at
-		FROM chat_messages WHERE session_id=? ORDER BY created_at ASC, id ASC`,
-		sessionID)
+	rows, err := r.db.QueryContext(ctx, q["chat.MessageList"], sessionID)
 	if err != nil {
 		return nil, err
 	}

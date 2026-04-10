@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/fagerbergj/document-pipeline/server/core/model"
@@ -21,11 +22,7 @@ func (r *DocumentRepo) Insert(ctx context.Context, doc model.Document) error {
 	if err != nil {
 		return fmt.Errorf("marshal linked_contexts: %w", err)
 	}
-	_, err = r.db.ExecContext(ctx, `
-		INSERT INTO documents
-		  (id, content_hash, created_at, updated_at, title, date_month,
-		   png_path, duplicate_of, additional_context, linked_contexts)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	_, err = r.db.ExecContext(ctx, q["documents.Insert"],
 		doc.ID, doc.ContentHash,
 		doc.CreatedAt.UTC().Format(time.RFC3339Nano),
 		doc.UpdatedAt.UTC().Format(time.RFC3339Nano),
@@ -36,7 +33,7 @@ func (r *DocumentRepo) Insert(ctx context.Context, doc model.Document) error {
 }
 
 func (r *DocumentRepo) Get(ctx context.Context, id string) (model.Document, error) {
-	row := r.db.QueryRowContext(ctx, "SELECT * FROM documents WHERE id = ?", id)
+	row := r.db.QueryRowContext(ctx, q["documents.Get"], id)
 	doc, err := scanDocument(row)
 	if err == sql.ErrNoRows {
 		return model.Document{}, fmt.Errorf("document not found: %s", id)
@@ -45,7 +42,7 @@ func (r *DocumentRepo) Get(ctx context.Context, id string) (model.Document, erro
 }
 
 func (r *DocumentRepo) GetByHash(ctx context.Context, hash string) (model.Document, bool, error) {
-	row := r.db.QueryRowContext(ctx, "SELECT * FROM documents WHERE content_hash = ?", hash)
+	row := r.db.QueryRowContext(ctx, q["documents.GetByHash"], hash)
 	doc, err := scanDocument(row)
 	if err == sql.ErrNoRows {
 		return model.Document{}, false, nil
@@ -61,11 +58,7 @@ func (r *DocumentRepo) Update(ctx context.Context, doc model.Document) error {
 	if err != nil {
 		return fmt.Errorf("marshal linked_contexts: %w", err)
 	}
-	_, err = r.db.ExecContext(ctx, `
-		UPDATE documents SET
-		  updated_at=?, title=?, date_month=?, png_path=?, duplicate_of=?,
-		  additional_context=?, linked_contexts=?
-		WHERE id=?`,
+	_, err = r.db.ExecContext(ctx, q["documents.Update"],
 		doc.UpdatedAt.UTC().Format(time.RFC3339Nano),
 		doc.Title, doc.DateMonth, doc.PNGPath, doc.DuplicateOf,
 		doc.AdditionalContext, string(linkedJSON), doc.ID,
@@ -74,7 +67,7 @@ func (r *DocumentRepo) Update(ctx context.Context, doc model.Document) error {
 }
 
 func (r *DocumentRepo) Delete(ctx context.Context, id string) error {
-	_, err := r.db.ExecContext(ctx, "DELETE FROM documents WHERE id=?", id)
+	_, err := r.db.ExecContext(ctx, q["documents.Delete"], id)
 	return err
 }
 
@@ -84,10 +77,7 @@ func (r *DocumentRepo) ListPaginated(ctx context.Context, filter port.DocumentFi
 		sc = docSortMap["pipeline"]
 	}
 
-	conditions := []string{}
-	params := []any{}
-
-	// Current-job subquery for stage/status filtering
+	// Current-job subquery for stage/status filtering.
 	const currentJobSQL = `(
 		SELECT j.%s FROM jobs j WHERE j.document_id = d.id
 		ORDER BY CASE j.status
@@ -96,6 +86,9 @@ func (r *DocumentRepo) ListPaginated(ctx context.Context, filter port.DocumentFi
 			ELSE 4 END, j.updated_at DESC
 		LIMIT 1
 	)`
+
+	conditions := []string{}
+	params := []any{}
 
 	if len(filter.Stages) > 0 {
 		conditions = append(conditions, fmt.Sprintf(currentJobSQL, "stage")+" IN "+inClause(len(filter.Stages)))
@@ -109,7 +102,6 @@ func (r *DocumentRepo) ListPaginated(ctx context.Context, filter port.DocumentFi
 			params = append(params, s)
 		}
 	}
-
 	if page.PageToken != nil {
 		conditions = append(conditions, sc.cursorWhere)
 		params = append(params, page.PageToken.SortKey, page.PageToken.LastID)
@@ -117,13 +109,7 @@ func (r *DocumentRepo) ListPaginated(ctx context.Context, filter port.DocumentFi
 
 	where := ""
 	if len(conditions) > 0 {
-		where = "WHERE "
-		for i, c := range conditions {
-			if i > 0 {
-				where += " AND "
-			}
-			where += c
-		}
+		where = "WHERE " + strings.Join(conditions, " AND ")
 	}
 
 	limit := page.PageSize
@@ -132,8 +118,8 @@ func (r *DocumentRepo) ListPaginated(ctx context.Context, filter port.DocumentFi
 	}
 	params = append(params, limit+1)
 
-	q := fmt.Sprintf("SELECT d.* FROM documents d %s ORDER BY %s LIMIT ?", where, sc.order)
-	rows, err := r.db.QueryContext(ctx, q, params...)
+	stmt := fmt.Sprintf("SELECT d.* FROM documents d %s ORDER BY %s LIMIT ?", where, sc.order)
+	rows, err := r.db.QueryContext(ctx, stmt, params...)
 	if err != nil {
 		return model.PageResult[model.Document]{}, err
 	}

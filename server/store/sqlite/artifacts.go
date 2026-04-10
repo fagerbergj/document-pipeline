@@ -16,9 +16,7 @@ type ArtifactRepo struct{ db *sql.DB }
 var _ port.ArtifactRepo = (*ArtifactRepo)(nil)
 
 func (r *ArtifactRepo) Insert(ctx context.Context, a model.Artifact) error {
-	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO artifacts (id, document_id, filename, content_type, created_job_id, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+	_, err := r.db.ExecContext(ctx, q["artifacts.Insert"],
 		a.ID, a.DocumentID, a.Filename, a.ContentType, a.CreatedJobID,
 		a.CreatedAt.UTC().Format(time.RFC3339Nano),
 		a.UpdatedAt.UTC().Format(time.RFC3339Nano),
@@ -27,8 +25,7 @@ func (r *ArtifactRepo) Insert(ctx context.Context, a model.Artifact) error {
 }
 
 func (r *ArtifactRepo) Get(ctx context.Context, documentID, artifactID string) (model.Artifact, error) {
-	row := r.db.QueryRowContext(ctx,
-		"SELECT * FROM artifacts WHERE document_id=? AND id=?", documentID, artifactID)
+	row := r.db.QueryRowContext(ctx, q["artifacts.Get"], documentID, artifactID)
 	a, err := scanArtifact(row)
 	if err == sql.ErrNoRows {
 		return model.Artifact{}, fmt.Errorf("artifact not found: %s", artifactID)
@@ -37,8 +34,7 @@ func (r *ArtifactRepo) Get(ctx context.Context, documentID, artifactID string) (
 }
 
 func (r *ArtifactRepo) ListForDocument(ctx context.Context, documentID string) ([]model.Artifact, error) {
-	rows, err := r.db.QueryContext(ctx,
-		"SELECT * FROM artifacts WHERE document_id=? ORDER BY created_at ASC", documentID)
+	rows, err := r.db.QueryContext(ctx, q["artifacts.ListForDocument"], documentID)
 	if err != nil {
 		return nil, err
 	}

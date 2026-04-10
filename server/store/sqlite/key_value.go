@@ -14,16 +14,13 @@ type KeyValueRepo struct{ db *sql.DB }
 var _ port.KeyValueRepo = (*KeyValueRepo)(nil)
 
 func (r *KeyValueRepo) Set(ctx context.Context, key, value string) error {
-	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO key_value (key, value) VALUES (?, ?)
-		ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-		key, value)
+	_, err := r.db.ExecContext(ctx, q["key_value.Set"], key, value)
 	return err
 }
 
 func (r *KeyValueRepo) Get(ctx context.Context, key string) (string, bool, error) {
 	var value string
-	err := r.db.QueryRowContext(ctx, "SELECT value FROM key_value WHERE key=?", key).Scan(&value)
+	err := r.db.QueryRowContext(ctx, q["key_value.Get"], key).Scan(&value)
 	if err == sql.ErrNoRows {
 		return "", false, nil
 	}

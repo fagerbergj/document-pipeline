@@ -26,12 +26,7 @@ func (r *JobRepo) Upsert(ctx context.Context, job model.Job) error {
 	if err != nil {
 		return fmt.Errorf("marshal runs: %w", err)
 	}
-	_, err = r.db.ExecContext(ctx, `
-		INSERT INTO jobs (id, document_id, stage, status, options, runs, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(document_id, stage) DO UPDATE SET
-		  status=excluded.status, options=excluded.options, runs=excluded.runs,
-		  updated_at=excluded.updated_at`,
+	_, err = r.db.ExecContext(ctx, q["jobs.Upsert"],
 		job.ID, job.DocumentID, job.Stage, string(job.Status),
 		string(optsJSON), string(runsJSON),
 		job.CreatedAt.UTC().Format(time.RFC3339Nano),
@@ -41,7 +36,7 @@ func (r *JobRepo) Upsert(ctx context.Context, job model.Job) error {
 }
 
 func (r *JobRepo) GetByID(ctx context.Context, id string) (model.Job, error) {
-	row := r.db.QueryRowContext(ctx, "SELECT * FROM jobs WHERE id=?", id)
+	row := r.db.QueryRowContext(ctx, q["jobs.GetByID"], id)
 	job, err := scanJob(row)
 	if err == sql.ErrNoRows {
 		return model.Job{}, fmt.Errorf("job not found: %s", id)
@@ -50,8 +45,7 @@ func (r *JobRepo) GetByID(ctx context.Context, id string) (model.Job, error) {
 }
 
 func (r *JobRepo) GetByDocumentAndStage(ctx context.Context, documentID, stage string) (model.Job, bool, error) {
-	row := r.db.QueryRowContext(ctx,
-		"SELECT * FROM jobs WHERE document_id=? AND stage=?", documentID, stage)
+	row := r.db.QueryRowContext(ctx, q["jobs.GetByDocumentAndStage"], documentID, stage)
 	job, err := scanJob(row)
 	if err == sql.ErrNoRows {
 		return model.Job{}, false, nil
@@ -63,8 +57,7 @@ func (r *JobRepo) GetByDocumentAndStage(ctx context.Context, documentID, stage s
 }
 
 func (r *JobRepo) UpdateStatus(ctx context.Context, id, status string, updatedAt time.Time) error {
-	_, err := r.db.ExecContext(ctx,
-		"UPDATE jobs SET status=?, updated_at=? WHERE id=?",
+	_, err := r.db.ExecContext(ctx, q["jobs.UpdateStatus"],
 		status, updatedAt.UTC().Format(time.RFC3339Nano), id)
 	return err
 }
@@ -74,8 +67,7 @@ func (r *JobRepo) UpdateOptions(ctx context.Context, id string, opts model.JobOp
 	if err != nil {
 		return err
 	}
-	_, err = r.db.ExecContext(ctx,
-		"UPDATE jobs SET options=?, updated_at=? WHERE id=?",
+	_, err = r.db.ExecContext(ctx, q["jobs.UpdateOptions"],
 		string(b), updatedAt.UTC().Format(time.RFC3339Nano), id)
 	return err
 }
@@ -85,15 +77,13 @@ func (r *JobRepo) UpdateRuns(ctx context.Context, id string, runs []model.Run, u
 	if err != nil {
 		return err
 	}
-	_, err = r.db.ExecContext(ctx,
-		"UPDATE jobs SET runs=?, updated_at=? WHERE id=?",
+	_, err = r.db.ExecContext(ctx, q["jobs.UpdateRuns"],
 		string(b), updatedAt.UTC().Format(time.RFC3339Nano), id)
 	return err
 }
 
 func (r *JobRepo) ListForDocument(ctx context.Context, documentID string) ([]model.Job, error) {
-	rows, err := r.db.QueryContext(ctx,
-		"SELECT * FROM jobs WHERE document_id=? ORDER BY created_at ASC", documentID)
+	rows, err := r.db.QueryContext(ctx, q["jobs.ListForDocument"], documentID)
 	if err != nil {
 		return nil, err
 	}
@@ -102,8 +92,7 @@ func (r *JobRepo) ListForDocument(ctx context.Context, documentID string) ([]mod
 }
 
 func (r *JobRepo) ListPending(ctx context.Context, stage string) ([]model.Job, error) {
-	rows, err := r.db.QueryContext(ctx,
-		"SELECT * FROM jobs WHERE stage=? AND status='pending' ORDER BY created_at ASC", stage)
+	rows, err := r.db.QueryContext(ctx, q["jobs.ListPending"], stage)
 	if err != nil {
 		return nil, err
 	}
@@ -160,8 +149,8 @@ func (r *JobRepo) ListPaginated(ctx context.Context, filter port.JobFilter, page
 	}
 	params = append(params, limit+1)
 
-	q := fmt.Sprintf("SELECT * FROM jobs %s ORDER BY %s LIMIT ?", where, sc.order)
-	rows, err := r.db.QueryContext(ctx, q, params...)
+	stmt := fmt.Sprintf("SELECT * FROM jobs %s ORDER BY %s LIMIT ?", where, sc.order)
+	rows, err := r.db.QueryContext(ctx, stmt, params...)
 	if err != nil {
 		return model.PageResult[model.Job]{}, err
 	}
@@ -187,8 +176,7 @@ func (r *JobRepo) ListPaginated(ctx context.Context, filter port.JobFilter, page
 }
 
 func (r *JobRepo) ResetRunning(ctx context.Context) (int, error) {
-	res, err := r.db.ExecContext(ctx,
-		"UPDATE jobs SET status='pending' WHERE status='running'")
+	res, err := r.db.ExecContext(ctx, q["jobs.ResetRunning"])
 	if err != nil {
 		return 0, err
 	}
