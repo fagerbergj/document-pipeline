@@ -13,9 +13,9 @@ services:
       - PIPELINE_CONFIG=/config/pipeline.yaml
       - LISTEN_ADDR=:8000
       - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
-      - OCR_MODEL=${OCR_MODEL:-glm-ocr}
-      - CLARIFY_MODEL=${CLARIFY_MODEL:-}
-      - CLASSIFY_MODEL=${CLASSIFY_MODEL:-}
+      - OCR_MODEL=${OCR_MODEL:-qwen3-vl:30b}
+      - CLARIFY_MODEL=${CLARIFY_MODEL:-gemma4:31b}
+      - CLASSIFY_MODEL=${CLASSIFY_MODEL:-gemma4-26b:latest}
       - EMBED_MODEL=${EMBED_MODEL:-}
       - QDRANT_URL=${QDRANT_URL:-}
       - QDRANT_COLLECTION=${QDRANT_COLLECTION:-documents}
