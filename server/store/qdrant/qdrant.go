@@ -25,9 +25,9 @@ func (c *Client) Upsert(ctx context.Context, id string, textVector []float32, im
 
 	var pointVector any
 	if named {
-		v := map[string][]float32{"text": textVector}
+		v := map[string][]float32{vectorNameText: textVector}
 		if len(imageVector) > 0 {
-			v["image"] = imageVector
+			v[vectorNameImage] = imageVector
 		} else {
 			slog.Debug("named-vector collection; upserting text vector only", "collection", c.collection)
 		}
@@ -86,7 +86,7 @@ func (c *Client) Search(ctx context.Context, vector []float32, topK int) ([]port
 	named := c.usesNamedVectors(ctx)
 	var searchVector any
 	if named {
-		searchVector = map[string]any{"name": "text", "vector": vector}
+		searchVector = map[string]any{"name": vectorNameText, "vector": vector}
 	} else {
 		searchVector = vector
 	}

@@ -220,7 +220,7 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 		queryVec, err := h.llm.GenerateEmbed(ctx, embedModel, content)
 		if err != nil {
 			b, _ := json.Marshal(map[string]string{"error": err.Error()})
-			writeSSEEvent(w, "error", string(b))
+			writeSSEEvent(w, port.EventError, string(b))
 			flusher.Flush()
 			return
 		}
@@ -284,18 +284,18 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 	streamErr := h.llm.ChatStream(ctx, queryModel, llmMessages, func(token string) {
 		buf.WriteString(token)
 		b, _ := json.Marshal(map[string]string{"text": token})
-		writeSSEEvent(w, "token", string(b))
+		writeSSEEvent(w, port.EventToken, string(b))
 		flusher.Flush()
 	})
 
 	if streamErr != nil {
 		b, _ := json.Marshal(map[string]string{"error": streamErr.Error()})
-		writeSSEEvent(w, "error", string(b))
+		writeSSEEvent(w, port.EventError, string(b))
 		flusher.Flush()
 		return
 	}
 
-	writeSSEEvent(w, "done", "{}")
+	writeSSEEvent(w, port.EventDone, "{}")
 	flusher.Flush()
 
 	// Persist assistant message

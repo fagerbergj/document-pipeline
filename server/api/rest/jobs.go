@@ -271,17 +271,17 @@ func (h *handler) streamJob(w http.ResponseWriter, r *http.Request) {
 			return
 		case evt, ok := <-ch:
 			if !ok {
-				writeSSEEvent(w, "done", "{}")
+				writeSSEEvent(w, port.EventDone, "{}")
 				flusher.Flush()
 				return
 			}
-			if evt.Type == "done" {
-				writeSSEEvent(w, "done", "{}")
+			if evt.Type == port.EventDone {
+				writeSSEEvent(w, port.EventDone, "{}")
 				flusher.Flush()
 				return
 			}
 			data := evt.Data
-			if evt.Type == "token" {
+			if evt.Type == port.EventToken {
 				b, _ := json.Marshal(map[string]string{"text": data})
 				data = string(b)
 			}
@@ -296,7 +296,7 @@ func (h *handler) streamJob(w http.ResponseWriter, r *http.Request) {
 				lastStatusCheck = time.Now()
 				current, err := h.jobs.GetByID(r.Context(), id)
 				if err == nil && current.Status != initialStatus {
-					writeSSEEvent(w, "done", "{}")
+					writeSSEEvent(w, port.EventDone, "{}")
 					flusher.Flush()
 					return
 				}

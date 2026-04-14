@@ -363,7 +363,7 @@ func (w *WorkerService) runLLMText(
 	var rawResp strings.Builder
 	onChunk := func(chunk string) {
 		rawResp.WriteString(chunk)
-		w.streams.Publish(job.ID, port.StreamEvent{Type: "token", Data: chunk})
+		w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventToken, Data: chunk})
 	}
 
 	var genErr error
@@ -373,12 +373,12 @@ func (w *WorkerService) runLLMText(
 		genErr = w.llm.GenerateText(ctx, stage.Model, promptText+"\n\n"+inputText, onChunk)
 	}
 	if genErr != nil {
-		w.streams.Publish(job.ID, port.StreamEvent{Type: "done"})
+		w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventDone})
 		return fmt.Errorf("LLM generate: %w", genErr)
 	}
 
 	if wasStopped(ctx, w.jobs, job.ID) {
-		w.streams.Publish(job.ID, port.StreamEvent{Type: "done"})
+		w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventDone})
 		return nil
 	}
 
@@ -387,21 +387,21 @@ func (w *WorkerService) runLLMText(
 	now = time.Now().UTC()
 	run := makeRun(inputs, outputs, confidence, questions, suggestions)
 	if err := w.jobs.UpdateRuns(ctx, job.ID, appendRun(job.Runs, run), now); err != nil {
-		w.streams.Publish(job.ID, port.StreamEvent{Type: "done"})
+		w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventDone})
 		return err
 	}
 
 	if !checkContinueIf(stage, confidence) || len(questions) > 0 {
 		_ = w.jobs.UpdateStatus(ctx, job.ID, string(model.JobStatusWaiting), now)
 		_ = w.events.Append(ctx, model.StageEvent{DocumentID: doc.ID, Stage: stage.Name, EventType: model.EventAwaitingReview, Timestamp: now})
-		w.streams.Publish(job.ID, port.StreamEvent{Type: "done"})
+		w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventDone})
 		return nil
 	}
 
 	_ = w.jobs.UpdateStatus(ctx, job.ID, string(model.JobStatusDone), now)
 	_ = w.events.Append(ctx, model.StageEvent{DocumentID: doc.ID, Stage: stage.Name, EventType: model.EventCompleted, Timestamp: now})
 	_ = w.saveArtifacts(ctx, stage, outputs, job, now)
-	w.streams.Publish(job.ID, port.StreamEvent{Type: "done"})
+	w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventDone})
 	_ = w.advancePipeline(ctx, job, now)
 	slog.Info("LLM text done", "doc_id", doc.ID[:8], "stage", stage.Name)
 	return nil
@@ -489,7 +489,7 @@ func (w *WorkerService) runEmbed(
 // --- Error handling ---
 
 func (w *WorkerService) handleJobError(ctx context.Context, doc model.Document, job model.Job, stage model.StageDefinition, jobErr error) {
-	w.streams.Publish(job.ID, port.StreamEvent{Type: "done"})
+	w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventDone})
 	slog.Error("stage failed", "stage", stage.Name, "doc_id", doc.ID[:8], "err", jobErr)
 
 	now := time.Now().UTC()

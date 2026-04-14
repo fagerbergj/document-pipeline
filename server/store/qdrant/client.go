@@ -12,6 +12,12 @@ import (
 	"net/http"
 )
 
+const (
+	vectorNameText  = "text"
+	vectorNameImage = "image"
+	distanceCosine  = "Cosine"
+)
+
 // Client talks to a Qdrant instance over HTTP.
 type Client struct {
 	baseURL    string
@@ -112,12 +118,12 @@ func (c *Client) ensureCollection(ctx context.Context, textLen int, imageLen int
 	var vectorsCfg any
 	if imageLen > 0 {
 		vectorsCfg = map[string]any{
-			"text":  map[string]any{"size": textLen, "distance": "Cosine"},
-			"image": map[string]any{"size": imageLen, "distance": "Cosine"},
+			vectorNameText:  map[string]any{"size": textLen, "distance": distanceCosine},
+			vectorNameImage: map[string]any{"size": imageLen, "distance": distanceCosine},
 		}
 		named = true
 	} else {
-		vectorsCfg = map[string]any{"size": textLen, "distance": "Cosine"}
+		vectorsCfg = map[string]any{"size": textLen, "distance": distanceCosine}
 	}
 	cr, err := c.do(ctx, http.MethodPut, "/collections/"+c.collection, map[string]any{"vectors": vectorsCfg})
 	if err != nil {
