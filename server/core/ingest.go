@@ -14,6 +14,9 @@ import (
 	"github.com/google/uuid"
 )
 
+// kvIngestMetaPrefix is the KeyValueRepo key prefix used to store IngestMeta per document.
+const kvIngestMetaPrefix = "ingest_meta:"
+
 var genericFilenames = map[string]bool{
 	"remarkable": true,
 	"untitled":   true,
@@ -148,7 +151,7 @@ func (s *IngestService) Ingest(ctx context.Context, req IngestRequest) (model.Jo
 	if err != nil {
 		return model.Job{}, false, fmt.Errorf("marshal ingest meta: %w", err)
 	}
-	if err := s.kv.Set(ctx, "ingest_meta:"+doc.ID, string(b)); err != nil {
+	if err := s.kv.Set(ctx, kvIngestMetaPrefix+doc.ID, string(b)); err != nil {
 		return model.Job{}, false, fmt.Errorf("store ingest meta: %w", err)
 	}
 

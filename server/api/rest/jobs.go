@@ -282,7 +282,7 @@ func (h *handler) streamJob(w http.ResponseWriter, r *http.Request) {
 			}
 			data := evt.Data
 			if evt.Type == port.EventToken {
-				b, _ := json.Marshal(map[string]string{"text": data})
+				b, _ := json.Marshal(map[string]string{port.EventFieldText: data})
 				data = string(b)
 			}
 			writeSSEEvent(w, evt.Type, data)

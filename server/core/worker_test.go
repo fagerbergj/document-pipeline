@@ -643,7 +643,7 @@ func TestProcessJob_OCR_TextFileSkip(t *testing.T) {
 
 	kv := newMockKVRepo()
 	meta, _ := json.Marshal(IngestMeta{RawText: "plain text content", FileType: model.FileTypeTXT})
-	_ = kv.Set(context.Background(), "ingest_meta:"+doc.ID, string(meta))
+	_ = kv.Set(context.Background(), kvIngestMetaPrefix+doc.ID, string(meta))
 
 	docs := newMockDocRepo(doc)
 	jobs := newMockJobRepo(job)
