@@ -15,10 +15,10 @@ Full backend rewrite of the Python/FastAPI service in Go. The React frontend, `c
 | 1 — Go module + migrations | `go/phase-1-migrate` | ✅ merged |
 | 2 — Core interfaces and models | `go/phase-2-interfaces` | ✅ merged |
 | 3 — Core implementation | `go/phase-3-core` | ✅ merged |
-| 4 — HTTP endpoints | `go/phase-4-http` | ⬜ not started |
-| 5 — SQLite store adapter | `go/phase-5-sqlite` | ⬜ not started |
-| 6 — Ollama adapter | `go/phase-6-ollama` | ⬜ not started |
-| 7 — Qdrant, Open WebUI, filesystem adapters | `go/phase-7-adapters` | ⬜ not started |
+| 4 — HTTP endpoints | `go/phase-4-http` | ✅ merged |
+| 5 — SQLite store adapter | `go/phase-5-sqlite` | ✅ merged |
+| 6 — Ollama adapter | `go/phase-6-ollama` | ✅ merged |
+| 7 — Qdrant, Open WebUI, filesystem adapters | `go/phase-7-adapters` | 🔄 in progress |
 | 8 — E2E integration tests + docs | `go/phase-8-e2e` | ⬜ not started |
 | 9 — Docker full swap | `go/phase-9-docker` | ⬜ not started |
 | 10 — React UI tests | `go/phase-10-ui-tests` | ⬜ not started |
@@ -353,9 +353,9 @@ main  ←───────────────────────�
 go-rewrite  ←── go/phase-1-migrate      ✅
             ←── go/phase-2-interfaces   ✅
             ←── go/phase-3-core         ✅
-            ←── go/phase-4-http
-            ←── go/phase-5-sqlite
-            ←── go/phase-6-ollama
+            ←── go/phase-4-http         ✅
+            ←── go/phase-5-sqlite       ✅
+            ←── go/phase-6-ollama       ✅
             ←── go/phase-7-adapters
             ←── go/phase-8-e2e
             ←── go/phase-9-docker
