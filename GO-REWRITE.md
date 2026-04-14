@@ -19,8 +19,8 @@ Full backend rewrite of the Python/FastAPI service in Go. The React frontend, `c
 | 5 — SQLite store adapter | `go/phase-5-sqlite` | ✅ merged |
 | 6 — Ollama adapter | `go/phase-6-ollama` | ✅ merged |
 | 7 — Qdrant, Open WebUI, filesystem adapters | `go/phase-7-adapters` | ✅ merged |
-| 8 — E2E integration tests + docs | `go/phase-8-e2e` | 🔄 in progress |
-| 9 — Docker full swap | `go/phase-9-docker` | ⬜ not started |
+| 8 — E2E integration tests + docs | `go/phase-8-e2e` | ✅ merged |
+| 9 — Docker full swap | `go/phase-9-docker` | 🔄 in progress |
 | 10 — React UI tests | `go/phase-10-ui-tests` | ⬜ not started |
 
 ---
@@ -357,7 +357,7 @@ go-rewrite  ←── go/phase-1-migrate      ✅
             ←── go/phase-5-sqlite       ✅
             ←── go/phase-6-ollama       ✅
             ←── go/phase-7-adapters       ✅
-            ←── go/phase-8-e2e
+            ←── go/phase-8-e2e            ✅
             ←── go/phase-9-docker
             ←── go/phase-10-ui-tests
 ```

@@ -7,9 +7,22 @@ services:
     env_file:
       - .env
     environment:
-      - OCR_MODEL=${OCR_MODEL:-glm-ocr}
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - DB_PATH=/data/pipeline.db
+      - MIGRATIONS_DIR=/db/migrations
       - VAULT_PATH=/vault
+      - PIPELINE_CONFIG=/config/pipeline.yaml
+      - LISTEN_ADDR=:8000
+      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
+      - OCR_MODEL=${OCR_MODEL:-glm-ocr}
+      - CLARIFY_MODEL=${CLARIFY_MODEL:-}
+      - CLASSIFY_MODEL=${CLASSIFY_MODEL:-}
+      - EMBED_MODEL=${EMBED_MODEL:-}
+      - QDRANT_URL=${QDRANT_URL:-}
+      - QDRANT_COLLECTION=${QDRANT_COLLECTION:-documents}
+      - QDRANT_API_KEY=${QDRANT_API_KEY:-}
+      - OPEN_WEBUI_URL=${OPEN_WEBUI_URL:-}
+      - OPEN_WEBUI_API_KEY=${OPEN_WEBUI_API_KEY:-}
+      - OPEN_WEBUI_KNOWLEDGE_ID=${OPEN_WEBUI_KNOWLEDGE_ID:-}
     volumes:
       - ./data:/data
       - /mnt/personal01/documents:/vault
