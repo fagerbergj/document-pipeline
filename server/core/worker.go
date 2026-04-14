@@ -61,6 +61,14 @@ func NewWorkerService(
 	}
 }
 
+// RunOnce processes one pass through all pending stages and returns.
+// It does not sleep between stages and does not reset running jobs.
+// Intended for use in tests and one-shot invocations.
+func (w *WorkerService) RunOnce(ctx context.Context) error {
+	_, err := w.runOnce(ctx)
+	return err
+}
+
 // Run starts the worker loop. It blocks until ctx is cancelled.
 func (w *WorkerService) Run(ctx context.Context) error {
 	slog.Info("worker started")
@@ -498,7 +506,7 @@ func (w *WorkerService) handleJobError(ctx context.Context, doc model.Document, 
 		Stage:      stage.Name,
 		EventType:  model.EventFailed,
 		Timestamp:  now,
-		Data:       map[string]any{"error": jobErr.Error()},
+		Data:       map[string]any{port.EventFieldError: jobErr.Error()},
 	})
 
 	failures, _ := w.events.CountFailures(ctx, doc.ID, stage.Name)
@@ -562,7 +570,7 @@ func (w *WorkerService) saveArtifacts(ctx context.Context, stage model.StageDefi
 // --- Helpers ---
 
 func (w *WorkerService) loadIngestMeta(ctx context.Context, docID string) (*IngestMeta, error) {
-	raw, ok, err := w.kv.Get(ctx, "ingest_meta:"+docID)
+	raw, ok, err := w.kv.Get(ctx, kvIngestMetaPrefix+docID)
 	if err != nil || !ok {
 		return nil, err
 	}

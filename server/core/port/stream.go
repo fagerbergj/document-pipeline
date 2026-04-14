@@ -7,6 +7,12 @@ const (
 	EventError = "error"
 )
 
+// SSE event payload field keys used in the JSON data body of each event.
+const (
+	EventFieldText  = "text"
+	EventFieldError = "error"
+)
+
 // StreamManager manages per-job SSE event channels.
 // Implemented by store/stream.
 type StreamManager interface {

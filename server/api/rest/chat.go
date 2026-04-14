@@ -219,7 +219,7 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 	if rag.Enabled && rag.MaxSources > 0 {
 		queryVec, err := h.llm.GenerateEmbed(ctx, embedModel, content)
 		if err != nil {
-			b, _ := json.Marshal(map[string]string{"error": err.Error()})
+			b, _ := json.Marshal(map[string]string{port.EventFieldError: err.Error()})
 			writeSSEEvent(w, port.EventError, string(b))
 			flusher.Flush()
 			return
@@ -283,13 +283,13 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 	var buf strings.Builder
 	streamErr := h.llm.ChatStream(ctx, queryModel, llmMessages, func(token string) {
 		buf.WriteString(token)
-		b, _ := json.Marshal(map[string]string{"text": token})
+		b, _ := json.Marshal(map[string]string{port.EventFieldText: token})
 		writeSSEEvent(w, port.EventToken, string(b))
 		flusher.Flush()
 	})
 
 	if streamErr != nil {
-		b, _ := json.Marshal(map[string]string{"error": streamErr.Error()})
+		b, _ := json.Marshal(map[string]string{port.EventFieldError: streamErr.Error()})
 		writeSSEEvent(w, port.EventError, string(b))
 		flusher.Flush()
 		return
