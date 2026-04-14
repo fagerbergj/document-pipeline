@@ -233,10 +233,10 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			sources = append(sources, model.SourceRef{
-				DocumentID: stringPayload(res.Payload, "doc_id"),
-				Title:      stringPayload(res.Payload, "title"),
-				Summary:    stringPayload(res.Payload, "summary"),
-				DateMonth:  stringPayload(res.Payload, "date_month"),
+				DocumentID: stringPayload(res.Payload, port.PayloadDocID),
+				Title:      stringPayload(res.Payload, port.PayloadTitle),
+				Summary:    stringPayload(res.Payload, port.PayloadSummary),
+				DateMonth:  stringPayload(res.Payload, port.PayloadDateMonth),
 				Score:      res.Score,
 			})
 		}

@@ -50,11 +50,11 @@ func (c *EmbedStoreCoordinator) Upsert(ctx context.Context, id string, textVecto
 		return err
 	}
 	if c.useWebUI {
-		title, _ := payload["title"].(string)
-		text, _ := payload["text"].(string)
+		title, _ := payload[port.PayloadTitle].(string)
+		text, _ := payload[port.PayloadText].(string)
 		meta := make(map[string]any, len(payload))
 		for k, v := range payload {
-			if k == "title" || k == "text" {
+			if k == port.PayloadTitle || k == port.PayloadText {
 				continue
 			}
 			meta[k] = v

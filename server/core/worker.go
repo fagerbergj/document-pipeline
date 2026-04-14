@@ -438,13 +438,13 @@ func (w *WorkerService) runEmbed(
 		}
 	}
 	if doc.Title != nil {
-		payload["title"] = *doc.Title
+		payload[port.PayloadTitle] = *doc.Title
 	}
 	if doc.DateMonth != nil {
-		payload["date_month"] = *doc.DateMonth
+		payload[port.PayloadDateMonth] = *doc.DateMonth
 	}
-	payload["doc_id"] = doc.ID
-	payload["text"] = inputText
+	payload[port.PayloadDocID] = doc.ID
+	payload[port.PayloadText] = inputText
 
 	textVector, err := w.llm.GenerateEmbed(ctx, stage.Model, inputText)
 	if err != nil {

@@ -51,7 +51,7 @@ func TestCoordinator_Upsert(t *testing.T) {
 	w := &fakeWebUI{}
 	c := embed.New(q, w)
 
-	if err := c.Upsert(context.Background(), "doc-1", []float32{0.1}, nil, map[string]any{"title": "T", "text": "hello"}); err != nil {
+	if err := c.Upsert(context.Background(), "doc-1", []float32{0.1}, nil, map[string]any{port.PayloadTitle: "T", port.PayloadText: "hello"}); err != nil {
 		t.Fatal(err)
 	}
 	if len(q.upserted) != 1 || q.upserted[0] != "doc-1" {
