@@ -1,5 +1,12 @@
 package port
 
+// SSE event type names published by WorkerService and consumed by REST handlers.
+const (
+	EventToken = "token"
+	EventDone  = "done"
+	EventError = "error"
+)
+
 // StreamManager manages per-job SSE event channels.
 // Implemented by store/stream.
 type StreamManager interface {

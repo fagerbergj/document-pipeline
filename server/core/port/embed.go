@@ -2,6 +2,15 @@ package port
 
 import "context"
 
+// Payload keys written by WorkerService and read by EmbedStore consumers.
+const (
+	PayloadTitle     = "title"
+	PayloadText      = "text"
+	PayloadDocID     = "doc_id"
+	PayloadDateMonth = "date_month"
+	PayloadSummary   = "summary"
+)
+
 // EmbedStore stores and retrieves document embeddings.
 // Implemented by store/embed.EmbedStoreCoordinator, which coordinates
 // a vector store (Qdrant) and a search index (Open WebUI) internally.
