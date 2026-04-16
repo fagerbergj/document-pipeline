@@ -58,10 +58,10 @@ Values in `pipeline.yaml` can reference environment variables using `${VAR}` syn
 
 | Variable | Phase | Stage | Description |
 |---|---|---|---|
-| `OCR_MODEL` | 2 | `ocr` | Ollama model for OCR (e.g. `glm-ocr`) |
-| `OLLAMA_BASE_URL` | 2 | all LLM stages | Ollama endpoint (e.g. `http://ollama:11434`) |
-| `CLARIFY_MODEL` | 3 | `clarify` | Ollama model for OCR cleanup (e.g. `qwen3-4b-32k`) |
-| `CLASSIFY_MODEL` | 4 | `classify` | Ollama model for classification (e.g. `qwen3-4b-32k`) |
+| `OCR_MODEL` | 2 | `ocr` | Ollama model for OCR (e.g. `qwen3-vl:30b`) |
+| `OLLAMA_URL` | 2 | all LLM stages | Ollama endpoint (e.g. `http://ollama:11434`) |
+| `CLARIFY_MODEL` | 3 | `clarify` | Ollama model for OCR cleanup (e.g. `gemma4:31b`) |
+| `CLASSIFY_MODEL` | 4 | `classify` | Ollama model for classification (e.g. `gemma4-26b:latest`) |
 | `EMBED_MODEL` | 5 | `embed` | Ollama embedding model (e.g. `nomic-embed-text:v1.5`) |
 | `QDRANT_URL` | 5 | `embed` | Qdrant base URL (e.g. `http://qdrant:6333`) |
 | `QDRANT_COLLECTION` | 5 | `embed` | Qdrant collection name (e.g. `remarkable`) |

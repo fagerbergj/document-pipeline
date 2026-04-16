@@ -52,10 +52,10 @@ Copy from `home-server/.env`. Required variables per pipeline phase:
 
 | Variable | Phase | Description |
 |---|---|---|
-| `OLLAMA_BASE_URL` | 2 | Ollama endpoint (e.g. `http://ollama:11434`) |
-| `OCR_MODEL` | 2 | Ollama model for OCR (e.g. `glm-ocr`) |
-| `CLARIFY_MODEL` | 3 | Ollama model for clarification (e.g. `qwen3:4b`) |
-| `CLASSIFY_MODEL` | 4 | Ollama model for classification (e.g. `qwen3:4b`) |
+| `OLLAMA_URL` | 2 | Ollama endpoint (e.g. `http://ollama:11434`) |
+| `OCR_MODEL` | 2 | Ollama model for OCR (e.g. `qwen3-vl:30b`) |
+| `CLARIFY_MODEL` | 3 | Ollama model for clarification (e.g. `gemma4:31b`) |
+| `CLASSIFY_MODEL` | 4 | Ollama model for classification (e.g. `gemma4-26b:latest`) |
 | `EMBED_MODEL` | 5 | Ollama embedding model (e.g. `nomic-embed-text:v1.5`) |
 | `QDRANT_URL` | 5 | Qdrant endpoint (e.g. `http://qdrant:6333`) |
 | `QDRANT_COLLECTION` | 5 | Collection name (e.g. `remarkable`) |
@@ -63,7 +63,6 @@ Copy from `home-server/.env`. Required variables per pipeline phase:
 | `OPEN_WEBUI_URL` | 5 | Open WebUI base URL |
 | `OPEN_WEBUI_API_KEY` | 5 | Open WebUI API key |
 | `OPEN_WEBUI_KNOWLEDGE_ID` | 5 | Knowledge base ID in Open WebUI |
-| `QUERY_MODEL` | chat | Model for RAG chat (defaults to `CLARIFY_MODEL`) |
 
 Optional:
 
@@ -71,6 +70,9 @@ Optional:
 |---|---|---|
 | `DB_PATH` | `/data/pipeline.db` | SQLite database path |
 | `VAULT_PATH` | `/vault` | Artifact storage directory |
+| `MIGRATIONS_DIR` | `db/migrations` | SQL migration directory |
+| `PIPELINE_CONFIG` | `config/pipeline.yaml` | Pipeline YAML path |
+| `LISTEN_ADDR` | `:8000` | HTTP listen address |
 
 ### Run
 
@@ -86,38 +88,48 @@ In production the service is deployed via `home-server/notes/docker-compose.yml`
 
 ```
 document-pipeline/
-├── core/           Domain logic — models, pipeline config, services (ingest, worker)
-├── adapters/       I/O adapters — inbound (REST API) and outbound (SQLite, Ollama, Qdrant, Open WebUI)
-├── config/         pipeline.yaml + documentation
-├── db/             Database schema documentation
-├── api/            API reference documentation
-├── frontend/       React + Vite UI (TypeScript + Tailwind + React Query, built into frontend/dist/)
-└── prompts/        LLM prompt templates (plain text — edit without touching code)
+├── server/            Go service
+│   ├── main.go        Entry point — flags, dependency wiring, graceful shutdown
+│   ├── api/rest/      HTTP handlers (chi router)
+│   ├── core/          Domain services (ingest, worker) + port interfaces + models
+│   ├── store/         Outbound adapters: sqlite, ollama, qdrant, openwebui,
+│   │                  filesystem, stream, prompts, config, embed (coordinator)
+│   ├── web/           Embedded frontend bundle (//go:embed all:dist)
+│   └── test/          Integration tests
+├── frontend/          React + Vite SPA (TypeScript + Tailwind + React Query)
+├── config/            pipeline.yaml + reference docs
+├── db/migrations/     SQL up/down migrations
+└── prompts/           LLM prompt templates (plain text)
 ```
 
 ## Architecture
 
-### Hexagonal
+### Hexagonal, in Go
 
 ```
-adapters/inbound/      →  core/services/  →  adapters/outbound/
-  api.py                    ingest.py           sqlite.py
-                            worker.py           filesystem.py
-                                                ollama.py
-                                                qdrant.py
-                                                open_webui.py
-                                                streams.py
+server/api/rest/  →  server/core/  →  server/store/
+  (chi handlers)     (ingest,           (sqlite, ollama, qdrant,
+                      worker)            openwebui, filesystem, ...)
+                         ↑
+                    server/core/port/
+                    (interfaces only)
 ```
 
-- **Core** (`core/`) contains all business logic with no I/O imports
-- **Inbound adapters** (`adapters/inbound/`) translate HTTP requests into core service calls
-- **Outbound adapters** (`adapters/outbound/`) implement the actual I/O: database, filesystem, Ollama, Qdrant, Open WebUI
-
-Swapping an adapter (e.g. replacing SQLite with Postgres) means editing one file in `adapters/outbound/`.
+- **Core** (`server/core/`) contains all business logic. It depends only on the port
+  interfaces in `server/core/port/` — no I/O imports.
+- **Inbound adapter** (`server/api/rest/`) translates HTTP requests into core
+  service calls using the go-chi router.
+- **Outbound adapters** (`server/store/`) implement each port against a concrete
+  backend. Swapping (e.g. SQLite → Postgres) means one new package in
+  `server/store/`.
 
 ### Frontend
 
-React 18 + TypeScript + Tailwind CSS + Vite + React Query. The API client is auto-generated from the OpenAPI schema via `@hey-api/openapi-ts`. Built into `frontend/dist/` and served as static assets by the FastAPI app.
+React 18 + TypeScript + Tailwind CSS + Vite + React Query. The API client is
+auto-generated from `openapi.yaml` via `@hey-api/openapi-ts`. The build output
+(`frontend/dist/`) is copied into `server/web/dist/` at Docker-build time and
+baked into the Go binary by `//go:embed`, which the REST router serves with SPA
+fallback at `/`.
 
 ## How to develop
 
@@ -125,7 +137,7 @@ React 18 + TypeScript + Tailwind CSS + Vite + React Query. The API client is aut
 
 1. Add a stage entry to `config/pipeline.yaml`
 2. Create a prompt file in `prompts/` if the stage is `llm_text` or `computer_vision`
-3. If the stage needs a new type handler, add it to `core/services/worker.py`
+3. If the stage needs a new type handler, add it to `server/core/worker.go`
 
 ### Change a prompt
 
@@ -133,7 +145,18 @@ Edit the relevant file in `prompts/`. The worker reloads prompts on each stage r
 
 ### Add an embed destination
 
-Add an entry under `destinations` in the `embed` stage in `config/pipeline.yaml`. Implement the adapter in `adapters/outbound/` and register it in the embed stage handler in `worker.py`.
+Add an entry under `destinations` in the `embed` stage in `config/pipeline.yaml`.
+Implement the adapter in a new package under `server/store/` (see
+`server/store/qdrant/` as a template) and register it in the embed stage handler
+in `server/core/worker.go`.
+
+### Regenerate the TypeScript API client
+
+```bash
+make generate-client
+```
+
+Runs `@hey-api/openapi-ts` against `openapi.yaml` into `frontend/src/generated/`.
 
 ### Query the vector store from Claude Code
 
@@ -156,8 +179,6 @@ Add to `~/.claude/settings.json`:
 
 ## Sub-documentation
 
-- [`core/README.md`](core/README.md) — architecture, domain model, services
-- [`db/README.md`](db/README.md) — database schema and query patterns
 - [`config/README.md`](config/README.md) — pipeline.yaml reference
-- [`api/README.md`](api/README.md) — API reference
-- [`frontend/README.md`](frontend/README.md) — frontend architecture and dev guide
+
+The SQL schema is defined by the `.up.sql` files in `db/migrations/`.
