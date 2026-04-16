@@ -6,13 +6,13 @@ RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
-# Stage 2 — build Go binary
+# Stage 2 — build Go binary (with frontend/dist embedded via //go:embed)
 FROM golang:1.25-alpine AS builder
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-COPY --from=frontend /app/frontend/dist ./frontend/dist
+COPY --from=frontend /app/frontend/dist ./server/web/dist
 RUN CGO_ENABLED=0 go build -o /pipeline ./server
 
 # Stage 3 — minimal runtime image

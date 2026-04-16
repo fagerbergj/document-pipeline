@@ -1,24 +1,29 @@
-.PHONY: generate generate-server generate-client
+.PHONY: build test fmt vet generate generate-client frontend-build clean
 
-# Regenerate both server (Python) and client (TypeScript) from openapi.yaml.
-# Prerequisites:
-#   uv sync --dev   (installs datamodel-code-generator)
-#   cd frontend && npm install             (@hey-api/openapi-ts)
-generate: generate-server generate-client
+# Full local build: frontend → embed → Go binary.
+build: frontend-build
+	go build -o pipeline ./server
 
-# Generate Python Pydantic models from openapi.yaml → adapters/inbound/schemas.py
-generate-server:
-	uv run datamodel-codegen \
-	  --input openapi.yaml \
-	  --input-file-type openapi \
-	  --output adapters/inbound/schemas.py \
-	  --output-model-type pydantic_v2.BaseModel \
-	  --snake-case-field \
-	  --use-standard-collections \
-	  --use-union-operator \
-	  --target-python-version 3.11
+# Compile the SPA and stage it where //go:embed picks it up.
+frontend-build:
+	cd frontend && npm ci && npm run build
+	rm -rf server/web/dist
+	cp -R frontend/dist server/web/dist
 
-# Export openapi.json then generate TypeScript client from it
+test:
+	go test ./...
+
+vet:
+	go vet ./...
+
+fmt:
+	gofmt -w .
+
+# Regenerate TypeScript client from openapi.yaml.
+generate: generate-client
+
 generate-client:
-	uv run python export_schema.py
 	cd frontend && npx openapi-ts
+
+clean:
+	rm -rf server/web/dist frontend/dist pipeline

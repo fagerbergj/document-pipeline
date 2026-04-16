@@ -21,6 +21,7 @@ import (
 	"github.com/fagerbergj/document-pipeline/server/store/qdrant"
 	"github.com/fagerbergj/document-pipeline/server/store/sqlite"
 	"github.com/fagerbergj/document-pipeline/server/store/stream"
+	"github.com/fagerbergj/document-pipeline/server/web"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -96,7 +97,7 @@ func main() {
 	// --- HTTP server ---
 	handler := rest.New(docs, jobs, artifacts, contexts,
 		db.Chats(), db.ChatMessages(),
-		fs, sm, llm, embedStore, ingest, pipeline, *vault, nil)
+		fs, sm, llm, embedStore, ingest, pipeline, *vault, web.FS())
 	srv := &http.Server{Addr: *addr, Handler: handler}
 
 	// --- run until signal ---

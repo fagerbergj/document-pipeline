@@ -20,7 +20,8 @@ data/
 # Build outputs
 frontend/dist/
 frontend/node_modules/
-server/web/dist/
+server/web/dist/*
+!server/web/dist/.gitkeep
 
 # IDE
 .idea/
