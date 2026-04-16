@@ -1,17 +1,7 @@
-# Python
-__pycache__/
-*.py[cod]
-*.pyo
-*.pyd
-.Python
-*.egg-info/
-dist/
-build/
-.eggs/
-*.egg
-.venv/
-venv/
-env/
+# Go
+/pipeline
+*.test
+coverage.out
 
 # Environment
 .env
@@ -27,15 +17,14 @@ data/
 # Docker volumes
 *-data/
 
+# Build outputs
+frontend/dist/
+frontend/node_modules/
+server/web/dist/
+
 # IDE
 .idea/
 .vscode/
 *.swp
 *.swo
 .DS_Store
-
-# Test artifacts
-.pytest_cache/
-.coverage
-htmlcov/
-node_modules/
