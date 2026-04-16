@@ -171,9 +171,21 @@ func newTestEnv(t *testing.T, ollamaResp string) *testEnv {
 	ingest := core.NewIngestService(docs, jobs, artifacts, events, kv, fs, pipeline, vault)
 	worker := core.NewWorkerService(docs, jobs, artifacts, events, contexts, kv, fs, llm, embed, sm, renderer, pipeline, vault)
 
-	handler := rest.New(docs, jobs, artifacts, contexts,
-		db.Chats(), db.ChatMessages(),
-		fs, sm, llm, embed, ingest, pipeline, vault, nil)
+	handler := rest.New(rest.Dependencies{
+		Documents: docs,
+		Jobs:      jobs,
+		Artifacts: artifacts,
+		Contexts:  contexts,
+		Chats:     db.Chats(),
+		Messages:  db.ChatMessages(),
+		Store:     fs,
+		Streams:   sm,
+		LLM:       llm,
+		Embed:     embed,
+		Ingest:    ingest,
+		Pipeline:  pipeline,
+		VaultPath: vault,
+	})
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 

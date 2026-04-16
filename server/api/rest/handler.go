@@ -26,37 +26,43 @@ type handler struct {
 	vaultPath string
 }
 
+// Dependencies bundles the wiring passed to New. Using a struct instead of a long
+// positional parameter list prevents silent nil mis-wiring (previously main.go
+// accidentally passed nil for FrontendFS, which made the SPA fallback a dead
+// branch at runtime).
+type Dependencies struct {
+	Documents  port.DocumentRepo
+	Jobs       port.JobRepo
+	Artifacts  port.ArtifactRepo
+	Contexts   port.ContextRepo
+	Chats      port.ChatRepo
+	Messages   port.ChatMessageRepo
+	Store      port.DocumentArtifactStore
+	Streams    port.StreamManager
+	LLM        port.LLMInference
+	Embed      port.EmbedStore
+	Ingest     *core.IngestService
+	Pipeline   model.PipelineConfig
+	VaultPath  string
+	FrontendFS fs.FS
+}
+
 // New constructs the HTTP handler and returns the fully wired router.
-func New(
-	docs port.DocumentRepo,
-	jobs port.JobRepo,
-	artifacts port.ArtifactRepo,
-	contexts port.ContextRepo,
-	chats port.ChatRepo,
-	messages port.ChatMessageRepo,
-	store port.DocumentArtifactStore,
-	streams port.StreamManager,
-	llm port.LLMInference,
-	embed port.EmbedStore,
-	ingest *core.IngestService,
-	pipeline model.PipelineConfig,
-	vaultPath string,
-	frontendFS fs.FS,
-) http.Handler {
+func New(deps Dependencies) http.Handler {
 	h := &handler{
-		docs:      docs,
-		jobs:      jobs,
-		artifacts: artifacts,
-		contexts:  contexts,
-		chats:     chats,
-		messages:  messages,
-		store:     store,
-		streams:   streams,
-		llm:       llm,
-		embed:     embed,
-		ingest:    ingest,
-		pipeline:  pipeline,
-		vaultPath: vaultPath,
+		docs:      deps.Documents,
+		jobs:      deps.Jobs,
+		artifacts: deps.Artifacts,
+		contexts:  deps.Contexts,
+		chats:     deps.Chats,
+		messages:  deps.Messages,
+		store:     deps.Store,
+		streams:   deps.Streams,
+		llm:       deps.LLM,
+		embed:     deps.Embed,
+		ingest:    deps.Ingest,
+		pipeline:  deps.Pipeline,
+		vaultPath: deps.VaultPath,
 	}
-	return NewRouter(h, frontendFS)
+	return NewRouter(h, deps.FrontendFS)
 }

@@ -19,11 +19,18 @@ vet:
 fmt:
 	gofmt -w .
 
-# Regenerate TypeScript client from openapi.yaml.
-generate: generate-client
+# Regenerate both Go types and TypeScript client from openapi.yaml.
+generate: generate-server generate-client
+
+generate-server:
+	go generate ./server/api/schema/...
 
 generate-client:
 	cd frontend && npx openapi-ts
+
+# Lint openapi.yaml using Redocly CLI (OpenAPI 3.1 aware).
+lint-openapi:
+	npx --yes @redocly/cli@latest lint openapi.yaml
 
 clean:
 	rm -rf server/web/dist frontend/dist pipeline

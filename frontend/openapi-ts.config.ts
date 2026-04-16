@@ -2,7 +2,7 @@ import { defineConfig } from '@hey-api/openapi-ts'
 
 export default defineConfig({
   client: '@hey-api/client-fetch',
-  input: '../openapi.json',
+  input: '../openapi.yaml',
   output: {
     path: 'src/generated',
     postProcess: ['prettier'],

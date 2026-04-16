@@ -78,7 +78,7 @@ func main() {
 			log.Info("embed store: Qdrant only")
 		}
 	} else {
-		embedStore = &noopEmbedStore{}
+		embedStore = storeembed.NewNoop()
 		log.Warn("embed store: disabled (no --qdrant URL)")
 	}
 
@@ -95,9 +95,22 @@ func main() {
 	worker := core.NewWorkerService(docs, jobs, artifacts, events, contexts, kv, fs, llm, embedStore, sm, renderer, pipeline, *vault)
 
 	// --- HTTP server ---
-	handler := rest.New(docs, jobs, artifacts, contexts,
-		db.Chats(), db.ChatMessages(),
-		fs, sm, llm, embedStore, ingest, pipeline, *vault, web.FS())
+	handler := rest.New(rest.Dependencies{
+		Documents:  docs,
+		Jobs:       jobs,
+		Artifacts:  artifacts,
+		Contexts:   contexts,
+		Chats:      db.Chats(),
+		Messages:   db.ChatMessages(),
+		Store:      fs,
+		Streams:    sm,
+		LLM:        llm,
+		Embed:      embedStore,
+		Ingest:     ingest,
+		Pipeline:   pipeline,
+		VaultPath:  *vault,
+		FrontendFS: web.FS(),
+	})
 	srv := &http.Server{Addr: *addr, Handler: handler}
 
 	// --- run until signal ---
@@ -129,17 +142,6 @@ func main() {
 	}
 	log.Info("shutdown complete")
 }
-
-// noopEmbedStore is used when no Qdrant URL is configured.
-type noopEmbedStore struct{}
-
-func (n *noopEmbedStore) Upsert(_ context.Context, _ string, _ []float32, _ []float32, _ map[string]any) error {
-	return nil
-}
-func (n *noopEmbedStore) Search(_ context.Context, _ []float32, _ int) ([]port.EmbedResult, error) {
-	return nil, nil
-}
-func (n *noopEmbedStore) Delete(_ context.Context, _ string) error { return nil }
 
 func envOr(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
