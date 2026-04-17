@@ -1,8 +1,8 @@
-openapi: 3.1.0
+openapi: 3.0.3
 
 info:
   title: document-pipeline
-  version: 0.3.0
+  version: 1.0.0
   description: |
     Ingests documents through a configurable OCR → clarify → classify → embed pipeline,
     and stores the results in a vector database for RAG queries.
@@ -10,6 +10,10 @@ info:
     Documents move through pipeline stages asynchronously via jobs. Each job represents
     execution of a single stage. The frontend polls for state changes and streams live
     LLM output via Server-Sent Events.
+
+servers:
+  - url: http://localhost:8000
+    description: Local development
 
 tags:
   - name: Pipelines
@@ -723,43 +727,44 @@ components:
     StageDetail:
       allOf:
         - $ref: '#/components/schemas/StageSummary'
-      description: Full stage configuration including I/O and conditional logic.
-      properties:
-        inputs:
-          type: array
-          items:
-            type: string
-          description: Field names consumed by this stage.
-        outputs:
-          type: array
-          items:
-            type: object
-            required: [field, type]
-            properties:
-              field:
+        - type: object
+          description: Full stage configuration including I/O and conditional logic.
+          properties:
+            inputs:
+              type: array
+              items:
                 type: string
-                description: Output field name.
-              type:
-                type: string
-                description: Output type (e.g. `text`, `json_array`).
-          description: Fields produced by this stage.
-        skip_if:
-          type: object
-          nullable: true
-          description: Conditions under which this stage is skipped entirely.
-          additionalProperties: true
-        start_if:
-          type: object
-          nullable: true
-          description: Conditions that must be met before this stage can start.
-          additionalProperties: true
-        continue_if:
-          type: array
-          nullable: true
-          description: Rules that determine if the stage auto-advances without human review.
-          items:
-            type: object
-            additionalProperties: true
+              description: Field names consumed by this stage.
+            outputs:
+              type: array
+              items:
+                type: object
+                required: [field, type]
+                properties:
+                  field:
+                    type: string
+                    description: Output field name.
+                  type:
+                    type: string
+                    description: Output type (e.g. `text`, `json_array`).
+              description: Fields produced by this stage.
+            skip_if:
+              type: object
+              nullable: true
+              description: Conditions under which this stage is skipped entirely.
+              additionalProperties: true
+            start_if:
+              type: object
+              nullable: true
+              description: Conditions that must be met before this stage can start.
+              additionalProperties: true
+            continue_if:
+              type: array
+              nullable: true
+              description: Rules that determine if the stage auto-advances without human review.
+              items:
+                type: object
+                additionalProperties: true
 
     Pipeline:
       type: object
@@ -873,22 +878,23 @@ components:
     DocumentDetail:
       allOf:
         - $ref: '#/components/schemas/DocumentSummary'
-      description: Full document data including context and artifacts.
-      properties:
-        additional_context:
-          type: string
-          description: Free-text context attached by the user to guide LLM stages.
-        linked_contexts:
-          type: array
-          items:
-            type: string
-            format: uuid
-          description: UUIDs of saved context entries linked to this document.
-        artifacts:
-          type: array
-          items:
-            $ref: '#/components/schemas/Artifact'
-          description: Files associated with this document (e.g. source image).
+        - type: object
+          description: Full document data including context and artifacts.
+          properties:
+            additional_context:
+              type: string
+              description: Free-text context attached by the user to guide LLM stages.
+            linked_contexts:
+              type: array
+              items:
+                type: string
+                format: uuid
+              description: UUIDs of saved context entries linked to this document.
+            artifacts:
+              type: array
+              items:
+                $ref: '#/components/schemas/Artifact'
+              description: Files associated with this document (e.g. source image).
 
     PaginatedDocuments:
       type: object
@@ -1067,15 +1073,16 @@ components:
     JobDetail:
       allOf:
         - $ref: '#/components/schemas/JobSummary'
-      description: Full job data including options and run history.
-      properties:
-        options:
-          $ref: '#/components/schemas/JobOptions'
-        runs:
-          type: array
-          items:
-            $ref: '#/components/schemas/Run'
-          description: Ordered list of LLM round trips for this job. Appended on each execution.
+        - type: object
+          description: Full job data including options and run history.
+          properties:
+            options:
+              $ref: '#/components/schemas/JobOptions'
+            runs:
+              type: array
+              items:
+                $ref: '#/components/schemas/Run'
+              description: Ordered list of LLM round trips for this job. Appended on each execution.
 
     PaginatedJobs:
       type: object
@@ -1285,13 +1292,14 @@ components:
     ChatDetail:
       allOf:
         - $ref: '#/components/schemas/ChatSummary'
-      description: Full chat data including message history.
-      properties:
-        messages:
-          type: array
-          description: All messages in the chat in chronological order.
-          items:
-            $ref: '#/components/schemas/ChatMessage'
+        - type: object
+          description: Full chat data including message history.
+          properties:
+            messages:
+              type: array
+              description: All messages in the chat in chronological order.
+              items:
+                $ref: '#/components/schemas/ChatMessage'
 
     PaginatedChats:
       type: object

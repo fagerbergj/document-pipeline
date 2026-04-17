@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/fagerbergj/document-pipeline/server/api/schema"
 	"github.com/fagerbergj/document-pipeline/server/core"
 	"github.com/fagerbergj/document-pipeline/server/core/model"
 	"github.com/fagerbergj/document-pipeline/server/core/port"
@@ -71,14 +72,14 @@ func (h *handler) listJobs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	data := make([]any, 0, len(result.Data))
+	data := make([]schema.JobSummary, 0, len(result.Data))
 	for _, job := range result.Data {
-		data = append(data, jobSummary(job, docCache[job.DocumentID]))
+		data = append(data, toJobSummary(job, docCache[job.DocumentID]))
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"data":            data,
-		"next_page_token": result.NextPageToken,
+	writeJSON(w, http.StatusOK, schema.PaginatedJobs{
+		Data:          data,
+		NextPageToken: result.NextPageToken,
 	})
 }
 
@@ -90,7 +91,7 @@ func (h *handler) getJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	doc, _ := h.docs.Get(r.Context(), job.DocumentID)
-	writeJSON(w, http.StatusOK, jobDetail(job, titleOf(doc)))
+	writeJSON(w, http.StatusOK, toJobDetail(job, titleOf(doc)))
 }
 
 func (h *handler) patchJob(w http.ResponseWriter, r *http.Request) {
@@ -131,7 +132,7 @@ func (h *handler) patchJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	doc, _ := h.docs.Get(r.Context(), job.DocumentID)
-	writeJSON(w, http.StatusOK, jobDetail(job, titleOf(doc)))
+	writeJSON(w, http.StatusOK, toJobDetail(job, titleOf(doc)))
 }
 
 func (h *handler) patchRun(w http.ResponseWriter, r *http.Request) {
@@ -180,7 +181,7 @@ func (h *handler) patchRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, runJSON(job.Runs[runIdx]))
+	writeJSON(w, http.StatusOK, toRun(job.Runs[runIdx]))
 }
 
 var validTransitions = map[model.JobStatus]map[model.JobStatus]bool{
@@ -242,7 +243,7 @@ func (h *handler) putJobStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	doc, _ := h.docs.Get(r.Context(), job.DocumentID)
-	writeJSON(w, http.StatusOK, jobDetail(job, titleOf(doc)))
+	writeJSON(w, http.StatusOK, toJobDetail(job, titleOf(doc)))
 }
 
 func (h *handler) streamJob(w http.ResponseWriter, r *http.Request) {
@@ -340,40 +341,3 @@ func (h *handler) advancePipeline(r *http.Request, job model.Job, now time.Time)
 	return h.jobs.Upsert(r.Context(), nextJob)
 }
 
-// ── response helpers ──────────────────────────────────────────────────────────
-
-func jobSummary(job model.Job, title *string) map[string]any {
-	return map[string]any{
-		"id":          job.ID,
-		"document_id": job.DocumentID,
-		"title":       title,
-		"stage":       job.Stage,
-		"status":      job.Status,
-		"created_at":  job.CreatedAt,
-		"updated_at":  job.UpdatedAt,
-	}
-}
-
-func jobDetail(job model.Job, title *string) map[string]any {
-	runs := make([]any, 0, len(job.Runs))
-	for _, run := range job.Runs {
-		runs = append(runs, runJSON(run))
-	}
-	m := jobSummary(job, title)
-	m["options"] = job.Options
-	m["runs"] = runs
-	return m
-}
-
-func runJSON(run model.Run) map[string]any {
-	return map[string]any{
-		"id":          run.ID,
-		"inputs":      run.Inputs,
-		"outputs":     run.Outputs,
-		"confidence":  run.Confidence,
-		"questions":   run.Questions,
-		"suggestions": run.Suggestions,
-		"created_at":  run.CreatedAt,
-		"updated_at":  run.UpdatedAt,
-	}
-}
