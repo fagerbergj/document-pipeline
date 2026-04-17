@@ -49,7 +49,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
-      - run: npx --yes @redocly/cli@latest lint openapi.yaml
+      - run: npx --yes @redocly/cli@latest lint openapi.yaml --config .redocly.yaml
 
   codegen-drift:
     runs-on: ubuntu-latest
