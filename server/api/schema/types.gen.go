@@ -200,8 +200,29 @@ type Artifact struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// ChatDetail Lightweight chat representation used in list views.
-type ChatDetail = ChatSummary
+// ChatDetail defines model for ChatDetail.
+type ChatDetail struct {
+	// CreatedAt ISO 8601 creation timestamp.
+	CreatedAt time.Time `json:"created_at"`
+
+	// Id Chat UUID.
+	Id string `json:"id"`
+
+	// Messages All messages in the chat in chronological order.
+	Messages *[]ChatMessage `json:"messages,omitempty"`
+
+	// RagRetrieval RAG retrieval configuration for a chat.
+	RagRetrieval RagRetrieval `json:"rag_retrieval"`
+
+	// SystemPrompt Optional freeform context injected into every system prompt.
+	SystemPrompt *string `json:"system_prompt,omitempty"`
+
+	// Title Auto-derived from the first user message (first 60 chars). Null until the first message is sent.
+	Title *string `json:"title,omitempty"`
+
+	// UpdatedAt ISO 8601 last-updated timestamp.
+	UpdatedAt time.Time `json:"updated_at"`
+}
 
 // ChatMessage A single message turn in a chat.
 type ChatMessage struct {
@@ -278,8 +299,32 @@ type CreateContextBody struct {
 	Text string `json:"text"`
 }
 
-// DocumentDetail Lightweight document representation used in list views.
-type DocumentDetail = DocumentSummary
+// DocumentDetail defines model for DocumentDetail.
+type DocumentDetail struct {
+	// AdditionalContext Free-text context attached by the user to guide LLM stages.
+	AdditionalContext *string `json:"additional_context,omitempty"`
+
+	// Artifacts Files associated with this document (e.g. source image).
+	Artifacts *[]Artifact `json:"artifacts,omitempty"`
+
+	// CreatedAt ISO 8601 creation timestamp.
+	CreatedAt time.Time `json:"created_at"`
+
+	// CurrentJobId UUID of the most recently active job for this document.
+	CurrentJobId *openapi_types.UUID `json:"current_job_id,omitempty"`
+
+	// Id Unique document identifier.
+	Id openapi_types.UUID `json:"id"`
+
+	// LinkedContexts UUIDs of saved context entries linked to this document.
+	LinkedContexts *[]openapi_types.UUID `json:"linked_contexts,omitempty"`
+
+	// Title Human-readable title.
+	Title *string `json:"title,omitempty"`
+
+	// UpdatedAt ISO 8601 last-updated timestamp.
+	UpdatedAt time.Time `json:"updated_at"`
+}
 
 // DocumentSummary Lightweight document representation used in list views.
 type DocumentSummary struct {
@@ -311,8 +356,35 @@ type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
-// JobDetail Lightweight job representation used in list views.
-type JobDetail = JobSummary
+// JobDetail defines model for JobDetail.
+type JobDetail struct {
+	// CreatedAt ISO 8601 creation timestamp.
+	CreatedAt time.Time `json:"created_at"`
+
+	// DocumentId UUID of the document this job belongs to.
+	DocumentId openapi_types.UUID `json:"document_id"`
+
+	// Id Unique job identifier.
+	Id openapi_types.UUID `json:"id"`
+
+	// Options Per-job configuration options.
+	Options *JobOptions `json:"options,omitempty"`
+
+	// Runs Ordered list of LLM round trips for this job. Appended on each execution.
+	Runs *[]Run `json:"runs,omitempty"`
+
+	// Stage Pipeline stage this job executes (e.g. `ocr`, `clarify`).
+	Stage string `json:"stage"`
+
+	// Status Execution status of a job.
+	Status JobStatus `json:"status"`
+
+	// Title Denormalized document title.
+	Title *string `json:"title,omitempty"`
+
+	// UpdatedAt ISO 8601 last-updated timestamp.
+	UpdatedAt time.Time `json:"updated_at"`
+}
 
 // JobOptions Per-job configuration options.
 type JobOptions struct {
@@ -569,8 +641,38 @@ type SourceDoc struct {
 	Title string `json:"title"`
 }
 
-// StageDetail Lightweight stage representation used in pipeline list views.
-type StageDetail = StageSummary
+// StageDetail defines model for StageDetail.
+type StageDetail struct {
+	// ContinueIf Rules that determine if the stage auto-advances without human review.
+	ContinueIf *[]map[string]interface{} `json:"continue_if,omitempty"`
+
+	// Inputs Field names consumed by this stage.
+	Inputs *[]string `json:"inputs,omitempty"`
+
+	// Model Model used by this stage.
+	Model *string `json:"model,omitempty"`
+
+	// Name Stage identifier (e.g. `ocr`, `clarify`).
+	Name string `json:"name"`
+
+	// Outputs Fields produced by this stage.
+	Outputs *[]struct {
+		// Field Output field name.
+		Field string `json:"field"`
+
+		// Type Output type (e.g. `text`, `json_array`).
+		Type string `json:"type"`
+	} `json:"outputs,omitempty"`
+
+	// SkipIf Conditions under which this stage is skipped entirely.
+	SkipIf *map[string]interface{} `json:"skip_if,omitempty"`
+
+	// StartIf Conditions that must be met before this stage can start.
+	StartIf *map[string]interface{} `json:"start_if,omitempty"`
+
+	// Type Stage handler type (e.g. `llm_text`, `embed`).
+	Type string `json:"type"`
+}
 
 // StageSummary Lightweight stage representation used in pipeline list views.
 type StageSummary struct {

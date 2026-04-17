@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fagerbergj/document-pipeline/server/api/schema"
 	"github.com/fagerbergj/document-pipeline/server/core"
 	"github.com/fagerbergj/document-pipeline/server/core/model"
 	"github.com/fagerbergj/document-pipeline/server/core/port"
@@ -62,18 +63,18 @@ func (h *handler) listDocuments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data := make([]any, 0, len(result.Data))
+	data := make([]schema.DocumentSummary, 0, len(result.Data))
 	for _, doc := range result.Data {
 		jobs, err := h.jobs.ListForDocument(r.Context(), doc.ID)
 		if err != nil {
 			slog.Error("listDocuments jobs", "err", err)
 		}
-		data = append(data, docSummary(doc, pickCurrentJob(jobs)))
+		data = append(data, toDocSummary(doc, pickCurrentJob(jobs)))
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"data":            data,
-		"next_page_token": result.NextPageToken,
+	writeJSON(w, http.StatusOK, schema.PaginatedDocuments{
+		Data:          data,
+		NextPageToken: result.NextPageToken,
 	})
 }
 
@@ -142,7 +143,7 @@ func (h *handler) uploadDocument(w http.ResponseWriter, r *http.Request) {
 	}
 
 	doc, _ := h.docs.Get(r.Context(), job.DocumentID)
-	writeJSON(w, http.StatusCreated, jobDetail(job, titleOf(doc)))
+	writeJSON(w, http.StatusCreated, toJobDetail(job, titleOf(doc)))
 }
 
 func (h *handler) getDocument(w http.ResponseWriter, r *http.Request) {
@@ -227,7 +228,7 @@ func (h *handler) deleteDocument(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	writeJSON(w, http.StatusOK, schema.OkResponse{Ok: true})
 }
 
 func (h *handler) getArtifact(w http.ResponseWriter, r *http.Request) {
@@ -254,60 +255,18 @@ func (h *handler) getArtifact(w http.ResponseWriter, r *http.Request) {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-func (h *handler) buildDocDetail(r *http.Request, doc model.Document) (map[string]any, error) {
+func (h *handler) buildDocDetail(r *http.Request, doc model.Document) (schema.DocumentDetail, error) {
 	artifacts, err := h.artifacts.ListForDocument(r.Context(), doc.ID)
 	if err != nil {
 		slog.Error("buildDocDetail artifacts", "err", err)
-		return nil, err
+		return schema.DocumentDetail{}, err
 	}
 	jobs, err := h.jobs.ListForDocument(r.Context(), doc.ID)
 	if err != nil {
 		slog.Error("buildDocDetail jobs", "err", err)
-		return nil, err
+		return schema.DocumentDetail{}, err
 	}
-	current := pickCurrentJob(jobs)
-
-	artJSON := make([]map[string]any, 0, len(artifacts))
-	for _, a := range artifacts {
-		artJSON = append(artJSON, map[string]any{
-			"id":             a.ID,
-			"filename":       a.Filename,
-			"content_type":   a.ContentType,
-			"created_job_id": a.CreatedJobID,
-			"created_at":     a.CreatedAt,
-			"updated_at":     a.UpdatedAt,
-		})
-	}
-
-	var currentJobID any
-	if current != nil {
-		currentJobID = current.ID
-	}
-
-	return map[string]any{
-		"id":                 doc.ID,
-		"title":              doc.Title,
-		"current_job_id":     currentJobID,
-		"additional_context": doc.AdditionalContext,
-		"linked_contexts":    doc.LinkedContexts,
-		"artifacts":          artJSON,
-		"created_at":         doc.CreatedAt,
-		"updated_at":         doc.UpdatedAt,
-	}, nil
-}
-
-func docSummary(doc model.Document, currentJob *model.Job) map[string]any {
-	var currentJobID any
-	if currentJob != nil {
-		currentJobID = currentJob.ID
-	}
-	return map[string]any{
-		"id":             doc.ID,
-		"title":          doc.Title,
-		"current_job_id": currentJobID,
-		"created_at":     doc.CreatedAt,
-		"updated_at":     doc.UpdatedAt,
-	}
+	return toDocDetail(doc, pickCurrentJob(jobs), artifacts), nil
 }
 
 // pickCurrentJob returns the most relevant job for display.

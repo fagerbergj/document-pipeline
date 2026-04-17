@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/fagerbergj/document-pipeline/server/api/schema"
 	"github.com/fagerbergj/document-pipeline/server/core/model"
 	"github.com/fagerbergj/document-pipeline/server/core/port"
 	"github.com/go-chi/chi/v5"
@@ -40,17 +41,18 @@ func (h *handler) listChats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data := make([]any, 0, len(chats))
+	data := make([]schema.ChatSummary, 0, len(chats))
 	for _, c := range chats {
-		data = append(data, chatSummaryJSON(c))
+		data = append(data, toChatSummary(c))
 	}
-	var nextBeforeID any
+	var nextPageToken *string
 	if len(chats) == pageSize {
-		nextBeforeID = chats[len(chats)-1].ID
+		last := chats[len(chats)-1].ID
+		nextPageToken = &last
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"data":           data,
-		"next_before_id": nextBeforeID,
+	writeJSON(w, http.StatusOK, schema.PaginatedChats{
+		Data:          data,
+		NextPageToken: nextPageToken,
 	})
 }
 
@@ -76,7 +78,7 @@ func (h *handler) createChat(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	writeJSON(w, http.StatusCreated, chatSummaryJSON(chat))
+	writeJSON(w, http.StatusCreated, toChatSummary(chat))
 }
 
 func (h *handler) getChat(w http.ResponseWriter, r *http.Request) {
@@ -92,13 +94,7 @@ func (h *handler) getChat(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	detail := chatSummaryJSON(chat)
-	msgJSON := make([]any, 0, len(msgs))
-	for _, m := range msgs {
-		msgJSON = append(msgJSON, chatMessageJSON(m))
-	}
-	detail["messages"] = msgJSON
-	writeJSON(w, http.StatusOK, detail)
+	writeJSON(w, http.StatusOK, toChatDetail(chat, msgs))
 }
 
 func (h *handler) patchChat(w http.ResponseWriter, r *http.Request) {
@@ -128,7 +124,7 @@ func (h *handler) patchChat(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	writeJSON(w, http.StatusOK, chatSummaryJSON(chat))
+	writeJSON(w, http.StatusOK, toChatSummary(chat))
 }
 
 func (h *handler) deleteChat(w http.ResponseWriter, r *http.Request) {
@@ -311,37 +307,7 @@ func (h *handler) updateChatTitle(ctx context.Context, chatID, title string) err
 	return err
 }
 
-// ── JSON helpers ──────────────────────────────────────────────────────────────
-
-func chatSummaryJSON(c model.ChatSession) map[string]any {
-	var title any
-	if c.Title != "" {
-		title = c.Title
-	}
-	return map[string]any{
-		"id":            c.ID,
-		"title":         title,
-		"system_prompt": c.SystemPrompt,
-		"rag_retrieval": c.RAGRetrieval,
-		"created_at":    c.CreatedAt,
-		"updated_at":    c.UpdatedAt,
-	}
-}
-
-func chatMessageJSON(m model.ChatMessage) map[string]any {
-	sources := m.Sources
-	if sources == nil {
-		sources = []model.SourceRef{}
-	}
-	return map[string]any{
-		"id":          m.ID,
-		"external_id": m.ExternalID,
-		"role":        m.Role,
-		"content":     m.Content,
-		"sources":     sources,
-		"created_at":  m.CreatedAt,
-	}
-}
+// ── helpers ───────────────────────────────────────────────────────────────────
 
 func stringPayload(payload map[string]any, key string) string {
 	if v, ok := payload[key]; ok {

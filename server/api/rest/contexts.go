@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/fagerbergj/document-pipeline/server/core/model"
+	"github.com/fagerbergj/document-pipeline/server/api/schema"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -16,14 +16,11 @@ func (h *handler) listContexts(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	data := make([]map[string]any, 0, len(entries))
+	data := make([]schema.ContextEntry, 0, len(entries))
 	for _, e := range entries {
-		data = append(data, contextJSON(e))
+		data = append(data, toContextEntry(e))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"data":            data,
-		"next_page_token": nil,
-	})
+	writeJSON(w, http.StatusOK, schema.PaginatedContexts{Data: data})
 }
 
 func (h *handler) createContext(w http.ResponseWriter, r *http.Request) {
@@ -46,7 +43,7 @@ func (h *handler) createContext(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	writeJSON(w, http.StatusCreated, contextJSON(entry))
+	writeJSON(w, http.StatusCreated, toContextEntry(entry))
 }
 
 func (h *handler) updateContext(w http.ResponseWriter, r *http.Request) {
@@ -71,7 +68,7 @@ func (h *handler) updateContext(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, contextJSON(entry))
+	writeJSON(w, http.StatusOK, toContextEntry(entry))
 }
 
 func (h *handler) deleteContext(w http.ResponseWriter, r *http.Request) {
@@ -81,13 +78,5 @@ func (h *handler) deleteContext(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
-}
-
-func contextJSON(e model.Context) map[string]any {
-	return map[string]any{
-		"id":   e.ID,
-		"name": e.Name,
-		"text": e.Text,
-	}
+	writeJSON(w, http.StatusOK, schema.OkResponse{Ok: true})
 }
