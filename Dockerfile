@@ -1,24 +1,27 @@
-# Build frontend
-FROM node:22-alpine AS frontend-build
-WORKDIR /frontend
-COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm install
-COPY frontend/ .
+# Stage 1 — build React frontend
+FROM node:22-alpine AS frontend
+WORKDIR /app/frontend
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend/ ./
 RUN npm run build
 
-# Python stage
-FROM python:3.12-slim
-
+# Stage 2 — build Go binary
+FROM golang:1.25-alpine AS builder
 WORKDIR /app
-
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
-
-COPY requirements.txt .
-RUN uv pip install --system --no-cache -r requirements.txt
-
+COPY go.mod go.sum ./
+RUN go mod download
 COPY . .
-COPY --from=frontend-build /frontend/dist ./frontend/dist
+COPY --from=frontend /app/frontend/dist ./frontend/dist
+RUN CGO_ENABLED=0 go build -o /pipeline ./server
 
+# Stage 3 — minimal runtime image
+FROM alpine:3.20
+RUN apk add --no-cache ca-certificates
+COPY --from=builder /pipeline /pipeline
+COPY config/ /config/
+COPY prompts/ /prompts/
+COPY db/migrations/ /db/migrations/
 EXPOSE 8000
-
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT ["/pipeline"]
+CMD ["--migrations", "/db/migrations", "--pipeline", "/config/pipeline.yaml"]
