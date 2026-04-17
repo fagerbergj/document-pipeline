@@ -1,8 +1,8 @@
-openapi: 3.1.0
+openapi: 3.0.3
 
 info:
   title: document-pipeline
-  version: 0.3.0
+  version: 1.0.0
   description: |
     Ingests documents through a configurable OCR → clarify → classify → embed pipeline,
     and stores the results in a vector database for RAG queries.
@@ -10,6 +10,10 @@ info:
     Documents move through pipeline stages asynchronously via jobs. Each job represents
     execution of a single stage. The frontend polls for state changes and streams live
     LLM output via Server-Sent Events.
+
+servers:
+  - url: http://localhost:8000
+    description: Local development
 
 tags:
   - name: Pipelines
