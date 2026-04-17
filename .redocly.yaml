@@ -5,5 +5,8 @@ rules:
   # nullable: true is OpenAPI 3.0 syntax; in 3.1 the proper form is
   # type: [x, 'null']. We use the 3.0 form intentionally because
   # oapi-codegen does not yet handle OAS 3.1 union types correctly.
-  # Demote to warn so CI passes while the intent is documented.
   struct: warn
+
+  # Security is enforced at the reverse-proxy layer (home-server); the
+  # spec itself does not declare security schemes.
+  security-defined: off

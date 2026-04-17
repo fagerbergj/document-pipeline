@@ -340,4 +340,3 @@ func (h *handler) advancePipeline(r *http.Request, job model.Job, now time.Time)
 	}
 	return h.jobs.Upsert(r.Context(), nextJob)
 }
-
