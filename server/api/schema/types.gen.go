@@ -9,6 +9,10 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+const (
+	AuthentikScopes = "authentik.Scopes"
+)
+
 // Defines values for ChatMessageRole.
 const (
 	Assistant ChatMessageRole = "assistant"

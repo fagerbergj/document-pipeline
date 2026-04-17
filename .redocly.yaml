@@ -7,6 +7,6 @@ rules:
   # oapi-codegen does not yet handle OAS 3.1 union types correctly.
   struct: warn
 
-  # Security is enforced at the reverse-proxy layer (home-server); the
-  # spec itself does not declare security schemes.
-  security-defined: off
+  # Security is enforced via Authentik at the reverse-proxy layer.
+  # The openIdConnect scheme above documents the auth endpoint.
+  # security-defined: off  ← re-enabled; security is declared at root level
