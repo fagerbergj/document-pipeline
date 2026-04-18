@@ -21,34 +21,50 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const qc = useQueryClient()
 
-  const stages = searchParams.get('stages') ?? ''
-  const statuses = searchParams.get('statuses') ?? ''
   const sort = (searchParams.get('sort') ?? 'pipeline') as SortKey
+  const q = searchParams.get('q') ?? ''
 
   const [pageSize, setPageSizeState] = useState(20)
+  const [searchInput, setSearchInput] = useState(q)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   // Stack of page tokens for prev navigation; current token is last entry (null = first page)
   const [tokenStack, setTokenStack] = useState<(string | null)[]>([null])
   const currentToken = tokenStack[tokenStack.length - 1]
 
   // Reset to page 1 when filters change
   const resetPage = () => setTokenStack([null])
-  const prevFilters = useRef({ stages, statuses, sort })
+  const prevFilters = useRef({ sort, q })
   useEffect(() => {
     const p = prevFilters.current
-    if (p.stages !== stages || p.statuses !== statuses || p.sort !== sort) {
+    if (p.sort !== sort || p.q !== q) {
       resetPage()
-      prevFilters.current = { stages, statuses, sort }
+      prevFilters.current = { sort, q }
     }
-  }, [stages, statuses, sort])
+  }, [sort, q])
+
+  // Keep search input in sync when URL param changes externally (e.g. sidebar chips)
+  useEffect(() => { setSearchInput(q) }, [q])
+
+  function handleSearchChange(val: string) {
+    setSearchInput(val)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      const next = new URLSearchParams(searchParams)
+      if (val.trim()) next.set('q', val.trim())
+      else next.delete('q')
+      setSearchParams(next)
+      resetPage()
+    }, 300)
+  }
 
   const { data: page, isLoading, dataUpdatedAt } = useQuery({
-    queryKey: ['documents', sort, stages, statuses, pageSize, currentToken],
+    queryKey: ['documents', sort, q, pageSize, currentToken],
     queryFn: () => api.documents({
       sort,
       page_size: pageSize,
-      page_token: currentToken ?? undefined,
-      stages: stages || undefined,
-      statuses: statuses || undefined,
+      page_token: q ? undefined : (currentToken ?? undefined),
+      q: q || undefined,
     }),
     refetchInterval: 3_000,
   })
@@ -103,7 +119,7 @@ export default function Dashboard() {
   }
 
   const updatedTime = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : ''
-  const activeFilters = [stages, statuses].filter(Boolean).length
+  const activeFilters = [q].filter(Boolean).length
   const [showUpload, setShowUpload] = useState(false)
 
   return (
@@ -120,6 +136,13 @@ export default function Dashboard() {
           )}
         </div>
         <div className="flex items-center gap-3">
+          <input
+            type="text"
+            value={searchInput}
+            onChange={e => handleSearchChange(e.target.value)}
+            placeholder="Search… (title:meeting, status:pending)"
+            className="text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 w-64 focus:outline-none focus:ring-2 focus:ring-blue-300 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400"
+          />
           <button
             onClick={() => setShowUpload(true)}
             className="px-3 py-1.5 text-sm font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-700 transition-colors"
@@ -206,7 +229,7 @@ export default function Dashboard() {
               </div>
             )}
             {/* Pagination footer */}
-            {(hasPrev || hasNext || docs.length > 0) && (
+            {!q && (hasPrev || hasNext || docs.length > 0) && (
               <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 dark:border-gray-700">
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-gray-400 dark:text-gray-500">Rows per page</span>

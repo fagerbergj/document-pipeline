@@ -53,6 +53,9 @@ func (d *DB) Close() error {
 	return d.db.Close()
 }
 
+// DB returns the underlying *sql.DB (e.g. for direct queue queries in IndexerService).
+func (d *DB) DB() *sql.DB { return d.db }
+
 // Repos returns all repository implementations backed by this DB.
 func (d *DB) Documents() *DocumentRepo       { return &DocumentRepo{db: d.db} }
 func (d *DB) Jobs() *JobRepo                 { return &JobRepo{db: d.db} }

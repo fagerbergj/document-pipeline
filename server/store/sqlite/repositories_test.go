@@ -559,3 +559,61 @@ func TestKeyValueRepo(t *testing.T) {
 		t.Error("missing key should return ok=false")
 	}
 }
+
+// ── IDs filter ────────────────────────────────────────────────────────────────
+
+func TestDocumentRepo_ListPaginated_IDsFilter(t *testing.T) {
+	repo := openTestDB(t).Documents()
+	ctx := context.Background()
+
+	ids := []string{"doc-a", "doc-b", "doc-c", "doc-d"}
+	for i, id := range ids {
+		repo.Insert(ctx, model.Document{
+			ID:             id,
+			ContentHash:    "h" + string(rune('a'+i)),
+			LinkedContexts: []string{},
+			CreatedAt:      ts(),
+			UpdatedAt:      ts(),
+		})
+	}
+
+	result, err := repo.ListPaginated(ctx,
+		port.DocumentFilter{Sort: "pipeline", IDs: []string{"doc-b", "doc-d"}},
+		model.PageRequest{PageSize: 20},
+	)
+	if err != nil {
+		t.Fatalf("ListPaginated: %v", err)
+	}
+	if len(result.Data) != 2 {
+		t.Fatalf("want 2 results, got %d", len(result.Data))
+	}
+	got := map[string]bool{}
+	for _, d := range result.Data {
+		got[d.ID] = true
+	}
+	if !got["doc-b"] || !got["doc-d"] {
+		t.Errorf("unexpected result set: %v", got)
+	}
+	// IDs filter returns no pagination token.
+	if result.NextPageToken != nil {
+		t.Error("expected no next_page_token when IDs filter active")
+	}
+}
+
+func TestDocumentRepo_ListPaginated_IDsFilter_Empty(t *testing.T) {
+	repo := openTestDB(t).Documents()
+	ctx := context.Background()
+
+	repo.Insert(ctx, model.Document{ID: "doc-1", ContentHash: "h1", LinkedContexts: []string{}, CreatedAt: ts(), UpdatedAt: ts()})
+
+	result, err := repo.ListPaginated(ctx,
+		port.DocumentFilter{Sort: "pipeline", IDs: []string{"nonexistent"}},
+		model.PageRequest{PageSize: 20},
+	)
+	if err != nil {
+		t.Fatalf("ListPaginated: %v", err)
+	}
+	if len(result.Data) != 0 {
+		t.Errorf("want 0 results for unknown ID, got %d", len(result.Data))
+	}
+}

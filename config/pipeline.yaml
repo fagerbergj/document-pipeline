@@ -44,7 +44,7 @@ stages:
     max_concurrent: 1
     model: ${EMBED_MODEL}
     input: clarified_text
-    metadata_fields: [title, tags, summary, date_month]
+    metadata_fields: [title, tags, summary, date_month, series]
     chunk_size: 800
     chunk_overlap: 150
     destinations:

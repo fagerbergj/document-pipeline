@@ -774,11 +774,8 @@ type ListDocumentsParams struct {
 	// Sort Sort order.
 	Sort *ListDocumentsParamsSort `form:"sort,omitempty" json:"sort,omitempty"`
 
-	// Stages Comma-separated list of pipeline stage names to filter by.
-	Stages *StagesFilter `form:"stages,omitempty" json:"stages,omitempty"`
-
-	// Statuses Comma-separated list of job statuses to filter by.
-	Statuses *StatusesFilter `form:"statuses,omitempty" json:"statuses,omitempty"`
+	// Q Lucene query string. Fields — `title`, `series`, `summary`, `tags`, `content`, `date_month`, `stage`, `status`.
+	Q *string `form:"q,omitempty" json:"q,omitempty"`
 }
 
 // ListDocumentsParamsSort defines parameters for ListDocuments.

@@ -19,9 +19,8 @@ type DocumentRepo interface {
 }
 
 type DocumentFilter struct {
-	Stages   []string
-	Statuses []string
-	Sort     string
+	IDs  []string // when set, fetch exactly these document IDs (OpenSearch result set)
+	Sort string
 }
 
 // JobRepo persists and retrieves jobs.

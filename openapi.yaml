@@ -116,8 +116,37 @@ paths:
         - $ref: '#/components/parameters/page_token'
         - $ref: '#/components/parameters/page_size'
         - $ref: '#/components/parameters/sort_order'
-        - $ref: '#/components/parameters/stages_filter'
-        - $ref: '#/components/parameters/statuses_filter'
+        - name: q
+          in: query
+          required: false
+          description: Lucene query string. Fields — `title`, `series`, `summary`, `tags`, `content`, `date_month`, `stage`, `status`.
+          schema:
+            type: string
+          examples:
+            fullText:
+              summary: Bare keyword search across all fields
+              value: meeting notes
+            titleSearch:
+              summary: Search by title
+              value: "title:meeting"
+            seriesFilter:
+              summary: Filter by series
+              value: "series:notebooks"
+            tagFilter:
+              summary: Filter by tag
+              value: "tags:invoice"
+            contentPhrase:
+              summary: Phrase search in document content
+              value: 'content:"quarterly review"'
+            stageFilter:
+              summary: Filter by current pipeline stage
+              value: "stage:classify"
+            statusFilter:
+              summary: Filter by job status
+              value: "status:pending"
+            compound:
+              summary: Compound query
+              value: "tags:invoice AND status:done"
       responses:
         '200':
           description: Paginated list of document summaries.

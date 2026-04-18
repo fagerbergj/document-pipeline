@@ -16,6 +16,7 @@ import (
 	storeembed "github.com/fagerbergj/document-pipeline/server/store/embed"
 	"github.com/fagerbergj/document-pipeline/server/store/filesystem"
 	"github.com/fagerbergj/document-pipeline/server/store/ollama"
+	storeopensearch "github.com/fagerbergj/document-pipeline/server/store/opensearch"
 	"github.com/fagerbergj/document-pipeline/server/store/openwebui"
 	"github.com/fagerbergj/document-pipeline/server/store/prompts"
 	"github.com/fagerbergj/document-pipeline/server/store/qdrant"
@@ -38,6 +39,8 @@ func main() {
 	webUIURL := flag.String("webui", envOr("OPEN_WEBUI_URL", ""), "Open WebUI base URL (empty = skip)")
 	webUIKey := flag.String("webui-key", envOr("OPEN_WEBUI_API_KEY", ""), "Open WebUI API key")
 	webUIKnowledge := flag.String("webui-knowledge", envOr("OPEN_WEBUI_KNOWLEDGE_ID", ""), "Open WebUI knowledge base ID")
+	opensearchURL := flag.String("opensearch", envOr("OPENSEARCH_URL", ""), "OpenSearch base URL (empty = skip)")
+	opensearchIndex := flag.String("opensearch-index", envOr("OPENSEARCH_INDEX", "documents"), "OpenSearch index name")
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -82,6 +85,19 @@ func main() {
 		log.Warn("embed store: disabled (no --qdrant URL)")
 	}
 
+	// --- OpenSearch (optional) ---
+	var searchStore port.DocumentIndexer
+	var indexerSvc *core.IndexerService
+	if *opensearchURL != "" {
+		osc := storeopensearch.NewClient(*opensearchURL, *opensearchIndex)
+		if err := osc.EnsureIndex(context.Background()); err != nil {
+			log.Warn("opensearch EnsureIndex failed — search disabled", "err", err)
+		} else {
+			searchStore = osc
+			log.Info("opensearch ready", "index", *opensearchIndex)
+		}
+	}
+
 	// --- repositories ---
 	docs := db.Documents()
 	jobs := db.Jobs()
@@ -93,6 +109,9 @@ func main() {
 	// --- services ---
 	ingest := core.NewIngestService(docs, jobs, artifacts, events, kv, fs, pipeline, *vault)
 	worker := core.NewWorkerService(docs, jobs, artifacts, events, contexts, kv, fs, llm, embedStore, sm, renderer, pipeline, *vault)
+	if searchStore != nil {
+		indexerSvc = core.NewIndexerService(db.DB(), docs, jobs, searchStore)
+	}
 
 	// --- HTTP server ---
 	handler := rest.New(rest.Dependencies{
@@ -106,6 +125,7 @@ func main() {
 		Streams:    sm,
 		LLM:        llm,
 		Embed:      embedStore,
+		Search:     searchStore,
 		Ingest:     ingest,
 		Pipeline:   pipeline,
 		VaultPath:  *vault,
@@ -123,6 +143,13 @@ func main() {
 		log.Info("worker started")
 		return worker.Run(egCtx)
 	})
+
+	if indexerSvc != nil {
+		eg.Go(func() error {
+			indexerSvc.Run(egCtx)
+			return nil
+		})
+	}
 
 	eg.Go(func() error {
 		log.Info("HTTP server starting", "addr", *addr)

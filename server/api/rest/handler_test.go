@@ -931,6 +931,95 @@ func TestReceiveWebhook_MissingAttachment(t *testing.T) {
 	}
 }
 
+// ── search (q param) ─────────────────────────────────────────────────────────
+
+type mockSearchStore struct {
+	results []string
+	queries []string
+}
+
+func (m *mockSearchStore) EnsureIndex(_ context.Context) error            { return nil }
+func (m *mockSearchStore) Count(_ context.Context) (int, error)           { return len(m.results), nil }
+func (m *mockSearchStore) Index(_ context.Context, _ port.IndexDoc) error { return nil }
+func (m *mockSearchStore) Delete(_ context.Context, _ string) error       { return nil }
+func (m *mockSearchStore) Search(_ context.Context, query string, _ int) ([]string, error) {
+	m.queries = append(m.queries, query)
+	return m.results, nil
+}
+
+func TestListDocuments_SearchQ(t *testing.T) {
+	h, docs, _ := newTestHandler(t)
+	title := "Invoice March"
+	docs.Insert(context.Background(), model.Document{
+		ID:             testDocID,
+		ContentHash:    "abc",
+		Title:          &title,
+		LinkedContexts: []string{},
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
+	})
+
+	srch := &mockSearchStore{results: []string{testDocID}}
+	h.search = srch
+
+	rr := doRequest(t, h, http.MethodGet, "/api/v1/documents?q=tags%3Ainvoice", nil)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, want 200", rr.Code)
+	}
+	var resp map[string]any
+	decodeResponse(t, rr, &resp)
+	data := resp["data"].([]any)
+	if len(data) != 1 {
+		t.Fatalf("want 1 result, got %d", len(data))
+	}
+	if len(srch.queries) != 1 || srch.queries[0] != "tags:invoice" {
+		t.Errorf("unexpected search queries: %v", srch.queries)
+	}
+}
+
+func TestListDocuments_SearchQ_NoResults(t *testing.T) {
+	h, _, _ := newTestHandler(t)
+	h.search = &mockSearchStore{results: []string{}} // empty result set
+
+	rr := doRequest(t, h, http.MethodGet, "/api/v1/documents?q=status%3Apending", nil)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, want 200", rr.Code)
+	}
+	var resp map[string]any
+	decodeResponse(t, rr, &resp)
+	data := resp["data"].([]any)
+	if len(data) != 0 {
+		t.Errorf("want 0 results for empty search, got %d", len(data))
+	}
+}
+
+func TestListDocuments_SearchQ_NoSearchStore(t *testing.T) {
+	// When search store is nil (OpenSearch not configured), q param is silently ignored.
+	h, docs, _ := newTestHandler(t)
+	h.search = nil
+	title := "Some Doc"
+	docs.Insert(context.Background(), model.Document{
+		ID:             testDocID,
+		ContentHash:    "abc",
+		Title:          &title,
+		LinkedContexts: []string{},
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
+	})
+
+	rr := doRequest(t, h, http.MethodGet, "/api/v1/documents?q=anything", nil)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, want 200", rr.Code)
+	}
+	var resp map[string]any
+	decodeResponse(t, rr, &resp)
+	// All docs returned since search was skipped.
+	data := resp["data"].([]any)
+	if len(data) != 1 {
+		t.Errorf("want 1 doc (search bypassed), got %d", len(data))
+	}
+}
+
 // ── splitCSV ─────────────────────────────────────────────────────────────────
 
 func TestSplitCSV(t *testing.T) {
