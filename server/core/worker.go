@@ -528,7 +528,37 @@ func (w *WorkerService) advancePipeline(ctx context.Context, job model.Job, now 
 	for i, s := range w.pipeline.Stages {
 		names[i] = s.Name
 	}
-	return w.jobs.CascadeReplay(ctx, job.DocumentID, job.Stage, names, now)
+	idx := -1
+	for i, name := range names {
+		if name == job.Stage {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 || idx+1 >= len(names) {
+		return nil
+	}
+	nextStage := names[idx+1]
+	existing, found, err := w.jobs.GetByDocumentAndStage(ctx, job.DocumentID, nextStage)
+	if err != nil {
+		return err
+	}
+	if found {
+		return w.jobs.UpdateStatus(ctx, existing.ID, string(model.JobStatusPending), now)
+	}
+	nextDef := w.pipeline.Stages[idx+1]
+	nextJob := model.Job{
+		ID:         uuid.NewString(),
+		DocumentID: job.DocumentID,
+		Stage:      nextStage,
+		Status:     model.JobStatusPending,
+		Options: model.JobOptions{
+			RequireContext: nextDef.RequireContext,
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	return w.jobs.Upsert(ctx, nextJob)
 }
 
 // --- Artifact saving ---
