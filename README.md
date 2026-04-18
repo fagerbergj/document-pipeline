@@ -82,7 +82,7 @@ docker compose up --build
 
 The service listens on port 8000. The UI is at `http://localhost:8000`.
 
-In production the service is deployed via `home-server/notes/docker-compose.yml` under the container name `remarkable-bridge`.
+In production the service is deployed via `home-server/notes/docker-compose.yml` under the container name `document-pipeline`.
 
 ## Project structure
 

@@ -44,6 +44,9 @@ func NewRouter(h *handler, frontendFS fs.FS) http.Handler {
 		r.Patch("/contexts/{context_id}", h.updateContext)
 		r.Delete("/contexts/{context_id}", h.deleteContext)
 
+		// Ingest
+		r.Post("/remarkable/webhook", h.receiveWebhook)
+
 		// Chat
 		r.Get("/chats", h.listChats)
 		r.Post("/chats", h.createChat)

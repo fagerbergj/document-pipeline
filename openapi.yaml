@@ -19,6 +19,8 @@ security:
   - authentik: []
 
 tags:
+  - name: Ingest
+    description: Webhook endpoint for reMarkable tablet push notifications.
   - name: Pipelines
     description: Pipeline configuration — stage names, types, and models.
   - name: Documents
@@ -31,6 +33,39 @@ tags:
     description: RAG chat over the embedded knowledge base.
 
 paths:
+
+  # ── Ingest ───────────────────────────────────────────────────────────────────
+
+  /api/v1/remarkable/webhook:
+    post:
+      tags: [Ingest]
+      summary: Receive document from reMarkable
+      description: |
+        Receives a document pushed by rmfakecloud from the reMarkable tablet.
+        Expects `multipart/form-data` with two fields:
+        - `data`: JSON string containing document metadata and destination names.
+        - `attachment`: rendered PNG of the current sheet.
+
+        The document is persisted immediately and OCR runs asynchronously.
+        Returns 200 as soon as the file is saved (or if it is a duplicate).
+      operationId: receiveWebhook
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                data:
+                  type: string
+                  description: JSON-encoded document metadata from rmfakecloud.
+                attachment:
+                  type: string
+                  format: binary
+                  description: PNG image of the reMarkable sheet.
+      responses:
+        '200':
+          description: Document accepted (or silently skipped as a duplicate).
 
   # ── Pipelines ────────────────────────────────────────────────────────────────
 
