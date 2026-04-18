@@ -26,3 +26,24 @@ func DecodePageToken(s string) (model.PageToken, error) {
 	}
 	return t, nil
 }
+
+// EncodeOffsetToken encodes a search-mode offset into an opaque page token string.
+func EncodeOffsetToken(offset int) string {
+	b, _ := json.Marshal(map[string]int{"offset": offset})
+	return base64.StdEncoding.EncodeToString(b)
+}
+
+// DecodeOffsetToken decodes an opaque token back to an integer offset.
+// Returns (0, false) if the token is not an offset token.
+func DecodeOffsetToken(s string) (int, bool) {
+	b, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		return 0, false
+	}
+	var m map[string]int
+	if err := json.Unmarshal(b, &m); err != nil {
+		return 0, false
+	}
+	v, ok := m["offset"]
+	return v, ok
+}
