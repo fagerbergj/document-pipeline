@@ -50,7 +50,7 @@ export default function Dashboard() {
       stages: stages || undefined,
       statuses: statuses || undefined,
     }),
-    refetchInterval: 10_000,
+    refetchInterval: 3_000,
   })
 
   const docs = page?.data ?? []
@@ -60,7 +60,12 @@ export default function Dashboard() {
     queryKey: ['jobs-for-page', jobIds],
     queryFn: () => api.jobs({ job_id: jobIds, page_size: pageSize }),
     enabled: !!jobIds,
-    refetchInterval: 10_000,
+    refetchInterval: (query) => {
+      const active = query.state.data?.data.some(
+        j => j.status === 'running' || j.status === 'pending'
+      )
+      return active ? 2_000 : 10_000
+    },
   })
 
   const jobById = Object.fromEntries((jobsPage?.data ?? []).map(j => [j.id, j]))

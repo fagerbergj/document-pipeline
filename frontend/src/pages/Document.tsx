@@ -414,6 +414,7 @@ function LiveLogSection({ jobId, onDone }: { jobId: string; onDone: () => void }
   useEffect(() => {
     hasTokens.current = false
     setStatusMsg('')
+    let errorCount = 0
     const es = new EventSource(`/api/v1/jobs/${jobId}/stream`)
     es.addEventListener('status', (e) => {
       if (!hasTokens.current) {
@@ -422,6 +423,7 @@ function LiveLogSection({ jobId, onDone }: { jobId: string; onDone: () => void }
       }
     })
     es.addEventListener('token', (e) => {
+      errorCount = 0
       const data = JSON.parse((e as MessageEvent).data)
       if (logRef.current) {
         if (!hasTokens.current) {
@@ -440,9 +442,12 @@ function LiveLogSection({ jobId, onDone }: { jobId: string; onDone: () => void }
       setTimeout(onDone, 800)
     })
     es.onerror = () => {
-      es.close()
-      setStatus('reconnecting…')
-      setTimeout(onDone, 2000)
+      errorCount++
+      if (errorCount >= 3) {
+        es.close()
+        onDone()
+      }
+      // otherwise let EventSource auto-reconnect silently
     }
     return () => es.close()
   }, [jobId, onDone])
