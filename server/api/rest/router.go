@@ -3,6 +3,7 @@ package rest
 import (
 	"io/fs"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -61,7 +62,7 @@ func NewRouter(h *handler, frontendFS fs.FS) http.Handler {
 		fileServer := http.FileServer(http.FS(frontendFS))
 		r.Handle("/*", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Try to serve the file; if not found, serve index.html
-			_, err := frontendFS.Open(r.URL.Path)
+			_, err := frontendFS.Open(strings.TrimPrefix(r.URL.Path, "/"))
 			if err != nil {
 				r2 := *r
 				r2.URL.Path = "/"
