@@ -31,6 +31,7 @@ type SourceRef struct {
 	DocumentID string  `json:"document_id"`
 	Title      string  `json:"title"`
 	Summary    string  `json:"summary"`
+	Text       string  `json:"-"`
 	DateMonth  string  `json:"date_month"`
 	Score      float64 `json:"score"`
 }

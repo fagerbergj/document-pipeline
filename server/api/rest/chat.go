@@ -232,6 +232,7 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 				DocumentID: stringPayload(res.Payload, port.PayloadDocID),
 				Title:      stringPayload(res.Payload, port.PayloadTitle),
 				Summary:    stringPayload(res.Payload, port.PayloadSummary),
+				Text:       stringPayload(res.Payload, port.PayloadText),
 				DateMonth:  stringPayload(res.Payload, port.PayloadDateMonth),
 				Score:      res.Score,
 			})
@@ -251,7 +252,11 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 		if res.DateMonth != "" {
 			notesBlock.WriteString(" (" + res.DateMonth + ")")
 		}
-		notesBlock.WriteString("\n" + res.Summary + "\n\n")
+		text := res.Text
+		if text == "" {
+			text = res.Summary
+		}
+		notesBlock.WriteString("\n" + text + "\n\n")
 	}
 	systemPrompt := chat.SystemPrompt
 	ctxBlock := ""
