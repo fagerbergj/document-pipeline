@@ -450,6 +450,10 @@ func (w *WorkerService) runEmbed(
 	ctx context.Context, doc model.Document, job model.Job,
 	stage model.StageDefinition, stageData map[string]map[string]any,
 ) error {
+	if doc.Series != nil && *doc.Series != "" {
+		return w.rebuildSeriesCorpus(ctx, doc, job, stage)
+	}
+
 	inputText, inputField := findInput(stageData, stage.Input)
 	if inputText == "" {
 		return fmt.Errorf("embed stage %q: no text found for input %q", stage.Name, stage.Input)
@@ -545,6 +549,82 @@ func (w *WorkerService) runEmbed(
 	_ = w.events.Append(ctx, model.StageEvent{DocumentID: doc.ID, Stage: stage.Name, EventType: model.EventCompleted, Timestamp: now})
 	_ = w.advancePipeline(ctx, job, now)
 	slog.Info("embed done", "doc_id", doc.ID[:8], "stage", stage.Name, "chunks", len(chunks))
+	return nil
+}
+
+// rebuildSeriesCorpus concatenates all docs in the series, chunks, and re-embeds the corpus.
+func (w *WorkerService) rebuildSeriesCorpus(
+	ctx context.Context, doc model.Document, job model.Job, stage model.StageDefinition,
+) error {
+	series := *doc.Series
+
+	seriesDocs, err := w.docs.ListBySeries(ctx, series)
+	if err != nil {
+		return fmt.Errorf("list series docs: %w", err)
+	}
+
+	// Gather text for each doc in the series.
+	var parts []string
+	for _, d := range seriesDocs {
+		sd, err := w.collectStageData(ctx, d.ID)
+		if err != nil {
+			slog.Warn("could not collect stage data for series doc", "doc_id", d.ID[:8], "err", err)
+			continue
+		}
+		text, _ := findInput(sd, stage.Input)
+		if text == "" {
+			continue
+		}
+		parts = append(parts, text)
+	}
+	if len(parts) == 0 {
+		return fmt.Errorf("series %q: no text found across %d docs", series, len(seriesDocs))
+	}
+	combined := strings.Join(parts, "\n\n---\n\n")
+
+	chunkSize := stage.ChunkSize
+	if chunkSize <= 0 {
+		chunkSize = defaultChunkSize
+	}
+	chunkOverlap := stage.ChunkOverlap
+	if chunkOverlap <= 0 {
+		chunkOverlap = defaultChunkOverlap
+	}
+	chunks := chunkText(combined, chunkSize, chunkOverlap)
+
+	// Delete old series corpus before rebuilding.
+	if err := w.embed.DeleteBySeries(ctx, series); err != nil {
+		slog.Warn("series corpus delete failed (continuing)", "series", series, "err", err)
+	}
+
+	for i, chunk := range chunks {
+		chunkID := fmt.Sprintf("series:%s-%04d", series, i)
+		payload := map[string]any{
+			port.PayloadSeriesName: series,
+			port.PayloadText:       chunk,
+			port.PayloadChunkIndex: i,
+		}
+		vec, err := w.llm.GenerateEmbed(ctx, stage.Model, chunk)
+		if err != nil {
+			return fmt.Errorf("series chunk %d embed: %w", i, err)
+		}
+		if err := w.embed.Upsert(ctx, chunkID, vec, nil, payload); err != nil {
+			return fmt.Errorf("series chunk %d upsert: %w", i, err)
+		}
+	}
+
+	now := time.Now().UTC()
+	run := makeRun(nil, []model.Field{
+		{Field: "series_docs", Text: fmt.Sprintf("%d", len(seriesDocs))},
+		{Field: "chunks", Text: fmt.Sprintf("%d", len(chunks))},
+	}, model.ConfidenceHigh, nil, model.Suggestions{})
+	if err := w.jobs.UpdateRuns(ctx, job.ID, appendRun(job.Runs, run), now); err != nil {
+		return err
+	}
+	_ = w.jobs.UpdateStatus(ctx, job.ID, string(model.JobStatusDone), now)
+	_ = w.events.Append(ctx, model.StageEvent{DocumentID: doc.ID, Stage: stage.Name, EventType: model.EventCompleted, Timestamp: now})
+	_ = w.advancePipeline(ctx, job, now)
+	slog.Info("series corpus rebuilt", "series", series, "docs", len(seriesDocs), "chunks", len(chunks))
 	return nil
 }
 

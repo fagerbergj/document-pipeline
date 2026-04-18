@@ -15,6 +15,7 @@ type DocumentRepo interface {
 	Update(ctx context.Context, doc model.Document) error
 	Delete(ctx context.Context, id string) error
 	ListPaginated(ctx context.Context, filter DocumentFilter, page model.PageRequest) (model.PageResult[model.Document], error)
+	ListBySeries(ctx context.Context, series string) ([]model.Document, error)
 }
 
 type DocumentFilter struct {

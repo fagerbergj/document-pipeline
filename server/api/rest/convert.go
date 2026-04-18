@@ -162,6 +162,7 @@ func toDocSummary(doc model.Document, currentJob *model.Job) schema.DocumentSumm
 	return schema.DocumentSummary{
 		Id:           toUUID(doc.ID),
 		Title:        doc.Title,
+		Series:       doc.Series,
 		CurrentJobId: currentJobID,
 		CreatedAt:    doc.CreatedAt,
 		UpdatedAt:    doc.UpdatedAt,
@@ -178,6 +179,7 @@ func toDocDetail(doc model.Document, currentJob *model.Job, artifacts []model.Ar
 	return schema.DocumentDetail{
 		Id:                toUUID(doc.ID),
 		Title:             doc.Title,
+		Series:            doc.Series,
 		CurrentJobId:      currentJobID,
 		AdditionalContext: &doc.AdditionalContext,
 		LinkedContexts:    toUUIDSlice(doc.LinkedContexts),
@@ -269,13 +271,18 @@ func toChatMessage(m model.ChatMessage) schema.ChatMessage {
 func toSourceDocs(refs []model.SourceRef) []schema.SourceDoc {
 	out := make([]schema.SourceDoc, 0, len(refs))
 	for _, r := range refs {
-		out = append(out, schema.SourceDoc{
-			DocumentId: toUUID(r.DocumentID),
-			Title:      r.Title,
+		doc := schema.SourceDoc{
+			DocumentId: toUUIDPtr(&r.DocumentID),
+			SeriesName: strPtr(r.SeriesName),
+			Title:      strPtr(r.Title),
 			Summary:    strPtr(r.Summary),
 			DateMonth:  strPtr(r.DateMonth),
 			Score:      float32(r.Score),
-		})
+		}
+		if r.DocumentID == "" {
+			doc.DocumentId = nil
+		}
+		out = append(out, doc)
 	}
 	return out
 }

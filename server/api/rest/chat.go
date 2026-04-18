@@ -225,23 +225,33 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			slog.Warn("sendChatMessage embed search", "err", err)
 		}
-		// Deduplicate by doc_id, keeping the highest-scoring chunk per document.
+		// Deduplicate by doc_id (per-doc chunks) or series_name (corpus chunks),
+		// keeping the highest-scoring chunk per unique source.
 		seen := map[string]model.SourceRef{}
 		for _, res := range results {
 			if rag.MinimumScore > 0 && res.Score < rag.MinimumScore {
 				continue
 			}
 			docID := stringPayload(res.Payload, port.PayloadDocID)
+			seriesName := stringPayload(res.Payload, port.PayloadSeriesName)
+			key := docID
+			if key == "" {
+				key = "series:" + seriesName
+			}
+			if key == "series:" {
+				continue
+			}
 			ref := model.SourceRef{
 				DocumentID: docID,
+				SeriesName: seriesName,
 				Title:      stringPayload(res.Payload, port.PayloadTitle),
 				Summary:    stringPayload(res.Payload, port.PayloadSummary),
 				Text:       stringPayload(res.Payload, port.PayloadText),
 				DateMonth:  stringPayload(res.Payload, port.PayloadDateMonth),
 				Score:      res.Score,
 			}
-			if existing, ok := seen[docID]; !ok || res.Score > existing.Score {
-				seen[docID] = ref
+			if existing, ok := seen[key]; !ok || res.Score > existing.Score {
+				seen[key] = ref
 			}
 		}
 		// Collect, sort by score descending, trim to MaxSources.

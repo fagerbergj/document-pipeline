@@ -323,6 +323,9 @@ type DocumentDetail struct {
 	// LinkedContexts UUIDs of saved context entries linked to this document.
 	LinkedContexts *[]openapi_types.UUID `json:"linked_contexts,omitempty"`
 
+	// Series Series name grouping this document with related documents for corpus embedding.
+	Series *string `json:"series,omitempty"`
+
 	// Title Human-readable title.
 	Title *string `json:"title,omitempty"`
 
@@ -340,6 +343,9 @@ type DocumentSummary struct {
 
 	// Id Unique document identifier.
 	Id openapi_types.UUID `json:"id"`
+
+	// Series Series name grouping this document with related documents for corpus embedding.
+	Series *string `json:"series,omitempty"`
 
 	// Title Human-readable title.
 	Title *string `json:"title,omitempty"`
@@ -492,6 +498,9 @@ type PatchDocumentBody struct {
 	// LinkedContexts UUIDs of context entries to link. Null clears all linked contexts.
 	LinkedContexts *[]openapi_types.UUID `json:"linked_contexts,omitempty"`
 
+	// Series Series name. Null clears the series assignment.
+	Series *string `json:"series,omitempty"`
+
 	// Title Updated document title. Null clears the title.
 	Title *string `json:"title,omitempty"`
 }
@@ -627,22 +636,25 @@ type SendMessageBody struct {
 	Content string `json:"content"`
 }
 
-// SourceDoc A document retrieved from the vector store as a RAG source.
+// SourceDoc A document or series corpus chunk retrieved from the vector store as a RAG source.
 type SourceDoc struct {
 	// DateMonth YYYY-MM month label for the document.
 	DateMonth *string `json:"date_month,omitempty"`
 
-	// DocumentId UUID of the source document.
-	DocumentId openapi_types.UUID `json:"document_id"`
+	// DocumentId UUID of the source document. Null for series corpus chunks.
+	DocumentId *openapi_types.UUID `json:"document_id,omitempty"`
 
 	// Score Vector similarity score.
 	Score float32 `json:"score"`
+
+	// SeriesName Series name for corpus chunks that span multiple documents.
+	SeriesName *string `json:"series_name,omitempty"`
 
 	// Summary Brief summary of the document's content.
 	Summary *string `json:"summary,omitempty"`
 
 	// Title Document title.
-	Title string `json:"title"`
+	Title *string `json:"title,omitempty"`
 }
 
 // StageDetail defines model for StageDetail.
@@ -777,7 +789,10 @@ type UploadDocumentMultipartBody struct {
 	AdditionalContext *string               `json:"additional_context,omitempty"`
 	File              openapi_types.File    `json:"file"`
 	LinkedContexts    *[]openapi_types.UUID `json:"linked_contexts,omitempty"`
-	Title             *string               `json:"title,omitempty"`
+
+	// Series Series name for grouping related documents into a shared embedding corpus.
+	Series *string `json:"series,omitempty"`
+	Title  *string `json:"title,omitempty"`
 }
 
 // ListJobsParams defines parameters for ListJobs.

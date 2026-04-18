@@ -14,6 +14,7 @@ type qdrantStore interface {
 	Upsert(ctx context.Context, id string, textVector []float32, imageVector []float32, payload map[string]any) error
 	Search(ctx context.Context, vector []float32, topK int) ([]port.EmbedResult, error)
 	DeleteByDocID(ctx context.Context, docID string) error
+	DeleteBySeries(ctx context.Context, series string) error
 }
 
 // webUIStore is the subset of openwebui.Client used here.
@@ -89,4 +90,9 @@ func (c *EmbedStoreCoordinator) DeleteByDocID(ctx context.Context, docID string)
 		}
 	}
 	return nil
+}
+
+// DeleteBySeries removes all series corpus embeddings from Qdrant.
+func (c *EmbedStoreCoordinator) DeleteBySeries(ctx context.Context, series string) error {
+	return c.qdrant.DeleteBySeries(ctx, series)
 }

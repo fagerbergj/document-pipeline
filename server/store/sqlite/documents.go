@@ -27,7 +27,7 @@ func (r *DocumentRepo) Insert(ctx context.Context, doc model.Document) error {
 		doc.CreatedAt.UTC().Format(time.RFC3339Nano),
 		doc.UpdatedAt.UTC().Format(time.RFC3339Nano),
 		doc.Title, doc.DateMonth, doc.PNGPath, doc.DuplicateOf,
-		doc.AdditionalContext, string(linkedJSON),
+		doc.AdditionalContext, string(linkedJSON), doc.Series,
 	)
 	return err
 }
@@ -61,7 +61,7 @@ func (r *DocumentRepo) Update(ctx context.Context, doc model.Document) error {
 	_, err = r.db.ExecContext(ctx, q["documents.Update"],
 		doc.UpdatedAt.UTC().Format(time.RFC3339Nano),
 		doc.Title, doc.DateMonth, doc.PNGPath, doc.DuplicateOf,
-		doc.AdditionalContext, string(linkedJSON), doc.ID,
+		doc.AdditionalContext, string(linkedJSON), doc.Series, doc.ID,
 	)
 	return err
 }
@@ -144,6 +144,15 @@ func (r *DocumentRepo) ListPaginated(ctx context.Context, filter port.DocumentFi
 	return model.PageResult[model.Document]{Data: docs, NextPageToken: nextToken}, nil
 }
 
+func (r *DocumentRepo) ListBySeries(ctx context.Context, series string) ([]model.Document, error) {
+	rows, err := r.db.QueryContext(ctx, "SELECT * FROM documents WHERE series = ? ORDER BY created_at ASC", series)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanDocuments(rows)
+}
+
 // ── scan helpers ──────────────────────────────────────────────────────────────
 
 type rowScanner interface {
@@ -161,7 +170,7 @@ func scanDocument(row rowScanner) (model.Document, error) {
 		&d.ID, &d.ContentHash,
 		&createdAt, &updatedAt,
 		&d.Title, &d.DateMonth, &d.PNGPath, &d.DuplicateOf,
-		&d.AdditionalContext, &linkedJSON,
+		&d.AdditionalContext, &linkedJSON, &d.Series,
 	)
 	if err != nil {
 		return model.Document{}, err

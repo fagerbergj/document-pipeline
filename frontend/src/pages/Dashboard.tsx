@@ -147,6 +147,7 @@ export default function Dashboard() {
                         Title {sortIcon('title')}
                       </button>
                     </th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide hidden md:table-cell">Series</th>
                     <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">Stage</th>
                     <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">Status</th>
                     <th className="text-left px-4 py-3 hidden sm:table-cell">
@@ -168,6 +169,13 @@ export default function Dashboard() {
                         <InlineTitle
                           docId={doc.id}
                           title={doc.title ?? null}
+                          onSaved={() => qc.invalidateQueries({ queryKey: ['documents'] })}
+                        />
+                      </td>
+                      <td className="px-4 py-3 hidden md:table-cell" onClick={e => e.stopPropagation()}>
+                        <InlineSeries
+                          docId={doc.id}
+                          series={doc.series ?? null}
                           onSaved={() => qc.invalidateQueries({ queryKey: ['documents'] })}
                         />
                       </td>
@@ -234,6 +242,57 @@ export default function Dashboard() {
   )
 }
 
+
+function InlineSeries({ docId, series, onSaved }: {
+  docId: string
+  series: string | null
+  onSaved: () => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState(series ?? '')
+  const inputRef = useRef<HTMLInputElement>(null)
+  const mut = useMutation({
+    mutationFn: (s: string) => api.updateDocument(docId, { series: s || null }),
+    onSuccess: () => { onSaved(); setEditing(false) },
+  })
+
+  useEffect(() => {
+    if (editing) inputRef.current?.select()
+  }, [editing])
+
+  const startEdit = (e: React.MouseEvent) => { e.stopPropagation(); setValue(series ?? ''); setEditing(true) }
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        onBlur={() => mut.mutate(value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter') { e.preventDefault(); mut.mutate(value) }
+          if (e.key === 'Escape') { setValue(series ?? ''); setEditing(false) }
+        }}
+        className="text-sm border-b border-blue-400 bg-transparent focus:outline-none w-full"
+        disabled={mut.isPending}
+        autoFocus
+      />
+    )
+  }
+
+  return (
+    <span className="flex items-center gap-1.5 group/series">
+      <span onClick={startEdit} className="text-sm text-gray-500 dark:text-gray-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors cursor-text">
+        {series || <span className="text-gray-300 dark:text-gray-600 italic font-normal text-xs">none</span>}
+      </span>
+      <button onClick={startEdit}
+        className="opacity-0 group-hover/series:opacity-100 text-gray-400 hover:text-gray-600 transition-opacity text-xs"
+        title="Set series">
+        ✎
+      </button>
+    </span>
+  )
+}
 
 function InlineTitle({ docId, title, onSaved }: {
   docId: string

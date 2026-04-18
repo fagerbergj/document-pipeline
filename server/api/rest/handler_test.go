@@ -64,6 +64,15 @@ func (m *mockDocRepo) ListPaginated(_ context.Context, _ port.DocumentFilter, _ 
 	}
 	return model.PageResult[model.Document]{Data: docs}, nil
 }
+func (m *mockDocRepo) ListBySeries(_ context.Context, series string) ([]model.Document, error) {
+	var out []model.Document
+	for _, d := range m.docs {
+		if d.Series != nil && *d.Series == series {
+			out = append(out, d)
+		}
+	}
+	return out, nil
+}
 
 type mockJobRepo struct {
 	jobs map[string]model.Job
@@ -308,7 +317,8 @@ func (m *mockEmbedStore) Upsert(_ context.Context, _ string, _, _ []float32, _ m
 func (m *mockEmbedStore) Search(_ context.Context, _ []float32, _ int) ([]port.EmbedResult, error) {
 	return nil, nil
 }
-func (m *mockEmbedStore) DeleteByDocID(_ context.Context, _ string) error { return nil }
+func (m *mockEmbedStore) DeleteByDocID(_ context.Context, _ string) error  { return nil }
+func (m *mockEmbedStore) DeleteBySeries(_ context.Context, _ string) error { return nil }
 
 type mockStageEventRepo struct{}
 

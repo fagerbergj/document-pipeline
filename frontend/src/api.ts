@@ -51,6 +51,7 @@ export type {
 export interface DocSummary {
   id: string
   title: string | null
+  series: string | null
   current_job_id: string | null
   created_at: string
   updated_at: string
@@ -126,7 +127,7 @@ export const api = {
   document: (id: string) =>
     unwrap(getDocumentApiV1DocumentsDocIdGet({ path: { doc_id: id } })),
 
-  updateDocument: (id: string, patch: { title?: string | null; additional_context?: string | null; linked_contexts?: string[] | null }) =>
+  updateDocument: (id: string, patch: { title?: string | null; additional_context?: string | null; linked_contexts?: string[] | null; series?: string | null }) =>
     unwrap(patchDocumentApiV1DocumentsDocIdPatch({ path: { doc_id: id }, body: patch })),
 
   deleteDocument: (id: string) =>
@@ -172,13 +173,14 @@ export const api = {
   // ── Upload (FormData — bypasses generated client) ─────────────────────────
   uploadDocument: async (
     file: File,
-    opts?: { title?: string; additional_context?: string; linked_contexts?: string[] },
+    opts?: { title?: string; additional_context?: string; linked_contexts?: string[]; series?: string },
   ) => {
     const fd = new FormData()
     fd.append('file', file)
     if (opts?.title) fd.append('title', opts.title)
     if (opts?.additional_context) fd.append('additional_context', opts.additional_context)
     if (opts?.linked_contexts?.length) fd.append('linked_contexts', opts.linked_contexts.join(','))
+    if (opts?.series) fd.append('series', opts.series)
     const res = await fetch('/api/v1/documents', { method: 'POST', body: fd })
     const json = await res.json()
     if (!res.ok) throw Object.assign(new Error(json.error ?? 'Upload failed'), { status: res.status, body: json })

@@ -12,11 +12,13 @@ export default function UploadModal({ onClose }: Props) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
   const [title, setTitle] = useState('')
+  const [series, setSeries] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   const uploadMut = useMutation({
     mutationFn: () => api.uploadDocument(file!, {
       ...(title ? { title } : {}),
+      ...(series ? { series } : {}),
     }),
     onSuccess: (job) => {
       onClose()
@@ -81,6 +83,17 @@ export default function UploadModal({ onClose }: Props) {
             value={title}
             onChange={e => setTitle(e.target.value)}
             placeholder="Leave blank to auto-detect"
+            className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400"
+          />
+        </div>
+
+        {/* Series */}
+        <div className="mb-4">
+          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Series (optional)</label>
+          <input
+            value={series}
+            onChange={e => setSeries(e.target.value)}
+            placeholder="e.g. Colliding Worlds"
             className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400"
           />
         </div>

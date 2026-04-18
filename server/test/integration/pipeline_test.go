@@ -62,7 +62,8 @@ func (n *noopEmbed) Upsert(_ context.Context, _ string, _ []float32, _ []float32
 func (n *noopEmbed) Search(_ context.Context, _ []float32, _ int) ([]port.EmbedResult, error) {
 	return nil, nil
 }
-func (n *noopEmbed) DeleteByDocID(_ context.Context, _ string) error { return nil }
+func (n *noopEmbed) DeleteByDocID(_ context.Context, _ string) error  { return nil }
+func (n *noopEmbed) DeleteBySeries(_ context.Context, _ string) error { return nil }
 
 // --- mock Ollama server ---
 

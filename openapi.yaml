@@ -153,6 +153,10 @@ paths:
                     type: string
                     format: uuid
                   nullable: true
+                series:
+                  type: string
+                  nullable: true
+                  description: Series name for grouping related documents into a shared embedding corpus.
       responses:
         '201':
           description: Document created. Returns initial job detail.
@@ -904,6 +908,10 @@ components:
           format: uuid
           nullable: true
           description: UUID of the most recently active job for this document.
+        series:
+          type: string
+          nullable: true
+          description: Series name grouping this document with related documents for corpus embedding.
         created_at:
           type: string
           format: date-time
@@ -967,6 +975,10 @@ components:
             format: uuid
           nullable: true
           description: UUIDs of context entries to link. Null clears all linked contexts.
+        series:
+          type: string
+          nullable: true
+          description: Series name. Null clears the series assignment.
 
     # — Jobs ———————————————————————————————————————————————————————————————————
 
@@ -1247,13 +1259,18 @@ components:
 
     SourceDoc:
       type: object
-      description: A document retrieved from the vector store as a RAG source.
-      required: [document_id, title, score]
+      description: A document or series corpus chunk retrieved from the vector store as a RAG source.
+      required: [score]
       properties:
         document_id:
           type: string
           format: uuid
-          description: UUID of the source document.
+          nullable: true
+          description: UUID of the source document. Null for series corpus chunks.
+        series_name:
+          type: string
+          nullable: true
+          description: Series name for corpus chunks that span multiple documents.
         title:
           type: string
           description: Document title.

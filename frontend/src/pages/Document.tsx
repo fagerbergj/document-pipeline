@@ -94,6 +94,10 @@ export default function Document() {
         </section>
 
         <section className="space-y-3">
+          <SeriesSection doc={doc} onRefresh={refresh} />
+        </section>
+
+        <section className="space-y-3">
           <h2 className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-widest">Context</h2>
           <ContextSection doc={doc} onRefresh={refresh} />
         </section>
@@ -143,6 +147,30 @@ function TitleSection({ doc, onRefresh }: { doc: DocumentDetail; onRefresh: () =
         </button>
       </form>
       <div className="text-xs text-gray-400 dark:text-gray-500 mt-2">Received {doc.created_at.slice(0, 19).replace('T', ' ')}</div>
+    </div>
+  )
+}
+
+function SeriesSection({ doc, onRefresh }: { doc: DocumentDetail; onRefresh: () => void }) {
+  const [series, setSeries] = useState(doc.series ?? '')
+  const mut = useMutation({
+    mutationFn: (s: string) => api.updateDocument(doc.id, { series: s || null }),
+    onSuccess: onRefresh,
+  })
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+      <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-3">Series</div>
+      <form onSubmit={e => { e.preventDefault(); mut.mutate(series) }} className="flex gap-2">
+        <input value={series} onChange={e => setSeries(e.target.value)}
+          placeholder="e.g. Colliding Worlds"
+          className="flex-1 text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400" />
+        <button type="submit" disabled={mut.isPending}
+          className="px-4 py-2 text-sm font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50">
+          Save
+        </button>
+      </form>
+      <div className="text-xs text-gray-400 dark:text-gray-500 mt-2">Documents in the same series are embedded together as a shared corpus.</div>
     </div>
   )
 }

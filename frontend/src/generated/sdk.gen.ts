@@ -2,9 +2,9 @@
 
 import { type Client, formDataBodySerializer, type Options as Options2, type TDataShape } from './client';
 import { client } from './client.gen';
-import type { CreateChatApiV1ChatsPostData, CreateChatApiV1ChatsPostErrors, CreateChatApiV1ChatsPostResponses, CreateContextApiV1ContextsPostData, CreateContextApiV1ContextsPostErrors, CreateContextApiV1ContextsPostResponses, DeleteChatApiV1ChatsChatIdDeleteData, DeleteChatApiV1ChatsChatIdDeleteErrors, DeleteChatApiV1ChatsChatIdDeleteResponses, DeleteContextApiV1ContextsContextIdDeleteData, DeleteContextApiV1ContextsContextIdDeleteErrors, DeleteContextApiV1ContextsContextIdDeleteResponses, DeleteDocumentApiV1DocumentsDocIdDeleteData, DeleteDocumentApiV1DocumentsDocIdDeleteErrors, DeleteDocumentApiV1DocumentsDocIdDeleteResponses, GetArtifactApiV1DocumentsDocIdArtifactsArtifactIdGetData, GetArtifactApiV1DocumentsDocIdArtifactsArtifactIdGetErrors, GetArtifactApiV1DocumentsDocIdArtifactsArtifactIdGetResponses, GetChatApiV1ChatsChatIdGetData, GetChatApiV1ChatsChatIdGetErrors, GetChatApiV1ChatsChatIdGetResponses, GetDocumentApiV1DocumentsDocIdGetData, GetDocumentApiV1DocumentsDocIdGetErrors, GetDocumentApiV1DocumentsDocIdGetResponses, GetJobApiV1JobsJobIdGetData, GetJobApiV1JobsJobIdGetErrors, GetJobApiV1JobsJobIdGetResponses, GetPipelineApiV1PipelinesPipelineIdGetData, GetPipelineApiV1PipelinesPipelineIdGetErrors, GetPipelineApiV1PipelinesPipelineIdGetResponses, JobTokenStreamApiV1JobsJobIdStreamGetData, JobTokenStreamApiV1JobsJobIdStreamGetErrors, JobTokenStreamApiV1JobsJobIdStreamGetResponses, ListChatsApiV1ChatsGetData, ListChatsApiV1ChatsGetErrors, ListChatsApiV1ChatsGetResponses, ListContextsApiV1ContextsGetData, ListContextsApiV1ContextsGetResponses, ListDocumentsApiV1DocumentsGetData, ListDocumentsApiV1DocumentsGetErrors, ListDocumentsApiV1DocumentsGetResponses, ListJobsApiV1JobsGetData, ListJobsApiV1JobsGetErrors, ListJobsApiV1JobsGetResponses, ListPipelinesApiV1PipelinesGetData, ListPipelinesApiV1PipelinesGetResponses, PatchChatApiV1ChatsChatIdPatchData, PatchChatApiV1ChatsChatIdPatchErrors, PatchChatApiV1ChatsChatIdPatchResponses, PatchDocumentApiV1DocumentsDocIdPatchData, PatchDocumentApiV1DocumentsDocIdPatchErrors, PatchDocumentApiV1DocumentsDocIdPatchResponses, PatchJobApiV1JobsJobIdPatchData, PatchJobApiV1JobsJobIdPatchErrors, PatchJobApiV1JobsJobIdPatchResponses, PatchRunApiV1JobsJobIdRunsRunIdPatchData, PatchRunApiV1JobsJobIdRunsRunIdPatchErrors, PatchRunApiV1JobsJobIdRunsRunIdPatchResponses, PutJobStatusApiV1JobsJobIdStatusPutData, PutJobStatusApiV1JobsJobIdStatusPutErrors, PutJobStatusApiV1JobsJobIdStatusPutResponses, SendChatMessageApiV1ChatsChatIdMessagesPostData, SendChatMessageApiV1ChatsChatIdMessagesPostErrors, SendChatMessageApiV1ChatsChatIdMessagesPostResponses, UpdateContextApiV1ContextsContextIdPatchData, UpdateContextApiV1ContextsContextIdPatchErrors, UpdateContextApiV1ContextsContextIdPatchResponses, UploadDocumentApiV1DocumentsPostData, UploadDocumentApiV1DocumentsPostErrors, UploadDocumentApiV1DocumentsPostResponses } from './types.gen';
+import type { CreateChatData, CreateChatResponses, CreateContextData, CreateContextResponses, DeleteChatData, DeleteChatErrors, DeleteChatResponses, DeleteContextData, DeleteContextErrors, DeleteContextResponses, DeleteDocumentData, DeleteDocumentErrors, DeleteDocumentResponses, GetArtifactData, GetArtifactErrors, GetArtifactResponses, GetChatData, GetChatErrors, GetChatResponses, GetDocumentData, GetDocumentErrors, GetDocumentResponses, GetJobData, GetJobErrors, GetJobResponses, GetPipelineData, GetPipelineErrors, GetPipelineResponses, ListChatsData, ListChatsResponses, ListContextsData, ListContextsResponses, ListDocumentsData, ListDocumentsResponses, ListJobsData, ListJobsResponses, ListPipelinesData, ListPipelinesResponses, PatchChatData, PatchChatErrors, PatchChatResponses, PatchDocumentData, PatchDocumentErrors, PatchDocumentResponses, PatchJobData, PatchJobErrors, PatchJobResponses, PatchRunData, PatchRunErrors, PatchRunResponses, PutJobStatusData, PutJobStatusErrors, PutJobStatusResponses, ReceiveWebhookData, ReceiveWebhookResponses, SendChatMessageData, SendChatMessageErrors, SendChatMessageResponse, SendChatMessageResponses, StreamJobTokensData, StreamJobTokensErrors, StreamJobTokensResponse, StreamJobTokensResponses, UpdateContextData, UpdateContextErrors, UpdateContextResponses, UploadDocumentData, UploadDocumentErrors, UploadDocumentResponses } from './types.gen';
 
-export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
+export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
      * You can provide a client instance returned by `createClient()` instead of
      * individual options. This might be also useful if you want to implement a
@@ -19,25 +19,69 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
 };
 
 /**
- * List Pipelines
+ * Receive document from reMarkable
+ *
+ * Receives a document pushed by rmfakecloud from the reMarkable tablet.
+ * Expects `multipart/form-data` with two fields:
+ * - `data`: JSON string containing document metadata and destination names.
+ * - `attachment`: rendered PNG of the current sheet.
+ *
+ * The document is persisted immediately and OCR runs asynchronously.
+ * Returns 200 as soon as the file is saved (or if it is a duplicate).
+ *
  */
-export const listPipelinesApiV1PipelinesGet = <ThrowOnError extends boolean = false>(options?: Options<ListPipelinesApiV1PipelinesGetData, ThrowOnError>) => (options?.client ?? client).get<ListPipelinesApiV1PipelinesGetResponses, unknown, ThrowOnError>({ url: '/api/v1/pipelines', ...options });
-
-/**
- * Get Pipeline
- */
-export const getPipelineApiV1PipelinesPipelineIdGet = <ThrowOnError extends boolean = false>(options: Options<GetPipelineApiV1PipelinesPipelineIdGetData, ThrowOnError>) => (options.client ?? client).get<GetPipelineApiV1PipelinesPipelineIdGetResponses, GetPipelineApiV1PipelinesPipelineIdGetErrors, ThrowOnError>({ url: '/api/v1/pipelines/{pipeline_id}', ...options });
-
-/**
- * List Documents
- */
-export const listDocumentsApiV1DocumentsGet = <ThrowOnError extends boolean = false>(options?: Options<ListDocumentsApiV1DocumentsGetData, ThrowOnError>) => (options?.client ?? client).get<ListDocumentsApiV1DocumentsGetResponses, ListDocumentsApiV1DocumentsGetErrors, ThrowOnError>({ url: '/api/v1/documents', ...options });
-
-/**
- * Upload Document
- */
-export const uploadDocumentApiV1DocumentsPost = <ThrowOnError extends boolean = false>(options: Options<UploadDocumentApiV1DocumentsPostData, ThrowOnError>) => (options.client ?? client).post<UploadDocumentApiV1DocumentsPostResponses, UploadDocumentApiV1DocumentsPostErrors, ThrowOnError>({
+export const receiveWebhook = <ThrowOnError extends boolean = false>(options: Options<ReceiveWebhookData, ThrowOnError>) => (options.client ?? client).post<ReceiveWebhookResponses, unknown, ThrowOnError>({
     ...formDataBodySerializer,
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/remarkable/webhook',
+    ...options,
+    headers: {
+        'Content-Type': null,
+        ...options.headers
+    }
+});
+
+/**
+ * List pipelines
+ *
+ * Returns a paginated list of pipeline configurations loaded from `pipeline.yaml`.
+ */
+export const listPipelines = <ThrowOnError extends boolean = false>(options?: Options<ListPipelinesData, ThrowOnError>) => (options?.client ?? client).get<ListPipelinesResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/pipelines',
+    ...options
+});
+
+/**
+ * Get pipeline detail
+ *
+ * Returns the full configuration for a single pipeline including all stage details.
+ */
+export const getPipeline = <ThrowOnError extends boolean = false>(options: Options<GetPipelineData, ThrowOnError>) => (options.client ?? client).get<GetPipelineResponses, GetPipelineErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/pipelines/{pipeline_id}',
+    ...options
+});
+
+/**
+ * List documents
+ *
+ * Returns a paginated list of document summaries (no artifacts or context).
+ */
+export const listDocuments = <ThrowOnError extends boolean = false>(options?: Options<ListDocumentsData, ThrowOnError>) => (options?.client ?? client).get<ListDocumentsResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/documents',
+    ...options
+});
+
+/**
+ * Upload a document
+ *
+ * Upload a .txt, .md, or image file to create a new document. Text files skip the OCR stage.
+ */
+export const uploadDocument = <ThrowOnError extends boolean = false>(options: Options<UploadDocumentData, ThrowOnError>) => (options.client ?? client).post<UploadDocumentResponses, UploadDocumentErrors, ThrowOnError>({
+    ...formDataBodySerializer,
+    security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/documents',
     ...options,
     headers: {
@@ -47,19 +91,34 @@ export const uploadDocumentApiV1DocumentsPost = <ThrowOnError extends boolean = 
 });
 
 /**
- * Delete Document
+ * Delete document
+ *
+ * Permanently deletes the document, all artifacts, and all jobs.
  */
-export const deleteDocumentApiV1DocumentsDocIdDelete = <ThrowOnError extends boolean = false>(options: Options<DeleteDocumentApiV1DocumentsDocIdDeleteData, ThrowOnError>) => (options.client ?? client).delete<DeleteDocumentApiV1DocumentsDocIdDeleteResponses, DeleteDocumentApiV1DocumentsDocIdDeleteErrors, ThrowOnError>({ url: '/api/v1/documents/{doc_id}', ...options });
+export const deleteDocument = <ThrowOnError extends boolean = false>(options: Options<DeleteDocumentData, ThrowOnError>) => (options.client ?? client).delete<DeleteDocumentResponses, DeleteDocumentErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/documents/{doc_id}',
+    ...options
+});
 
 /**
- * Get Document
+ * Get document detail
+ *
+ * Returns full document data — title, context, and artifacts. Does not include job/pipeline state.
  */
-export const getDocumentApiV1DocumentsDocIdGet = <ThrowOnError extends boolean = false>(options: Options<GetDocumentApiV1DocumentsDocIdGetData, ThrowOnError>) => (options.client ?? client).get<GetDocumentApiV1DocumentsDocIdGetResponses, GetDocumentApiV1DocumentsDocIdGetErrors, ThrowOnError>({ url: '/api/v1/documents/{doc_id}', ...options });
+export const getDocument = <ThrowOnError extends boolean = false>(options: Options<GetDocumentData, ThrowOnError>) => (options.client ?? client).get<GetDocumentResponses, GetDocumentErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/documents/{doc_id}',
+    ...options
+});
 
 /**
- * Patch Document
+ * Update document
+ *
+ * Updates one or more mutable document fields. Only fields present in the request body are changed.
  */
-export const patchDocumentApiV1DocumentsDocIdPatch = <ThrowOnError extends boolean = false>(options: Options<PatchDocumentApiV1DocumentsDocIdPatchData, ThrowOnError>) => (options.client ?? client).patch<PatchDocumentApiV1DocumentsDocIdPatchResponses, PatchDocumentApiV1DocumentsDocIdPatchErrors, ThrowOnError>({
+export const patchDocument = <ThrowOnError extends boolean = false>(options: Options<PatchDocumentData, ThrowOnError>) => (options.client ?? client).patch<PatchDocumentResponses, PatchDocumentErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/documents/{doc_id}',
     ...options,
     headers: {
@@ -69,24 +128,47 @@ export const patchDocumentApiV1DocumentsDocIdPatch = <ThrowOnError extends boole
 });
 
 /**
- * Get Artifact
+ * Get artifact content
+ *
+ * Returns the raw bytes of an artifact with the correct Content-Type header. Use this to display source images, OCR outputs, or any other file produced during pipeline execution.
  */
-export const getArtifactApiV1DocumentsDocIdArtifactsArtifactIdGet = <ThrowOnError extends boolean = false>(options: Options<GetArtifactApiV1DocumentsDocIdArtifactsArtifactIdGetData, ThrowOnError>) => (options.client ?? client).get<GetArtifactApiV1DocumentsDocIdArtifactsArtifactIdGetResponses, GetArtifactApiV1DocumentsDocIdArtifactsArtifactIdGetErrors, ThrowOnError>({ url: '/api/v1/documents/{doc_id}/artifacts/{artifact_id}', ...options });
+export const getArtifact = <ThrowOnError extends boolean = false>(options: Options<GetArtifactData, ThrowOnError>) => (options.client ?? client).get<GetArtifactResponses, GetArtifactErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/documents/{doc_id}/artifacts/{artifact_id}',
+    ...options
+});
 
 /**
- * List Jobs
+ * List jobs
+ *
+ * Returns a paginated list of jobs with denormalized document title.
+ * `job_id` and `document_id` each accept a comma-separated list of UUIDs.
+ *
  */
-export const listJobsApiV1JobsGet = <ThrowOnError extends boolean = false>(options?: Options<ListJobsApiV1JobsGetData, ThrowOnError>) => (options?.client ?? client).get<ListJobsApiV1JobsGetResponses, ListJobsApiV1JobsGetErrors, ThrowOnError>({ url: '/api/v1/jobs', ...options });
+export const listJobs = <ThrowOnError extends boolean = false>(options?: Options<ListJobsData, ThrowOnError>) => (options?.client ?? client).get<ListJobsResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/jobs',
+    ...options
+});
 
 /**
- * Get Job
+ * Get job detail
+ *
+ * Returns full job data — stage, status, options, and run history.
  */
-export const getJobApiV1JobsJobIdGet = <ThrowOnError extends boolean = false>(options: Options<GetJobApiV1JobsJobIdGetData, ThrowOnError>) => (options.client ?? client).get<GetJobApiV1JobsJobIdGetResponses, GetJobApiV1JobsJobIdGetErrors, ThrowOnError>({ url: '/api/v1/jobs/{job_id}', ...options });
+export const getJob = <ThrowOnError extends boolean = false>(options: Options<GetJobData, ThrowOnError>) => (options.client ?? client).get<GetJobResponses, GetJobErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/jobs/{job_id}',
+    ...options
+});
 
 /**
- * Patch Job
+ * Update job options
+ *
+ * Updates mutable job options (e.g. `embed_image`). Returns the updated job detail.
  */
-export const patchJobApiV1JobsJobIdPatch = <ThrowOnError extends boolean = false>(options: Options<PatchJobApiV1JobsJobIdPatchData, ThrowOnError>) => (options.client ?? client).patch<PatchJobApiV1JobsJobIdPatchResponses, PatchJobApiV1JobsJobIdPatchErrors, ThrowOnError>({
+export const patchJob = <ThrowOnError extends boolean = false>(options: Options<PatchJobData, ThrowOnError>) => (options.client ?? client).patch<PatchJobResponses, PatchJobErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/jobs/{job_id}',
     ...options,
     headers: {
@@ -96,21 +178,24 @@ export const patchJobApiV1JobsJobIdPatch = <ThrowOnError extends boolean = false
 });
 
 /**
- * Patch Run
+ * Transition job status
+ *
+ * Transitions the job to a new status. Only valid transitions are accepted; others return 422.
+ *
+ * | From | To | Meaning |
+ * |------|----|---------|
+ * | `running` | `error` | Stop |
+ * | `waiting` | `pending` | Reject |
+ * | `waiting` | `done` | Approve |
+ * | `error` | `pending` | Retry / clear errors |
+ * | `done` | `pending` | Replay (cascades downstream jobs to pending) |
+ *
+ * Setting status to `done` triggers `advance_pipeline` which upserts the next stage job.
+ * Setting status to `pending` on a completed job cascades all downstream jobs to `pending`.
+ *
  */
-export const patchRunApiV1JobsJobIdRunsRunIdPatch = <ThrowOnError extends boolean = false>(options: Options<PatchRunApiV1JobsJobIdRunsRunIdPatchData, ThrowOnError>) => (options.client ?? client).patch<PatchRunApiV1JobsJobIdRunsRunIdPatchResponses, PatchRunApiV1JobsJobIdRunsRunIdPatchErrors, ThrowOnError>({
-    url: '/api/v1/jobs/{job_id}/runs/{run_id}',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-
-/**
- * Put Job Status
- */
-export const putJobStatusApiV1JobsJobIdStatusPut = <ThrowOnError extends boolean = false>(options: Options<PutJobStatusApiV1JobsJobIdStatusPutData, ThrowOnError>) => (options.client ?? client).put<PutJobStatusApiV1JobsJobIdStatusPutResponses, PutJobStatusApiV1JobsJobIdStatusPutErrors, ThrowOnError>({
+export const putJobStatus = <ThrowOnError extends boolean = false>(options: Options<PutJobStatusData, ThrowOnError>) => (options.client ?? client).put<PutJobStatusResponses, PutJobStatusErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/jobs/{job_id}/status',
     ...options,
     headers: {
@@ -120,21 +205,55 @@ export const putJobStatusApiV1JobsJobIdStatusPut = <ThrowOnError extends boolean
 });
 
 /**
- * Job Token Stream
+ * Update a run
  *
- * SSE stream of LLM tokens while the job is running.
+ * Updates a specific run. Typically used to record user answers to clarification
+ * questions (`questions[].answer`) before setting the job status back to `pending`
+ * to re-run the stage with the answers injected.
+ *
  */
-export const jobTokenStreamApiV1JobsJobIdStreamGet = <ThrowOnError extends boolean = false>(options: Options<JobTokenStreamApiV1JobsJobIdStreamGetData, ThrowOnError>) => (options.client ?? client).get<JobTokenStreamApiV1JobsJobIdStreamGetResponses, JobTokenStreamApiV1JobsJobIdStreamGetErrors, ThrowOnError>({ url: '/api/v1/jobs/{job_id}/stream', ...options });
+export const patchRun = <ThrowOnError extends boolean = false>(options: Options<PatchRunData, ThrowOnError>) => (options.client ?? client).patch<PatchRunResponses, PatchRunErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/jobs/{job_id}/runs/{run_id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 /**
- * List Contexts
+ * Stream LLM tokens (SSE)
+ *
+ * Server-Sent Events stream of LLM output tokens while the job is
+ * in the `running` state. Emits `token` events with `{"text": "..."}` payloads
+ * and a final `done` event when generation completes or status changes.
+ *
  */
-export const listContextsApiV1ContextsGet = <ThrowOnError extends boolean = false>(options?: Options<ListContextsApiV1ContextsGetData, ThrowOnError>) => (options?.client ?? client).get<ListContextsApiV1ContextsGetResponses, unknown, ThrowOnError>({ url: '/api/v1/contexts', ...options });
+export const streamJobTokens = <ThrowOnError extends boolean = false>(options: Options<StreamJobTokensData, ThrowOnError, StreamJobTokensResponse>) => (options.client ?? client).sse.get<StreamJobTokensResponses, StreamJobTokensErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/jobs/{job_id}/stream',
+    ...options
+});
 
 /**
- * Create Context
+ * List contexts
+ *
+ * Returns a paginated list of saved context entries.
  */
-export const createContextApiV1ContextsPost = <ThrowOnError extends boolean = false>(options: Options<CreateContextApiV1ContextsPostData, ThrowOnError>) => (options.client ?? client).post<CreateContextApiV1ContextsPostResponses, CreateContextApiV1ContextsPostErrors, ThrowOnError>({
+export const listContexts = <ThrowOnError extends boolean = false>(options?: Options<ListContextsData, ThrowOnError>) => (options?.client ?? client).get<ListContextsResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/contexts',
+    ...options
+});
+
+/**
+ * Create context
+ *
+ * Creates a new context entry with an immutable UUID.
+ */
+export const createContext = <ThrowOnError extends boolean = false>(options: Options<CreateContextData, ThrowOnError>) => (options.client ?? client).post<CreateContextResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/contexts',
     ...options,
     headers: {
@@ -144,14 +263,23 @@ export const createContextApiV1ContextsPost = <ThrowOnError extends boolean = fa
 });
 
 /**
- * Delete Context
+ * Delete context
+ *
+ * Permanently deletes a context entry by its immutable ID.
  */
-export const deleteContextApiV1ContextsContextIdDelete = <ThrowOnError extends boolean = false>(options: Options<DeleteContextApiV1ContextsContextIdDeleteData, ThrowOnError>) => (options.client ?? client).delete<DeleteContextApiV1ContextsContextIdDeleteResponses, DeleteContextApiV1ContextsContextIdDeleteErrors, ThrowOnError>({ url: '/api/v1/contexts/{context_id}', ...options });
+export const deleteContext = <ThrowOnError extends boolean = false>(options: Options<DeleteContextData, ThrowOnError>) => (options.client ?? client).delete<DeleteContextResponses, DeleteContextErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/contexts/{context_id}',
+    ...options
+});
 
 /**
- * Update Context
+ * Update context
+ *
+ * Updates the name and/or text of a context entry. Only present fields are changed.
  */
-export const updateContextApiV1ContextsContextIdPatch = <ThrowOnError extends boolean = false>(options: Options<UpdateContextApiV1ContextsContextIdPatchData, ThrowOnError>) => (options.client ?? client).patch<UpdateContextApiV1ContextsContextIdPatchResponses, UpdateContextApiV1ContextsContextIdPatchErrors, ThrowOnError>({
+export const updateContext = <ThrowOnError extends boolean = false>(options: Options<UpdateContextData, ThrowOnError>) => (options.client ?? client).patch<UpdateContextResponses, UpdateContextErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/contexts/{context_id}',
     ...options,
     headers: {
@@ -161,36 +289,56 @@ export const updateContextApiV1ContextsContextIdPatch = <ThrowOnError extends bo
 });
 
 /**
- * List Chats
+ * List chats
+ *
+ * Returns a paginated list of chat summaries ordered by most recently updated.
  */
-export const listChatsApiV1ChatsGet = <ThrowOnError extends boolean = false>(options?: Options<ListChatsApiV1ChatsGetData, ThrowOnError>) => (options?.client ?? client).get<ListChatsApiV1ChatsGetResponses, ListChatsApiV1ChatsGetErrors, ThrowOnError>({ url: '/api/v1/chats', ...options });
+export const listChats = <ThrowOnError extends boolean = false>(options?: Options<ListChatsData, ThrowOnError>) => (options?.client ?? client).get<ListChatsResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/chats',
+    ...options
+});
 
 /**
- * Create Chat
+ * Create a new chat
+ *
+ * Creates a new chat with optional system prompt and RAG retrieval settings.
  */
-export const createChatApiV1ChatsPost = <ThrowOnError extends boolean = false>(options: Options<CreateChatApiV1ChatsPostData, ThrowOnError>) => (options.client ?? client).post<CreateChatApiV1ChatsPostResponses, CreateChatApiV1ChatsPostErrors, ThrowOnError>({
+export const createChat = <ThrowOnError extends boolean = false>(options?: Options<CreateChatData, ThrowOnError>) => (options?.client ?? client).post<CreateChatResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/chats',
     ...options,
     headers: {
         'Content-Type': 'application/json',
-        ...options.headers
+        ...options?.headers
     }
 });
 
 /**
- * Delete Chat
+ * Delete a chat and all its messages
  */
-export const deleteChatApiV1ChatsChatIdDelete = <ThrowOnError extends boolean = false>(options: Options<DeleteChatApiV1ChatsChatIdDeleteData, ThrowOnError>) => (options.client ?? client).delete<DeleteChatApiV1ChatsChatIdDeleteResponses, DeleteChatApiV1ChatsChatIdDeleteErrors, ThrowOnError>({ url: '/api/v1/chats/{chat_id}', ...options });
+export const deleteChat = <ThrowOnError extends boolean = false>(options: Options<DeleteChatData, ThrowOnError>) => (options.client ?? client).delete<DeleteChatResponses, DeleteChatErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/chats/{chat_id}',
+    ...options
+});
 
 /**
- * Get Chat
+ * Get chat with messages
  */
-export const getChatApiV1ChatsChatIdGet = <ThrowOnError extends boolean = false>(options: Options<GetChatApiV1ChatsChatIdGetData, ThrowOnError>) => (options.client ?? client).get<GetChatApiV1ChatsChatIdGetResponses, GetChatApiV1ChatsChatIdGetErrors, ThrowOnError>({ url: '/api/v1/chats/{chat_id}', ...options });
+export const getChat = <ThrowOnError extends boolean = false>(options: Options<GetChatData, ThrowOnError>) => (options.client ?? client).get<GetChatResponses, GetChatErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/chats/{chat_id}',
+    ...options
+});
 
 /**
- * Patch Chat
+ * Update chat
+ *
+ * Updates mutable chat fields. Only present fields are applied.
  */
-export const patchChatApiV1ChatsChatIdPatch = <ThrowOnError extends boolean = false>(options: Options<PatchChatApiV1ChatsChatIdPatchData, ThrowOnError>) => (options.client ?? client).patch<PatchChatApiV1ChatsChatIdPatchResponses, PatchChatApiV1ChatsChatIdPatchErrors, ThrowOnError>({
+export const patchChat = <ThrowOnError extends boolean = false>(options: Options<PatchChatData, ThrowOnError>) => (options.client ?? client).patch<PatchChatResponses, PatchChatErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/chats/{chat_id}',
     ...options,
     headers: {
@@ -200,9 +348,10 @@ export const patchChatApiV1ChatsChatIdPatch = <ThrowOnError extends boolean = fa
 });
 
 /**
- * Send Chat Message
+ * Send a message and stream the RAG-augmented reply
  */
-export const sendChatMessageApiV1ChatsChatIdMessagesPost = <ThrowOnError extends boolean = false>(options: Options<SendChatMessageApiV1ChatsChatIdMessagesPostData, ThrowOnError>) => (options.client ?? client).post<SendChatMessageApiV1ChatsChatIdMessagesPostResponses, SendChatMessageApiV1ChatsChatIdMessagesPostErrors, ThrowOnError>({
+export const sendChatMessage = <ThrowOnError extends boolean = false>(options: Options<SendChatMessageData, ThrowOnError, SendChatMessageResponse>) => (options.client ?? client).sse.post<SendChatMessageResponses, SendChatMessageErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/chats/{chat_id}/messages',
     ...options,
     headers: {

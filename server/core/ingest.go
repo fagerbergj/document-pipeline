@@ -34,6 +34,7 @@ type IngestRequest struct {
 	Title             string
 	AdditionalContext string
 	LinkedContexts    []string
+	Series            string
 	Meta              IngestMeta // stored in kv for worker use
 }
 
@@ -121,6 +122,7 @@ func (s *IngestService) Ingest(ctx context.Context, req IngestRequest) (model.Jo
 		PNGPath:           pngPath,
 		AdditionalContext: req.AdditionalContext,
 		LinkedContexts:    req.LinkedContexts,
+		Series:            strPtr(req.Series),
 		DateMonth:         strPtr(now.Format("2006-01")),
 		CreatedAt:         now,
 		UpdatedAt:         now,

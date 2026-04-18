@@ -28,6 +28,10 @@ func (f *fakeQdrant) DeleteByDocID(_ context.Context, docID string) error {
 	f.deleted = append(f.deleted, docID)
 	return f.err
 }
+func (f *fakeQdrant) DeleteBySeries(_ context.Context, series string) error {
+	f.deleted = append(f.deleted, series)
+	return f.err
+}
 
 type fakeWebUI struct {
 	upserted []string

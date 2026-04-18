@@ -23,4 +23,5 @@ type Document struct {
 	DuplicateOf       *string
 	AdditionalContext string
 	LinkedContexts    []string // context entry IDs
+	Series            *string
 }

@@ -29,6 +29,7 @@ type ChatMessage struct {
 
 type SourceRef struct {
 	DocumentID string  `json:"document_id"`
+	SeriesName string  `json:"series_name,omitempty"`
 	Title      string  `json:"title"`
 	Summary    string  `json:"summary"`
 	Text       string  `json:"-"`

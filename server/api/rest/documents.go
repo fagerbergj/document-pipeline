@@ -114,6 +114,7 @@ func (h *handler) uploadDocument(w http.ResponseWriter, r *http.Request) {
 
 	title := strings.TrimSpace(r.FormValue("title"))
 	additionalContext := strings.TrimSpace(r.FormValue("additional_context"))
+	series := strings.TrimSpace(r.FormValue("series"))
 
 	var linkedContexts []string
 	if lc := r.FormValue("linked_contexts"); lc != "" {
@@ -129,6 +130,7 @@ func (h *handler) uploadDocument(w http.ResponseWriter, r *http.Request) {
 		Title:             title,
 		AdditionalContext: additionalContext,
 		LinkedContexts:    linkedContexts,
+		Series:            series,
 	}
 
 	job, ok, err := h.ingest.Ingest(r.Context(), req)
@@ -174,6 +176,7 @@ func (h *handler) patchDocument(w http.ResponseWriter, r *http.Request) {
 		Title             *string  `json:"title"`
 		AdditionalContext *string  `json:"additional_context"`
 		LinkedContexts    []string `json:"linked_contexts"`
+		Series            *string  `json:"series"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
@@ -195,6 +198,15 @@ func (h *handler) patchDocument(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.LinkedContexts != nil {
 		doc.LinkedContexts = body.LinkedContexts
+		doc.UpdatedAt = now
+	}
+	if body.Series != nil {
+		s := strings.TrimSpace(*body.Series)
+		if s == "" {
+			doc.Series = nil
+		} else {
+			doc.Series = &s
+		}
 		doc.UpdatedAt = now
 	}
 

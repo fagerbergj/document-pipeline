@@ -59,6 +59,17 @@ func (m *mockDocRepo) Delete(ctx context.Context, id string) error { return nil 
 func (m *mockDocRepo) ListPaginated(ctx context.Context, filter port.DocumentFilter, page model.PageRequest) (model.PageResult[model.Document], error) {
 	return model.PageResult[model.Document]{}, nil
 }
+func (m *mockDocRepo) ListBySeries(ctx context.Context, series string) ([]model.Document, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []model.Document
+	for _, d := range m.docs {
+		if d.Series != nil && *d.Series == series {
+			out = append(out, d)
+		}
+	}
+	return out, nil
+}
 
 type mockJobRepo struct {
 	mu       sync.Mutex
@@ -260,6 +271,7 @@ func (m *mockEmbedStore) DeleteByDocID(ctx context.Context, docID string) error 
 	m.deleteCalled = true
 	return nil
 }
+func (m *mockEmbedStore) DeleteBySeries(_ context.Context, _ string) error { return nil }
 
 type mockStreamManager struct {
 	mu     sync.Mutex

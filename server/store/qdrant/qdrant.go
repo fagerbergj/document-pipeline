@@ -58,10 +58,19 @@ func (c *Client) Upsert(ctx context.Context, id string, textVector []float32, im
 
 // DeleteByDocID removes all chunk points for a document using a payload filter.
 func (c *Client) DeleteByDocID(ctx context.Context, docID string) error {
+	return c.deleteByPayload(ctx, "doc_id", docID)
+}
+
+// DeleteBySeries removes all series corpus points using a payload filter.
+func (c *Client) DeleteBySeries(ctx context.Context, series string) error {
+	return c.deleteByPayload(ctx, "series_name", series)
+}
+
+func (c *Client) deleteByPayload(ctx context.Context, key, value string) error {
 	body := map[string]any{
 		"filter": map[string]any{
 			"must": []map[string]any{
-				{"key": "doc_id", "match": map[string]any{"value": docID}},
+				{"key": key, "match": map[string]any{"value": value}},
 			},
 		},
 	}
@@ -71,9 +80,9 @@ func (c *Client) DeleteByDocID(ctx context.Context, docID string) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("qdrant: delete by doc_id %d: %s", resp.StatusCode, readBody(resp.Body))
+		return fmt.Errorf("qdrant: delete by %s %d: %s", key, resp.StatusCode, readBody(resp.Body))
 	}
-	slog.Info("qdrant delete ok", "doc_id", docID[:8])
+	slog.Info("qdrant delete ok", "key", key, "value", value)
 	return nil
 }
 
