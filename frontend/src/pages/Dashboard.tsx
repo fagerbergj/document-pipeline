@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+// useRef kept for prevFilters
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
@@ -6,6 +7,7 @@ import StatusBadge from '../components/StatusBadge'
 import LoadingSpinner from '../components/LoadingSpinner'
 import DocKebabMenu from '../components/DocKebabMenu'
 import UploadModal from '../components/UploadModal'
+import SearchBar, { buildLuceneQuery } from '../components/SearchBar'
 
 type SortKey = 'pipeline' | 'title_asc' | 'title_desc' | 'created_asc' | 'created_desc'
 
@@ -21,18 +23,20 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const qc = useQueryClient()
 
-  const sort = (searchParams.get('sort') ?? 'pipeline') as SortKey
-  const q = searchParams.get('q') ?? ''
+  const sort   = (searchParams.get('sort') ?? 'pipeline') as SortKey
+  const s      = searchParams.get('s') ?? ''
+  const status = searchParams.get('status') ?? ''
+  const stage  = searchParams.get('stage') ?? ''
+  const adv    = searchParams.get('adv') ?? ''
+  const q      = adv || buildLuceneQuery(s, status, stage)
+  const hasSearch = !!(s || status || stage || adv)
 
   const [pageSize, setPageSizeState] = useState(20)
-  const [searchInput, setSearchInput] = useState(q)
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Stack of page tokens for prev navigation; current token is last entry (null = first page)
   const [tokenStack, setTokenStack] = useState<(string | null)[]>([null])
   const currentToken = tokenStack[tokenStack.length - 1]
 
-  // Reset to page 1 when filters change
   const resetPage = () => setTokenStack([null])
   const prevFilters = useRef({ sort, q })
   useEffect(() => {
@@ -43,27 +47,19 @@ export default function Dashboard() {
     }
   }, [sort, q])
 
-  // Keep search input in sync when URL param changes externally (e.g. sidebar chips)
-  useEffect(() => { setSearchInput(q) }, [q])
-
-  function handleSearchChange(val: string) {
-    setSearchInput(val)
-    if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => {
-      const next = new URLSearchParams(searchParams)
-      if (val.trim()) next.set('q', val.trim())
-      else next.delete('q')
-      setSearchParams(next)
-      resetPage()
-    }, 300)
-  }
+  const { data: pipelineDetail } = useQuery({
+    queryKey: ['pipeline'],
+    queryFn: () => api.pipeline(),
+    staleTime: Infinity,
+  })
+  const pipelineStages = (pipelineDetail?.stages ?? []).map(s => s.name)
 
   const { data: page, isLoading, dataUpdatedAt } = useQuery({
     queryKey: ['documents', sort, q, pageSize, currentToken],
     queryFn: () => api.documents({
       sort,
       page_size: pageSize,
-      page_token: q ? undefined : (currentToken ?? undefined),
+      page_token: currentToken ?? undefined,
       q: q || undefined,
     }),
     refetchInterval: 3_000,
@@ -119,37 +115,27 @@ export default function Dashboard() {
   }
 
   const updatedTime = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : ''
-  const activeFilters = [q].filter(Boolean).length
   const [showUpload, setShowUpload] = useState(false)
 
   return (
     <div className="h-full">
       {showUpload && <UploadModal onClose={() => setShowUpload(false)} />}
       {/* Header bar */}
-      <div className="flex items-center justify-between px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-        <div className="flex items-center gap-3">
-          <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Documents</h1>
-          {activeFilters > 0 && (
-            <span className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full font-medium">
-              {activeFilters} filter{activeFilters > 1 ? 's' : ''}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-3">
-          <input
-            type="text"
-            value={searchInput}
-            onChange={e => handleSearchChange(e.target.value)}
-            placeholder="Search… (title:meeting, status:pending)"
-            className="text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 w-64 focus:outline-none focus:ring-2 focus:ring-blue-300 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400"
-          />
-          <button
-            onClick={() => setShowUpload(true)}
-            className="px-3 py-1.5 text-sm font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-700 transition-colors"
-          >
-            Upload
-          </button>
-          <span className="text-xs text-gray-400 dark:text-gray-500">Updated {updatedTime}</span>
+      <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <h1 className="text-lg font-semibold text-gray-900 dark:text-white shrink-0">Documents</h1>
+          <div className="flex items-center gap-3 flex-wrap flex-1">
+            <SearchBar stages={pipelineStages} />
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            <button
+              onClick={() => setShowUpload(true)}
+              className="px-3 py-1.5 text-sm font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-700 transition-colors"
+            >
+              Upload
+            </button>
+            <span className="text-xs text-gray-400 dark:text-gray-500 hidden sm:block">Updated {updatedTime}</span>
+          </div>
         </div>
       </div>
 
@@ -159,7 +145,7 @@ export default function Dashboard() {
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
             {!docs.length ? (
               <div className="py-16 text-center text-gray-400 dark:text-gray-500 text-sm">
-                {activeFilters > 0 ? 'No documents match the current filters.' : 'No documents yet.'}
+                {hasSearch ? 'No documents match the current filters.' : 'No documents yet.'}
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -229,17 +215,19 @@ export default function Dashboard() {
               </div>
             )}
             {/* Pagination footer */}
-            {!q && (hasPrev || hasNext || docs.length > 0) && (
+            {(hasPrev || hasNext || docs.length > 0) && (
               <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 dark:border-gray-700">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-400 dark:text-gray-500">Rows per page</span>
-                  <select
-                    value={pageSize}
-                    onChange={e => setPageSize(Number(e.target.value))}
-                    className="text-xs border border-gray-200 dark:border-gray-600 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-blue-200 dark:focus:ring-blue-800 dark:bg-gray-700 dark:text-gray-100"
-                  >
-                    {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
-                  </select>
+                  {!hasSearch && <>
+                    <span className="text-xs text-gray-400 dark:text-gray-500">Rows per page</span>
+                    <select
+                      value={pageSize}
+                      onChange={e => setPageSize(Number(e.target.value))}
+                      className="text-xs border border-gray-200 dark:border-gray-600 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-blue-200 dark:focus:ring-blue-800 dark:bg-gray-700 dark:text-gray-100"
+                    >
+                      {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                  </>}
                 </div>
                 <div className="flex items-center gap-1">
                   <button

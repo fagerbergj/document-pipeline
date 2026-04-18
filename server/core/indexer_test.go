@@ -59,8 +59,8 @@ func (m *mockIndexer) Delete(_ context.Context, docID string) error {
 	m.deleted = append(m.deleted, docID)
 	return nil
 }
-func (m *mockIndexer) Search(_ context.Context, _ string, _ int) ([]string, error) {
-	return nil, nil
+func (m *mockIndexer) Search(_ context.Context, _ string, _, _ int) ([]string, int, error) {
+	return nil, 0, nil
 }
 
 func seedDocument(t *testing.T, db *sqlite.DB, id string) {

@@ -7,8 +7,9 @@ import (
 	"net/http"
 )
 
-func (c *Client) Search(ctx context.Context, query string, size int) ([]string, error) {
+func (c *Client) Search(ctx context.Context, query string, from, size int) (ids []string, total int, err error) {
 	payload := map[string]any{
+		"from": from,
 		"size": size,
 		"query": map[string]any{
 			"query_string": map[string]any{
@@ -21,14 +22,17 @@ func (c *Client) Search(ctx context.Context, query string, size int) ([]string, 
 	}
 	b, status, err := c.do(ctx, http.MethodPost, "/"+c.index+"/_search", payload)
 	if err != nil {
-		return nil, fmt.Errorf("opensearch search: %w", err)
+		return nil, 0, fmt.Errorf("opensearch search: %w", err)
 	}
 	if status >= 400 {
-		return nil, fmt.Errorf("opensearch search HTTP %d: %s", status, b)
+		return nil, 0, fmt.Errorf("opensearch search HTTP %d: %s", status, b)
 	}
 
 	var result struct {
 		Hits struct {
+			Total struct {
+				Value int `json:"value"`
+			} `json:"total"`
 			Hits []struct {
 				Source struct {
 					DocID string `json:"doc_id"`
@@ -37,14 +41,14 @@ func (c *Client) Search(ctx context.Context, query string, size int) ([]string, 
 		} `json:"hits"`
 	}
 	if err := json.Unmarshal(b, &result); err != nil {
-		return nil, fmt.Errorf("opensearch search decode: %w", err)
+		return nil, 0, fmt.Errorf("opensearch search decode: %w", err)
 	}
 
-	ids := make([]string, 0, len(result.Hits.Hits))
+	ids = make([]string, 0, len(result.Hits.Hits))
 	for _, h := range result.Hits.Hits {
 		if h.Source.DocID != "" {
 			ids = append(ids, h.Source.DocID)
 		}
 	}
-	return ids, nil
+	return ids, result.Hits.Total.Value, nil
 }

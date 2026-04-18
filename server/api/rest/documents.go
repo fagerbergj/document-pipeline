@@ -40,10 +40,18 @@ func (h *handler) listDocuments(w http.ResponseWriter, r *http.Request) {
 
 	filter := port.DocumentFilter{Sort: sort}
 
-	// Lucene search via OpenSearch — when q is set, fetch matching IDs and skip pagination.
+	var searchNextToken *string
+
+	// Lucene search via OpenSearch — offset-based pagination encoded in page_token.
 	luceneQuery := strings.TrimSpace(qp.Get("q"))
 	if luceneQuery != "" && h.search != nil {
-		ids, err := h.search.Search(r.Context(), luceneQuery, 100)
+		from := 0
+		if pt := qp.Get("page_token"); pt != "" {
+			if offset, ok := core.DecodeOffsetToken(pt); ok {
+				from = offset
+			}
+		}
+		ids, total, err := h.search.Search(r.Context(), luceneQuery, from, pageSize)
 		if err != nil {
 			slog.Warn("listDocuments opensearch search", "err", err)
 		} else if len(ids) == 0 {
@@ -51,6 +59,10 @@ func (h *handler) listDocuments(w http.ResponseWriter, r *http.Request) {
 			return
 		} else {
 			filter.IDs = ids
+			if nextFrom := from + pageSize; nextFrom < total {
+				tok := core.EncodeOffsetToken(nextFrom)
+				searchNextToken = &tok
+			}
 		}
 	}
 
@@ -96,9 +108,13 @@ func (h *handler) listDocuments(w http.ResponseWriter, r *http.Request) {
 		sortDocsByOrder(data, order)
 	}
 
+	nextToken := result.NextPageToken
+	if searchNextToken != nil {
+		nextToken = searchNextToken
+	}
 	writeJSON(w, http.StatusOK, schema.PaginatedDocuments{
 		Data:          data,
-		NextPageToken: result.NextPageToken,
+		NextPageToken: nextToken,
 	})
 }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Sidebar from '../components/Sidebar'
@@ -7,7 +7,13 @@ import Sidebar from '../components/Sidebar'
 vi.mock('../api', () => ({
   api: {
     pipeline: () => Promise.resolve({ stages: [{ name: 'ocr' }, { name: 'classify' }] }),
-    jobs: () => Promise.resolve({ data: [] }),
+    jobs: () => Promise.resolve({
+      data: [
+        { id: 'j1', document_id: 'd1', stage: 'ocr',      status: 'pending',  updated_at: '2024-01-01T00:00:00Z' },
+        { id: 'j2', document_id: 'd2', stage: 'classify',  status: 'done',     updated_at: '2024-01-01T00:00:00Z' },
+        { id: 'j3', document_id: 'd3', stage: 'ocr',       status: 'error',    updated_at: '2024-01-01T00:00:00Z' },
+      ],
+    }),
   },
 }))
 
@@ -24,35 +30,31 @@ function renderSidebar(initialPath = '/') {
   )
 }
 
-describe('Sidebar filter chips', () => {
-  it('renders status filter buttons', () => {
+describe('Sidebar counts', () => {
+  it('renders nav links', () => {
     renderSidebar()
-    expect(screen.getByRole('button', { name: /pending/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /running/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /done/i })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /dashboard/i })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /contexts/i })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /chat/i })).toBeInTheDocument()
   })
 
-  it('clicking a status chip activates it', () => {
+  it('renders status labels as read-only text', () => {
     renderSidebar()
-    const pendingBtn = screen.getByRole('button', { name: /pending/i })
-    fireEvent.click(pendingBtn)
-    expect(pendingBtn.className).toContain('bg-gray-700')
+    expect(screen.getByText('pending')).toBeInTheDocument()
+    expect(screen.getByText('done')).toBeInTheDocument()
+    expect(screen.getByText('error')).toBeInTheDocument()
   })
 
-  it('clicking the active status chip deactivates it', () => {
-    renderSidebar('/?q=status%3Apending')
-    const pendingBtn = screen.getByRole('button', { name: /pending/i })
-    expect(pendingBtn.className).toContain('bg-gray-700')
-    fireEvent.click(pendingBtn)
-    expect(pendingBtn.className).not.toContain('bg-gray-700')
+  it('has no clickable filter chips for status', () => {
+    renderSidebar()
+    // Status items are divs, not buttons — no role="button" for status rows
+    const buttons = screen.queryAllByRole('button')
+    const statusButtons = buttons.filter(b => /pending|running|waiting|error|done/.test(b.textContent ?? ''))
+    expect(statusButtons).toHaveLength(0)
   })
 
-  it('clear filter button removes the active filter', () => {
-    renderSidebar('/?q=status%3Aerror')
-    const clearBtn = screen.getByRole('button', { name: /clear filter/i })
-    expect(clearBtn).toBeInTheDocument()
-    fireEvent.click(clearBtn)
-    const errorBtn = screen.getByRole('button', { name: /error/i })
-    expect(errorBtn.className).not.toContain('bg-gray-700')
+  it('does not show clear filter button', () => {
+    renderSidebar('/?status=pending')
+    expect(screen.queryByRole('button', { name: /clear filter/i })).not.toBeInTheDocument()
   })
 })

@@ -21,5 +21,5 @@ type DocumentIndexer interface {
 	Count(ctx context.Context) (int, error)
 	Index(ctx context.Context, doc IndexDoc) error
 	Delete(ctx context.Context, docID string) error
-	Search(ctx context.Context, query string, size int) ([]string, error)
+	Search(ctx context.Context, query string, from, size int) (ids []string, total int, err error)
 }
