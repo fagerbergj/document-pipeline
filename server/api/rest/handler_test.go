@@ -938,10 +938,10 @@ type mockSearchStore struct {
 	queries []string
 }
 
-func (m *mockSearchStore) EnsureIndex(_ context.Context) error { return nil }
-func (m *mockSearchStore) Count(_ context.Context) (int, error) { return len(m.results), nil }
+func (m *mockSearchStore) EnsureIndex(_ context.Context) error            { return nil }
+func (m *mockSearchStore) Count(_ context.Context) (int, error)           { return len(m.results), nil }
 func (m *mockSearchStore) Index(_ context.Context, _ port.IndexDoc) error { return nil }
-func (m *mockSearchStore) Delete(_ context.Context, _ string) error { return nil }
+func (m *mockSearchStore) Delete(_ context.Context, _ string) error       { return nil }
 func (m *mockSearchStore) Search(_ context.Context, query string, _ int) ([]string, error) {
 	m.queries = append(m.queries, query)
 	return m.results, nil
