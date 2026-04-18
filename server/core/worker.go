@@ -345,12 +345,13 @@ func (w *WorkerService) runLLMText(
 				previousOutput = last.Outputs[0].Text
 			}
 		}
-		data := ClarifyPromptData{
-			DocumentContext:   doc.AdditionalContext,
-			LinkedContext:     linkedContext,
-			LinkedContextName: linkedContextName,
-			QAHistory:         qaHistory,
-			PreviousOutput:    previousOutput,
+		data := map[string]any{
+			"DocumentContext":   doc.AdditionalContext,
+			"Context":           linkedContext,
+			"LinkedContext":     linkedContext,
+			"LinkedContextName": linkedContextName,
+			"QAHistory":         qaHistory,
+			"PreviousOutput":    previousOutput,
 		}
 		var err error
 		promptText, err = w.prompts.Render(stage.Prompt, data)
@@ -519,6 +520,8 @@ func (w *WorkerService) handleJobError(ctx context.Context, doc model.Document, 
 		_ = w.jobs.UpdateStatus(ctx, job.ID, string(model.JobStatusPending), now)
 	} else {
 		slog.Error("exhausted retries", "doc_id", doc.ID[:8], "stage", stage.Name)
+		errorRun := makeRun(nil, []model.Field{{Field: "error", Text: jobErr.Error()}}, model.ConfidenceLow, nil, model.Suggestions{})
+		_ = w.jobs.UpdateRuns(ctx, job.ID, appendRun(job.Runs, errorRun), now)
 		_ = w.jobs.UpdateStatus(ctx, job.ID, string(model.JobStatusError), now)
 	}
 }
