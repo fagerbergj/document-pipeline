@@ -262,6 +262,7 @@ func (w *WorkerService) runOCR(
 		return fmt.Errorf("read image: %w", err)
 	}
 
+	w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventStatus, Data: `{"text":"Loading model ` + stage.Model + `\u2026"}`})
 	var ocrText strings.Builder
 	if err := w.llm.GenerateVision(ctx, stage.Model, promptText, imageBytes, func(chunk string) {
 		ocrText.WriteString(chunk)
@@ -368,6 +369,7 @@ func (w *WorkerService) runLLMText(
 		}
 	}
 
+	w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventStatus, Data: `{"text":"Loading model ` + stage.Model + `\u2026"}`})
 	var rawResp strings.Builder
 	onChunk := func(chunk string) {
 		rawResp.WriteString(chunk)

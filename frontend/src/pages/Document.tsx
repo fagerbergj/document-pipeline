@@ -408,16 +408,25 @@ function TextArtifact({ url, filename, raw, onToggleRaw }: {
 function LiveLogSection({ jobId, onDone }: { jobId: string; onDone: () => void }) {
   const logRef = useRef<HTMLPreElement>(null)
   const [status, setStatus] = useState('connecting…')
+  const [statusMsg, setStatusMsg] = useState('')
   const hasTokens = useRef(false)
 
   useEffect(() => {
     hasTokens.current = false
+    setStatusMsg('')
     const es = new EventSource(`/api/v1/jobs/${jobId}/stream`)
+    es.addEventListener('status', (e) => {
+      if (!hasTokens.current) {
+        const data = JSON.parse((e as MessageEvent).data)
+        setStatusMsg(data.text ?? '')
+      }
+    })
     es.addEventListener('token', (e) => {
       const data = JSON.parse((e as MessageEvent).data)
       if (logRef.current) {
         if (!hasTokens.current) {
           hasTokens.current = true
+          setStatusMsg('')
           logRef.current.textContent = ''
         }
         logRef.current.textContent = (logRef.current.textContent ?? '') + data.text
@@ -447,7 +456,7 @@ function LiveLogSection({ jobId, onDone }: { jobId: string; onDone: () => void }
       <pre ref={logRef}
         className="bg-gray-950 text-gray-100 rounded-lg p-3 text-xs min-h-24 max-h-96 overflow-y-auto whitespace-pre-wrap font-mono">
         {status === 'connecting…' && (
-          <span className="text-gray-500 animate-pulse">Waiting for model…</span>
+          <span className="text-gray-500 animate-pulse">{statusMsg || 'Waiting for model…'}</span>
         )}
       </pre>
     </div>
