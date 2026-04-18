@@ -35,6 +35,7 @@ export default function Chat() {
   const [input, setInput] = useState('')
   const [systemPrompt, setSystemPrompt] = useState('')
   const [maxSources, setMaxSources] = useState(5)
+  const [minScore, setMinScore] = useState(0.5)
   const [showSettings, setShowSettings] = useState(false)
   const [chatListOpen, setChatListOpen] = useState(false)
   const [streaming, setStreaming] = useState(false)
@@ -85,6 +86,7 @@ export default function Chat() {
     api.getChat(activeChatId).then(detail => {
       setSystemPrompt(detail.system_prompt ?? '')
       setMaxSources(detail.rag_retrieval?.max_sources ?? 5)
+      setMinScore(detail.rag_retrieval?.minimum_score ?? 0.5)
       setMessages(
         detail.messages.map(m => ({
           role: m.role as 'user' | 'assistant',
@@ -112,7 +114,7 @@ export default function Chat() {
   async function handleNewChat() {
     const chat = await api.createChat({
       system_prompt: systemPrompt.trim() || undefined,
-      rag_retrieval: { enabled: true, max_sources: maxSources },
+      rag_retrieval: { enabled: true, max_sources: maxSources, minimum_score: minScore },
     })
     setChats(prev => [chat, ...prev])
     setActiveChatId(chat.id)
@@ -138,13 +140,13 @@ export default function Chat() {
     }
   }
 
-  function scheduleSettingsPatch(newPrompt: string, newMaxSources: number) {
+  function scheduleSettingsPatch(newPrompt: string, newMaxSources: number, newMinScore: number) {
     if (!activeChatId) return
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
       api.patchChat(activeChatId, {
         system_prompt: newPrompt || null,
-        rag_retrieval: { enabled: true, max_sources: newMaxSources },
+        rag_retrieval: { enabled: true, max_sources: newMaxSources, minimum_score: newMinScore },
       })
         .then(updated => {
           setChats(prev => prev.map(s => s.id === updated.id ? updated : s))
@@ -155,12 +157,17 @@ export default function Chat() {
 
   function handlePromptChange(val: string) {
     setSystemPrompt(val)
-    scheduleSettingsPatch(val, maxSources)
+    scheduleSettingsPatch(val, maxSources, minScore)
   }
 
   function handleMaxSourcesChange(val: number) {
     setMaxSources(val)
-    scheduleSettingsPatch(systemPrompt, val)
+    scheduleSettingsPatch(systemPrompt, val, minScore)
+  }
+
+  function handleMinScoreChange(val: number) {
+    setMinScore(val)
+    scheduleSettingsPatch(systemPrompt, maxSources, val)
   }
 
   function toggleSources(idx: number) {
@@ -392,16 +399,30 @@ export default function Chat() {
                   onChange={e => handlePromptChange(e.target.value)}
                 />
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">Max sources</label>
-                <input
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={maxSources}
-                  onChange={e => handleMaxSourcesChange(Number(e.target.value))}
-                  className="w-14 rounded border border-gray-300 dark:border-gray-600 px-2 py-1.5 text-xs text-center focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-gray-100"
-                />
+              <div className="flex gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">Max sources</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={maxSources}
+                    onChange={e => handleMaxSourcesChange(Number(e.target.value))}
+                    className="w-14 rounded border border-gray-300 dark:border-gray-600 px-2 py-1.5 text-xs text-center focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-gray-100"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">Min score</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={minScore}
+                    onChange={e => handleMinScoreChange(Number(e.target.value))}
+                    className="w-16 rounded border border-gray-300 dark:border-gray-600 px-2 py-1.5 text-xs text-center focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-gray-100"
+                  />
+                </div>
               </div>
             </div>
           </div>
