@@ -157,6 +157,7 @@ function SeriesSection({ doc, onRefresh }: { doc: DocumentDetail; onRefresh: () 
   const [open, setOpen] = useState(false)
   const [seriesList, setSeriesList] = useState<string[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
+  const pickingRef = useRef(false)
 
   const mut = useMutation({
     mutationFn: (s: string) => api.updateDocument(doc.id, { series: s || null }),
@@ -188,7 +189,7 @@ function SeriesSection({ doc, onRefresh }: { doc: DocumentDetail; onRefresh: () 
               ref={inputRef}
               value={value}
               onChange={e => { setValue(e.target.value); setOpen(true) }}
-              onBlur={() => setTimeout(() => save(value), 150)}
+              onBlur={() => { if (!pickingRef.current) save(value) }}
               onKeyDown={e => {
                 if (e.key === 'Enter') { e.preventDefault(); save(value) }
                 if (e.key === 'Escape') { setEditing(false); setOpen(false) }
@@ -206,7 +207,7 @@ function SeriesSection({ doc, onRefresh }: { doc: DocumentDetail; onRefresh: () 
             <ul className="absolute z-50 top-full left-0 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg py-1 text-sm">
               {filtered.map(s => (
                 <li key={s}
-                  onMouseDown={e => { e.preventDefault(); setValue(s); save(s) }}
+                  onMouseDown={e => { e.preventDefault(); pickingRef.current = true; setValue(s); save(s) }}
                   className="px-3 py-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-100">
                   {s}
                 </li>
