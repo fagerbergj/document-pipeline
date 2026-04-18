@@ -58,24 +58,31 @@ func (s *IndexerService) backfillIfEmpty(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
-
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	n := 0
+	var docIDs []string
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
 			continue
 		}
+		docIDs = append(docIDs, id)
+	}
+	rows.Close()
+
+	if len(docIDs) == 0 {
+		return nil
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	for _, id := range docIDs {
 		if _, err := tx.ExecContext(ctx, "INSERT INTO index_queue (doc_id, action) VALUES (?, 'index')", id); err != nil {
 			tx.Rollback()
 			return err
 		}
-		n++
 	}
+	n := len(docIDs)
 	if err := tx.Commit(); err != nil {
 		return err
 	}
