@@ -26,34 +26,44 @@ var supportedFileTypes = map[string]model.FileType{
 }
 
 func (h *handler) listDocuments(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	sort := q.Get("sort")
+	qp := r.URL.Query()
+	sort := qp.Get("sort")
 	if sort == "" {
 		sort = "pipeline"
 	}
 	pageSize := 20
-	if ps := q.Get("page_size"); ps != "" {
+	if ps := qp.Get("page_size"); ps != "" {
 		if n, err := strconv.Atoi(ps); err == nil && n >= 1 && n <= 200 {
 			pageSize = n
 		}
 	}
 
 	filter := port.DocumentFilter{Sort: sort}
-	if stages := q.Get("stages"); stages != "" {
-		filter.Stages = splitCSV(stages)
-	}
-	if statuses := q.Get("statuses"); statuses != "" {
-		filter.Statuses = splitCSV(statuses)
+
+	// Lucene search via OpenSearch — when q is set, fetch matching IDs and skip pagination.
+	luceneQuery := strings.TrimSpace(qp.Get("q"))
+	if luceneQuery != "" && h.search != nil {
+		ids, err := h.search.Search(r.Context(), luceneQuery, 100)
+		if err != nil {
+			slog.Warn("listDocuments opensearch search", "err", err)
+		} else if len(ids) == 0 {
+			writeJSON(w, http.StatusOK, schema.PaginatedDocuments{Data: []schema.DocumentSummary{}})
+			return
+		} else {
+			filter.IDs = ids
+		}
 	}
 
 	pageReq := model.PageRequest{PageSize: pageSize}
-	if pt := q.Get("page_token"); pt != "" {
-		tok, err := core.DecodePageToken(pt)
-		if err != nil {
-			writeError(w, http.StatusUnprocessableEntity, "invalid page_token")
-			return
+	if filter.IDs == nil {
+		if pt := qp.Get("page_token"); pt != "" {
+			tok, err := core.DecodePageToken(pt)
+			if err != nil {
+				writeError(w, http.StatusUnprocessableEntity, "invalid page_token")
+				return
+			}
+			pageReq.PageToken = &tok
 		}
-		pageReq.PageToken = &tok
 	}
 
 	result, err := h.docs.ListPaginated(r.Context(), filter, pageReq)
@@ -70,6 +80,20 @@ func (h *handler) listDocuments(w http.ResponseWriter, r *http.Request) {
 			slog.Error("listDocuments jobs", "err", err)
 		}
 		data = append(data, toDocSummary(doc, pickCurrentJob(jobs)))
+	}
+
+	// Re-sort by OpenSearch relevance order when IDs came from search.
+	if len(filter.IDs) > 0 {
+		order := make(map[string]int, len(filter.IDs))
+		for i, id := range filter.IDs {
+			order[id] = i
+		}
+		for i := range data {
+			if _, ok := order[data[i].Id.String()]; !ok {
+				order[data[i].Id.String()] = len(filter.IDs) + i
+			}
+		}
+		sortDocsByOrder(data, order)
 	}
 
 	writeJSON(w, http.StatusOK, schema.PaginatedDocuments{
@@ -240,6 +264,9 @@ func (h *handler) deleteDocument(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
+	if h.search != nil {
+		_ = h.search.Delete(r.Context(), id)
+	}
 	writeJSON(w, http.StatusOK, schema.OkResponse{Ok: true})
 }
 
@@ -281,35 +308,17 @@ func (h *handler) buildDocDetail(r *http.Request, doc model.Document) (schema.Do
 	return toDocDetail(doc, pickCurrentJob(jobs), artifacts), nil
 }
 
-// pickCurrentJob returns the most relevant job for display.
-// Priority: running > waiting > pending > error > done (most recently updated).
-func pickCurrentJob(jobs []model.Job) *model.Job {
-	if len(jobs) == 0 {
-		return nil
-	}
-	for _, status := range []model.JobStatus{
-		model.JobStatusRunning,
-		model.JobStatusWaiting,
-		model.JobStatusPending,
-		model.JobStatusError,
-	} {
-		for i := range jobs {
-			if jobs[i].Status == status {
-				return &jobs[i]
-			}
-		}
-	}
-	// All done — return most recently updated
-	latest := &jobs[0]
-	for i := range jobs[1:] {
-		if jobs[i+1].UpdatedAt.After(latest.UpdatedAt) {
-			latest = &jobs[i+1]
-		}
-	}
-	return latest
-}
+func pickCurrentJob(jobs []model.Job) *model.Job { return core.PickCurrentJob(jobs) }
 
 func titleOf(doc model.Document) *string { return doc.Title }
+
+func sortDocsByOrder(data []schema.DocumentSummary, order map[string]int) {
+	for i := 1; i < len(data); i++ {
+		for j := i; j > 0 && order[data[j].Id.String()] < order[data[j-1].Id.String()]; j-- {
+			data[j], data[j-1] = data[j-1], data[j]
+		}
+	}
+}
 
 func splitCSV(s string) []string {
 	parts := strings.Split(s, ",")

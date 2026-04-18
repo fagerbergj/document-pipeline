@@ -77,29 +77,13 @@ func (r *DocumentRepo) ListPaginated(ctx context.Context, filter port.DocumentFi
 		sc = docSortMap["pipeline"]
 	}
 
-	// Current-job subquery for stage/status filtering.
-	const currentJobSQL = `(
-		SELECT j.%s FROM jobs j WHERE j.document_id = d.id
-		ORDER BY CASE j.status
-			WHEN 'running'  THEN 0 WHEN 'waiting' THEN 1
-			WHEN 'pending'  THEN 2 WHEN 'error'   THEN 3
-			ELSE 4 END, j.updated_at DESC
-		LIMIT 1
-	)`
-
 	conditions := []string{}
 	params := []any{}
 
-	if len(filter.Stages) > 0 {
-		conditions = append(conditions, fmt.Sprintf(currentJobSQL, "stage")+" IN "+inClause(len(filter.Stages)))
-		for _, s := range filter.Stages {
-			params = append(params, s)
-		}
-	}
-	if len(filter.Statuses) > 0 {
-		conditions = append(conditions, fmt.Sprintf(currentJobSQL, "status")+" IN "+inClause(len(filter.Statuses)))
-		for _, s := range filter.Statuses {
-			params = append(params, s)
+	if len(filter.IDs) > 0 {
+		conditions = append(conditions, "d.id IN "+inClause(len(filter.IDs)))
+		for _, id := range filter.IDs {
+			params = append(params, id)
 		}
 	}
 	if page.PageToken != nil {

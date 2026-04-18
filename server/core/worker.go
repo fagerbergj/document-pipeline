@@ -748,26 +748,7 @@ func (w *WorkerService) loadIngestMeta(ctx context.Context, docID string) (*Inge
 }
 
 func (w *WorkerService) collectStageData(ctx context.Context, docID string) (map[string]map[string]any, error) {
-	jobs, err := w.jobs.ListForDocument(ctx, docID)
-	if err != nil {
-		return nil, err
-	}
-	stageData := map[string]map[string]any{}
-	for _, j := range jobs {
-		if (j.Status == model.JobStatusDone || j.Status == model.JobStatusWaiting) && len(j.Runs) > 0 {
-			latest := j.Runs[len(j.Runs)-1]
-			outputs := map[string]any{}
-			for _, f := range latest.Outputs {
-				if f.Field != "" {
-					outputs[f.Field] = f.Text
-				}
-			}
-			if len(outputs) > 0 {
-				stageData[j.Stage] = outputs
-			}
-		}
-	}
-	return stageData, nil
+	return CollectStageData(ctx, w.jobs, docID)
 }
 
 func (w *WorkerService) loadLinkedContext(ctx context.Context, doc model.Document) (string, string) {

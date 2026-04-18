@@ -21,6 +21,7 @@ type handler struct {
 	streams   port.StreamManager
 	llm       port.LLMInference
 	embed     port.EmbedStore
+	search    port.DocumentIndexer
 	ingest    *core.IngestService
 	pipeline  model.PipelineConfig
 	vaultPath string
@@ -41,6 +42,7 @@ type Dependencies struct {
 	Streams    port.StreamManager
 	LLM        port.LLMInference
 	Embed      port.EmbedStore
+	Search     port.DocumentIndexer
 	Ingest     *core.IngestService
 	Pipeline   model.PipelineConfig
 	VaultPath  string
@@ -60,6 +62,7 @@ func New(deps Dependencies) http.Handler {
 		streams:   deps.Streams,
 		llm:       deps.LLM,
 		embed:     deps.Embed,
+		search:    deps.Search,
 		ingest:    deps.Ingest,
 		pipeline:  deps.Pipeline,
 		vaultPath: deps.VaultPath,

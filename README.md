@@ -1,6 +1,6 @@
 # document-pipeline
 
-A config-driven, multi-stage document ingestion pipeline. Upload handwritten reMarkable notes or text/image files, run them through OCR, LLM cleanup, and classification, then index them in a vector store for RAG queries from Open WebUI, Claude Code, and OpenCode.
+A config-driven, multi-stage document ingestion pipeline. Upload handwritten reMarkable notes or text/image files, run them through OCR, LLM cleanup, and classification, then index them in Qdrant (vector store) and OpenSearch (full-text) for RAG queries and Lucene search.
 
 ## What it does
 
@@ -11,7 +11,7 @@ Upload (PNG / JPG / TXT / MD)
       [parks for human review if confidence < high]
   → Classify (tags + summary)
       [parks for human review if confidence < high]
-  → Embed → Qdrant + Open WebUI (vector stores)
+  → Embed → Qdrant + Open WebUI (vector stores) + OpenSearch (full-text)
 ```
 
 All stages, models, prompts, and review gates are defined in [`config/pipeline.yaml`](config/README.md) — no code changes needed to add, remove, or reorder stages.
@@ -30,6 +30,12 @@ When an LLM stage produces low-confidence output or raises clarification questio
 - **Reject** — reset to `pending` so the worker re-runs
 - **Clarify** — answer the LLM's questions and re-run with the answers appended
 - **Replay** — rewind any completed job back to `pending` (cascades downstream)
+
+### Search
+
+The dashboard search box accepts Lucene queries. Documents are indexed into OpenSearch by a background `IndexerService` that polls an `index_queue` table populated by SQLite triggers on every document and job change. Searchable fields: `title`, `series`, `summary`, `tags`, `content`, `date_month`, `stage`, `status`.
+
+Examples: `title:meeting`, `status:pending`, `tags:invoice AND summary:budget`, `content:"quarterly review"`.
 
 ### Chat / RAG
 
@@ -63,6 +69,8 @@ Copy from `home-server/.env`. Required variables per pipeline phase:
 | `OPEN_WEBUI_URL` | 5 | Open WebUI base URL |
 | `OPEN_WEBUI_API_KEY` | 5 | Open WebUI API key |
 | `OPEN_WEBUI_KNOWLEDGE_ID` | 5 | Knowledge base ID in Open WebUI |
+| `OPENSEARCH_URL` | 5 | OpenSearch endpoint (e.g. `http://opensearch:9200`) |
+| `OPENSEARCH_INDEX` | 5 | OpenSearch index name (default `documents`) |
 
 Optional:
 
@@ -93,7 +101,7 @@ document-pipeline/
 │   ├── api/rest/      HTTP handlers (chi router)
 │   ├── core/          Domain services (ingest, worker) + port interfaces + models
 │   ├── store/         Outbound adapters: sqlite, ollama, qdrant, openwebui,
-│   │                  filesystem, stream, prompts, config, embed (coordinator)
+│   │                  opensearch, filesystem, stream, prompts, config, embed (coordinator)
 │   ├── web/           Embedded frontend bundle (//go:embed all:dist)
 │   └── test/          Integration tests
 ├── frontend/          React + Vite SPA (TypeScript + Tailwind + React Query)
