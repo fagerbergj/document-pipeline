@@ -88,20 +88,20 @@ export default function SearchBar({ stages }: Props) {
 
   if (isAdv) {
     return (
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1 max-w-lg">
+      <div className="flex items-center gap-2 w-full">
+        <div className="relative flex-1">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-mono select-none">⌘</span>
           <input
             type="text"
             value={advInput}
             onChange={e => handleAdvChange(e.target.value)}
             placeholder="status:pending AND tags:invoice"
-            className="w-full pl-8 pr-3 py-1.5 text-sm font-mono border border-blue-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-300 dark:bg-gray-700 dark:text-gray-100 dark:border-blue-500"
+            className="w-full pl-8 pr-3 py-2 text-sm font-mono border border-blue-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-300 dark:bg-gray-700 dark:text-gray-100 dark:border-blue-500"
           />
         </div>
         <button
           onClick={exitAdvanced}
-          className="text-xs text-gray-400 hover:text-white border border-gray-600 rounded px-2 py-1.5 transition-colors whitespace-nowrap"
+          className="text-xs text-gray-400 hover:text-white border border-gray-600 rounded px-2.5 py-2 transition-colors whitespace-nowrap"
         >
           ← Simple
         </button>
@@ -120,7 +120,7 @@ export default function SearchBar({ stages }: Props) {
             value={textInput}
             onChange={e => handleTextChange(e.target.value)}
             placeholder="Search title & content…"
-            className="pl-8 pr-3 py-1.5 text-sm border border-gray-200 dark:border-gray-600 rounded-lg w-52 focus:outline-none focus:ring-2 focus:ring-blue-300 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400"
+            className="pl-8 pr-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-lg w-64 focus:outline-none focus:ring-2 focus:ring-blue-300 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400"
           />
         </div>
 
@@ -128,7 +128,7 @@ export default function SearchBar({ stages }: Props) {
         <select
           value={status}
           onChange={e => setParam('status', e.target.value)}
-          className="text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-300 dark:bg-gray-700 dark:text-gray-100"
+          className="text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300 dark:bg-gray-700 dark:text-gray-100"
         >
           <option value="">Status</option>
           {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
@@ -138,7 +138,7 @@ export default function SearchBar({ stages }: Props) {
         <select
           value={stage}
           onChange={e => setParam('stage', e.target.value)}
-          className="text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-300 dark:bg-gray-700 dark:text-gray-100"
+          className="text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300 dark:bg-gray-700 dark:text-gray-100"
         >
           <option value="">Stage</option>
           {stages.map(st => <option key={st} value={st}>{st}</option>)}
@@ -147,7 +147,7 @@ export default function SearchBar({ stages }: Props) {
         {/* Advanced toggle */}
         <button
           onClick={enterAdvanced}
-          className="text-xs text-gray-400 hover:text-white border border-gray-600 rounded px-2 py-1.5 transition-colors whitespace-nowrap"
+          className="text-xs text-gray-400 hover:text-white border border-gray-600 rounded px-2.5 py-2 transition-colors whitespace-nowrap"
         >
           Advanced
         </button>
