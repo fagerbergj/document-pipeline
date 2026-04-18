@@ -4,24 +4,24 @@
  * SSE streaming endpoints use raw fetch since they need manual stream handling.
  */
 import {
-  getPipelineApiV1PipelinesPipelineIdGet,
-  getDocumentApiV1DocumentsDocIdGet,
-  patchDocumentApiV1DocumentsDocIdPatch,
-  deleteDocumentApiV1DocumentsDocIdDelete,
-  listJobsApiV1JobsGet,
-  getJobApiV1JobsJobIdGet,
-  patchJobApiV1JobsJobIdPatch,
-  putJobStatusApiV1JobsJobIdStatusPut,
-  patchRunApiV1JobsJobIdRunsRunIdPatch,
-  listContextsApiV1ContextsGet,
-  createContextApiV1ContextsPost,
-  updateContextApiV1ContextsContextIdPatch,
-  deleteContextApiV1ContextsContextIdDelete,
-  listChatsApiV1ChatsGet,
-  createChatApiV1ChatsPost,
-  getChatApiV1ChatsChatIdGet,
-  patchChatApiV1ChatsChatIdPatch,
-  deleteChatApiV1ChatsChatIdDelete,
+  getPipeline as getPipelineApiV1PipelinesPipelineIdGet,
+  getDocument as getDocumentApiV1DocumentsDocIdGet,
+  patchDocument as patchDocumentApiV1DocumentsDocIdPatch,
+  deleteDocument as deleteDocumentApiV1DocumentsDocIdDelete,
+  listJobs as listJobsApiV1JobsGet,
+  getJob as getJobApiV1JobsJobIdGet,
+  patchJob as patchJobApiV1JobsJobIdPatch,
+  putJobStatus as putJobStatusApiV1JobsJobIdStatusPut,
+  patchRun as patchRunApiV1JobsJobIdRunsRunIdPatch,
+  listContexts as listContextsApiV1ContextsGet,
+  createContext as createContextApiV1ContextsPost,
+  updateContext as updateContextApiV1ContextsContextIdPatch,
+  deleteContext as deleteContextApiV1ContextsContextIdDelete,
+  listChats as listChatsApiV1ChatsGet,
+  createChat as createChatApiV1ChatsPost,
+  getChat as getChatApiV1ChatsChatIdGet,
+  patchChat as patchChatApiV1ChatsChatIdPatch,
+  deleteChat as deleteChatApiV1ChatsChatIdDelete,
 } from './generated'
 
 export type {
@@ -128,7 +128,8 @@ export const api = {
     unwrap(getDocumentApiV1DocumentsDocIdGet({ path: { doc_id: id } })),
 
   updateDocument: (id: string, patch: { title?: string | null; additional_context?: string | null; linked_contexts?: string[] | null; series?: string | null }) =>
-    unwrap(patchDocumentApiV1DocumentsDocIdPatch({ path: { doc_id: id }, body: patch })),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    unwrap(patchDocumentApiV1DocumentsDocIdPatch({ path: { doc_id: id }, body: patch as any })),
 
   deleteDocument: (id: string) =>
     unwrap(deleteDocumentApiV1DocumentsDocIdDelete({ path: { doc_id: id } })),
@@ -140,7 +141,7 @@ export const api = {
       document_id: params?.document_id,
       stages: params?.stages,
       statuses: params?.statuses,
-      sort: params?.sort,
+      sort: params?.sort as 'pipeline' | 'title_asc' | 'title_desc' | 'created_asc' | 'created_desc' | undefined,
       page_token: params?.page_token,
       page_size: params?.page_size,
     }})),
@@ -149,13 +150,15 @@ export const api = {
     unwrap(getJobApiV1JobsJobIdGet({ path: { job_id: jobId } })),
 
   updateJob: (jobId: string, patch: { options?: { require_context?: boolean; embed?: { embed_image?: boolean } } | null }) =>
-    unwrap(patchJobApiV1JobsJobIdPatch({ path: { job_id: jobId }, body: patch })),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    unwrap(patchJobApiV1JobsJobIdPatch({ path: { job_id: jobId }, body: patch as any })),
 
   putJobStatus: (jobId: string, status: 'pending' | 'done' | 'error') =>
     unwrap(putJobStatusApiV1JobsJobIdStatusPut({ path: { job_id: jobId }, body: { status } })),
 
   patchRun: (jobId: string, runId: string, patch: { questions?: { segment: string; question: string; answer?: string | null }[] | null }) =>
-    unwrap(patchRunApiV1JobsJobIdRunsRunIdPatch({ path: { job_id: jobId, run_id: runId }, body: patch })),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    unwrap(patchRunApiV1JobsJobIdRunsRunIdPatch({ path: { job_id: jobId, run_id: runId }, body: patch as any })),
 
   // ── Contexts ──────────────────────────────────────────────────────────────
   contexts: () =>
@@ -165,7 +168,8 @@ export const api = {
     unwrap(createContextApiV1ContextsPost({ body: { name, text } })),
 
   updateContext: (id: string, patch: { name?: string | null; text?: string | null }) =>
-    unwrap(updateContextApiV1ContextsContextIdPatch({ path: { context_id: id }, body: patch })),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    unwrap(updateContextApiV1ContextsContextIdPatch({ path: { context_id: id }, body: patch as any })),
 
   deleteContext: (id: string) =>
     unwrap(deleteContextApiV1ContextsContextIdDelete({ path: { context_id: id } })),
@@ -192,13 +196,15 @@ export const api = {
     unwrap(listChatsApiV1ChatsGet({ query: { page_size: params?.page_size, before_id: params?.before_id } })) as Promise<PaginatedChats>,
 
   createChat: (opts?: { system_prompt?: string; rag_retrieval?: RagRetrieval }) =>
-    unwrap(createChatApiV1ChatsPost({ body: { system_prompt: opts?.system_prompt ?? null, rag_retrieval: opts?.rag_retrieval ?? null } })) as Promise<ChatSummary>,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    unwrap(createChatApiV1ChatsPost({ body: { system_prompt: opts?.system_prompt, rag_retrieval: opts?.rag_retrieval } as any })) as Promise<ChatSummary>,
 
   getChat: (chatId: string) =>
     unwrap(getChatApiV1ChatsChatIdGet({ path: { chat_id: chatId } })) as Promise<ChatDetail>,
 
   patchChat: (chatId: string, patch: { title?: string | null; system_prompt?: string | null; rag_retrieval?: RagRetrieval | null }) =>
-    unwrap(patchChatApiV1ChatsChatIdPatch({ path: { chat_id: chatId }, body: patch })) as Promise<ChatSummary>,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    unwrap(patchChatApiV1ChatsChatIdPatch({ path: { chat_id: chatId }, body: patch as any })) as Promise<ChatSummary>,
 
   deleteChat: (chatId: string) =>
     unwrap(deleteChatApiV1ChatsChatIdDelete({ path: { chat_id: chatId } })),
