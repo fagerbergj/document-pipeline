@@ -256,7 +256,7 @@ func (m *mockLLM) GenerateEmbed(ctx context.Context, model_, text string) ([]flo
 func (m *mockLLM) Unload(ctx context.Context, model_ string) error { return nil }
 
 type mockEmbedStore struct {
-	upsertCount int
+	upsertCount  int
 	deleteCalled bool
 }
 

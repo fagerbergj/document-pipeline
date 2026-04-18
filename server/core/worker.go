@@ -420,7 +420,7 @@ func (w *WorkerService) runLLMText(
 
 // --- Embed stage ---
 
-const defaultChunkSize    = 1500
+const defaultChunkSize = 1500
 const defaultChunkOverlap = 200
 
 // chunkText splits text into overlapping character-based chunks.
