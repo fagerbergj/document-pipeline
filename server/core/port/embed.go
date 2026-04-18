@@ -4,11 +4,12 @@ import "context"
 
 // Payload keys written by WorkerService and read by EmbedStore consumers.
 const (
-	PayloadTitle     = "title"
-	PayloadText      = "text"
-	PayloadDocID     = "doc_id"
-	PayloadDateMonth = "date_month"
-	PayloadSummary   = "summary"
+	PayloadTitle      = "title"
+	PayloadText       = "text"
+	PayloadDocID      = "doc_id"
+	PayloadDateMonth  = "date_month"
+	PayloadSummary    = "summary"
+	PayloadChunkIndex = "chunk_index"
 )
 
 // EmbedStore stores and retrieves document embeddings.
@@ -17,7 +18,7 @@ const (
 type EmbedStore interface {
 	Upsert(ctx context.Context, id string, textVector []float32, imageVector []float32, payload map[string]any) error
 	Search(ctx context.Context, vector []float32, topK int) ([]EmbedResult, error)
-	Delete(ctx context.Context, id string) error
+	DeleteByDocID(ctx context.Context, docID string) error
 }
 
 type EmbedResult struct {

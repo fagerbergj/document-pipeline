@@ -420,6 +420,32 @@ func (w *WorkerService) runLLMText(
 
 // --- Embed stage ---
 
+const defaultChunkSize    = 1500
+const defaultChunkOverlap = 200
+
+// chunkText splits text into overlapping character-based chunks.
+func chunkText(text string, size, overlap int) []string {
+	if len(text) <= size {
+		return []string{text}
+	}
+	step := size - overlap
+	if step <= 0 {
+		step = size
+	}
+	var chunks []string
+	for i := 0; i < len(text); i += step {
+		end := i + size
+		if end > len(text) {
+			end = len(text)
+		}
+		chunks = append(chunks, text[i:end])
+		if end == len(text) {
+			break
+		}
+	}
+	return chunks
+}
+
 func (w *WorkerService) runEmbed(
 	ctx context.Context, doc model.Document, job model.Job,
 	stage model.StageDefinition, stageData map[string]map[string]any,
@@ -429,12 +455,6 @@ func (w *WorkerService) runEmbed(
 		return fmt.Errorf("embed stage %q: no text found for input %q", stage.Name, stage.Input)
 	}
 
-	const maxChars = 32_000
-	if len(inputText) > maxChars {
-		slog.Warn("truncating embed input", "doc_id", doc.ID[:8], "from", len(inputText), "to", maxChars)
-		inputText = inputText[:maxChars]
-	}
-
 	// Collect metadata from all stage outputs
 	allData := map[string]any{}
 	for _, sd := range stageData {
@@ -442,43 +462,74 @@ func (w *WorkerService) runEmbed(
 			allData[k] = v
 		}
 	}
-	payload := map[string]any{}
+	basePayload := map[string]any{}
 	for _, field := range stage.MetadataFields {
 		if v, ok := allData[field]; ok {
-			payload[field] = v
+			basePayload[field] = v
 		}
 	}
 	if doc.Title != nil {
-		payload[port.PayloadTitle] = *doc.Title
+		basePayload[port.PayloadTitle] = *doc.Title
 	}
 	if doc.DateMonth != nil {
-		payload[port.PayloadDateMonth] = *doc.DateMonth
+		basePayload[port.PayloadDateMonth] = *doc.DateMonth
 	}
-	payload[port.PayloadDocID] = doc.ID
-	payload[port.PayloadText] = inputText
+	basePayload[port.PayloadDocID] = doc.ID
 
-	textVector, err := w.llm.GenerateEmbed(ctx, stage.Model, inputText)
-	if err != nil {
-		return fmt.Errorf("generate text embedding: %w", err)
+	chunkSize := stage.ChunkSize
+	if chunkSize <= 0 {
+		chunkSize = defaultChunkSize
 	}
+	chunkOverlap := stage.ChunkOverlap
+	if chunkOverlap <= 0 {
+		chunkOverlap = defaultChunkOverlap
+	}
+	chunks := chunkText(inputText, chunkSize, chunkOverlap)
 
-	var imageVector []float32
+	// Load image bytes once (used for chunk 0 only).
+	var imgBytes []byte
 	if job.Options.Embed != nil && job.Options.Embed.EmbedImage && doc.PNGPath != nil {
-		imgBytes, err := os.ReadFile(*doc.PNGPath)
+		b, err := os.ReadFile(*doc.PNGPath)
 		if err != nil {
 			slog.Warn("could not read image for embed", "err", err)
 		} else {
-			vec, err := w.llm.GenerateEmbed(ctx, stage.Model, string(imgBytes))
-			if err != nil {
-				slog.Warn("image embed failed", "doc_id", doc.ID[:8], "err", err)
-			} else {
-				imageVector = vec
-			}
+			imgBytes = b
 		}
 	}
 
-	if err := w.embed.Upsert(ctx, doc.ID, textVector, imageVector, payload); err != nil {
-		return fmt.Errorf("embed upsert: %w", err)
+	// Delete any existing chunks for this document before upserting new ones.
+	if err := w.embed.DeleteByDocID(ctx, doc.ID); err != nil {
+		slog.Warn("embed delete before re-upsert failed (continuing)", "doc_id", doc.ID[:8], "err", err)
+	}
+
+	for i, chunk := range chunks {
+		chunkID := fmt.Sprintf("%s-%04d", doc.ID, i)
+
+		chunkPayload := make(map[string]any, len(basePayload)+3)
+		for k, v := range basePayload {
+			chunkPayload[k] = v
+		}
+		chunkPayload[port.PayloadText] = chunk
+		chunkPayload[port.PayloadChunkIndex] = i
+
+		vec, err := w.llm.GenerateEmbed(ctx, stage.Model, chunk)
+		if err != nil {
+			return fmt.Errorf("chunk %d embed: %w", i, err)
+		}
+
+		var imageVector []float32
+		if i == 0 && len(imgBytes) > 0 {
+			iv, err := w.llm.GenerateEmbed(ctx, stage.Model, string(imgBytes))
+			if err != nil {
+				slog.Warn("image embed failed", "doc_id", doc.ID[:8], "err", err)
+			} else {
+				imageVector = iv
+			}
+		}
+
+		if err := w.embed.Upsert(ctx, chunkID, vec, imageVector, chunkPayload); err != nil {
+			return fmt.Errorf("chunk %d upsert: %w", i, err)
+		}
 	}
 
 	now := time.Now().UTC()
@@ -486,14 +537,14 @@ func (w *WorkerService) runEmbed(
 	if inputField != "" {
 		inputs = []model.Field{{Field: inputField, Text: inputText}}
 	}
-	run := makeRun(inputs, []model.Field{{Field: "embedded", Text: "true"}}, model.ConfidenceHigh, nil, model.Suggestions{})
+	run := makeRun(inputs, []model.Field{{Field: "chunks", Text: fmt.Sprintf("%d", len(chunks))}}, model.ConfidenceHigh, nil, model.Suggestions{})
 	if err := w.jobs.UpdateRuns(ctx, job.ID, appendRun(job.Runs, run), now); err != nil {
 		return err
 	}
 	_ = w.jobs.UpdateStatus(ctx, job.ID, string(model.JobStatusDone), now)
 	_ = w.events.Append(ctx, model.StageEvent{DocumentID: doc.ID, Stage: stage.Name, EventType: model.EventCompleted, Timestamp: now})
 	_ = w.advancePipeline(ctx, job, now)
-	slog.Info("embed done", "doc_id", doc.ID[:8], "stage", stage.Name)
+	slog.Info("embed done", "doc_id", doc.ID[:8], "stage", stage.Name, "chunks", len(chunks))
 	return nil
 }
 

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -220,22 +221,36 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 			return
 		}
-		results, err := h.embed.Search(ctx, queryVec, rag.MaxSources)
+		results, err := h.embed.Search(ctx, queryVec, rag.MaxSources*5)
 		if err != nil {
 			slog.Warn("sendChatMessage embed search", "err", err)
 		}
+		// Deduplicate by doc_id, keeping the highest-scoring chunk per document.
+		seen := map[string]model.SourceRef{}
 		for _, res := range results {
 			if rag.MinimumScore > 0 && res.Score < rag.MinimumScore {
 				continue
 			}
-			sources = append(sources, model.SourceRef{
-				DocumentID: stringPayload(res.Payload, port.PayloadDocID),
+			docID := stringPayload(res.Payload, port.PayloadDocID)
+			ref := model.SourceRef{
+				DocumentID: docID,
 				Title:      stringPayload(res.Payload, port.PayloadTitle),
 				Summary:    stringPayload(res.Payload, port.PayloadSummary),
 				Text:       stringPayload(res.Payload, port.PayloadText),
 				DateMonth:  stringPayload(res.Payload, port.PayloadDateMonth),
 				Score:      res.Score,
-			})
+			}
+			if existing, ok := seen[docID]; !ok || res.Score > existing.Score {
+				seen[docID] = ref
+			}
+		}
+		// Collect, sort by score descending, trim to MaxSources.
+		for _, ref := range seen {
+			sources = append(sources, ref)
+		}
+		sort.Slice(sources, func(i, j int) bool { return sources[i].Score > sources[j].Score })
+		if len(sources) > rag.MaxSources {
+			sources = sources[:rag.MaxSources]
 		}
 	}
 

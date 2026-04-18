@@ -13,7 +13,7 @@ import (
 type qdrantStore interface {
 	Upsert(ctx context.Context, id string, textVector []float32, imageVector []float32, payload map[string]any) error
 	Search(ctx context.Context, vector []float32, topK int) ([]port.EmbedResult, error)
-	Delete(ctx context.Context, id string) error
+	DeleteByDocID(ctx context.Context, docID string) error
 }
 
 // webUIStore is the subset of openwebui.Client used here.
@@ -78,14 +78,14 @@ func shortID(id string) string {
 	return id
 }
 
-// Delete removes the embedding from Qdrant and the document from Open WebUI.
-func (c *EmbedStoreCoordinator) Delete(ctx context.Context, id string) error {
-	if err := c.qdrant.Delete(ctx, id); err != nil {
+// DeleteByDocID removes all chunk embeddings for a document from Qdrant and Open WebUI.
+func (c *EmbedStoreCoordinator) DeleteByDocID(ctx context.Context, docID string) error {
+	if err := c.qdrant.DeleteByDocID(ctx, docID); err != nil {
 		return err
 	}
 	if c.useWebUI {
-		if err := c.webUI.Delete(ctx, id); err != nil {
-			slog.Warn("open webui delete failed (non-fatal)", "err", err, "doc_id", shortID(id))
+		if err := c.webUI.Delete(ctx, docID); err != nil {
+			slog.Warn("open webui delete failed (non-fatal)", "err", err, "doc_id", shortID(docID))
 		}
 	}
 	return nil

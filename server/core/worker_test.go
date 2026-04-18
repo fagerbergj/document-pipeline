@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -244,18 +245,18 @@ func (m *mockLLM) GenerateEmbed(ctx context.Context, model_, text string) ([]flo
 func (m *mockLLM) Unload(ctx context.Context, model_ string) error { return nil }
 
 type mockEmbedStore struct {
-	upsertCalled bool
+	upsertCount int
 	deleteCalled bool
 }
 
 func (m *mockEmbedStore) Upsert(ctx context.Context, id string, textVector, imageVector []float32, payload map[string]any) error {
-	m.upsertCalled = true
+	m.upsertCount++
 	return nil
 }
 func (m *mockEmbedStore) Search(ctx context.Context, vector []float32, topK int) ([]port.EmbedResult, error) {
 	return nil, nil
 }
-func (m *mockEmbedStore) Delete(ctx context.Context, id string) error {
+func (m *mockEmbedStore) DeleteByDocID(ctx context.Context, docID string) error {
 	m.deleteCalled = true
 	return nil
 }
@@ -455,6 +456,36 @@ func TestNullIfGeneric(t *testing.T) {
 		if got != c.want {
 			t.Errorf("nullIfGeneric(%q) = %q, want %q", c.in, got, c.want)
 		}
+	}
+}
+
+// ---- chunkText ----
+
+func TestChunkText(t *testing.T) {
+	cases := []struct {
+		name    string
+		text    string
+		size    int
+		overlap int
+		want    int // expected chunk count
+	}{
+		{"short text fits in one chunk", "hello world", 1500, 200, 1},
+		{"exact size", strings.Repeat("a", 1500), 1500, 200, 1},
+		{"two chunks", strings.Repeat("a", 2000), 1500, 200, 2},
+		{"three chunks", strings.Repeat("a", 4000), 1500, 200, 3},
+		{"overlap preserves content", "abcdefghij", 6, 2, 2}, // step=4: [0:6],[4:10]
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			chunks := chunkText(c.text, c.size, c.overlap)
+			if len(chunks) != c.want {
+				t.Errorf("got %d chunks, want %d", len(chunks), c.want)
+			}
+			// Verify no data loss: last chunk ends at text end.
+			if len(chunks) > 0 && !strings.HasSuffix(c.text, chunks[len(chunks)-1]) {
+				t.Error("last chunk does not end at text end")
+			}
+		})
 	}
 }
 
@@ -796,7 +827,7 @@ func TestProcessJob_Embed_Success(t *testing.T) {
 
 	w.processJob(context.Background(), job, stage)
 
-	if !embed.upsertCalled {
+	if embed.upsertCount == 0 {
 		t.Error("expected embed store Upsert to be called")
 	}
 	updatedJob, _ := jobs.GetByID(context.Background(), job.ID)

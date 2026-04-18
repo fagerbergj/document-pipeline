@@ -16,6 +16,8 @@ type StageDefinition struct {
 	Outputs        []StageOutput
 	Destinations   []map[string]any
 	MetadataFields []string
+	ChunkSize      int `yaml:"chunk_size"`    // chars per chunk; 0 = default (1500)
+	ChunkOverlap   int `yaml:"chunk_overlap"` // overlap chars; 0 = default (200)
 	RequireContext bool
 	StartIf        map[string]any
 	ContinueIf     []map[string]any

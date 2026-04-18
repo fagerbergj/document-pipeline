@@ -24,8 +24,8 @@ func (f *fakeQdrant) Upsert(_ context.Context, id string, _ []float32, _ []float
 func (f *fakeQdrant) Search(_ context.Context, _ []float32, _ int) ([]port.EmbedResult, error) {
 	return []port.EmbedResult{{ID: "r1", Score: 0.9}}, f.err
 }
-func (f *fakeQdrant) Delete(_ context.Context, id string) error {
-	f.deleted = append(f.deleted, id)
+func (f *fakeQdrant) DeleteByDocID(_ context.Context, docID string) error {
+	f.deleted = append(f.deleted, docID)
 	return f.err
 }
 
@@ -104,7 +104,7 @@ func TestCoordinator_Delete(t *testing.T) {
 	w := &fakeWebUI{}
 	c := embed.New(q, w)
 
-	if err := c.Delete(context.Background(), "doc-1"); err != nil {
+	if err := c.DeleteByDocID(context.Background(), "doc-1"); err != nil {
 		t.Fatal(err)
 	}
 	if len(q.deleted) != 1 {
@@ -122,7 +122,7 @@ func TestCoordinator_QdrantOnly_NoWebUI(t *testing.T) {
 	if err := c.Upsert(context.Background(), "doc-1", []float32{0.1}, nil, map[string]any{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Delete(context.Background(), "doc-1"); err != nil {
+	if err := c.DeleteByDocID(context.Background(), "doc-1"); err != nil {
 		t.Fatal(err)
 	}
 }

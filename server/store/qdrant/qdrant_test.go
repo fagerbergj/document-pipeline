@@ -87,10 +87,10 @@ func TestUpsert_ExistingCollection(t *testing.T) {
 }
 
 func TestDelete(t *testing.T) {
-	deleted := false
+	var gotBody map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && r.URL.Path == "/collections/docs/points/delete" {
-			deleted = true
+			json.NewDecoder(r.Body).Decode(&gotBody)
 			json.NewEncoder(w).Encode(map[string]any{"result": map[string]any{"status": "acknowledged"}})
 		} else {
 			http.NotFound(w, r)
@@ -99,11 +99,12 @@ func TestDelete(t *testing.T) {
 	defer srv.Close()
 
 	c := qdrant.New(srv.URL, "docs", "")
-	if err := c.Delete(context.Background(), "550e8400-e29b-41d4-a716-446655440000"); err != nil {
+	if err := c.DeleteByDocID(context.Background(), "550e8400-e29b-41d4-a716-446655440000"); err != nil {
 		t.Fatal(err)
 	}
-	if !deleted {
-		t.Error("expected delete to be called")
+	// Verify filter-based delete body (not point-ID list).
+	if _, hasFilter := gotBody["filter"]; !hasFilter {
+		t.Errorf("expected filter-based delete body, got: %v", gotBody)
 	}
 }
 

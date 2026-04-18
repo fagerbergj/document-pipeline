@@ -33,4 +33,4 @@ func (s *NoopStore) Search(_ context.Context, _ []float32, _ int) ([]port.EmbedR
 	return nil, nil
 }
 
-func (s *NoopStore) Delete(_ context.Context, _ string) error { return nil }
+func (s *NoopStore) DeleteByDocID(_ context.Context, _ string) error { return nil }

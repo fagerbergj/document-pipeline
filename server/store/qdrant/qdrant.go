@@ -56,18 +56,24 @@ func (c *Client) Upsert(ctx context.Context, id string, textVector []float32, im
 	return nil
 }
 
-// Delete removes a point from the collection by document ID.
-func (c *Client) Delete(ctx context.Context, id string) error {
-	body := map[string]any{"points": []uint64{idFromUUID(id)}}
+// DeleteByDocID removes all chunk points for a document using a payload filter.
+func (c *Client) DeleteByDocID(ctx context.Context, docID string) error {
+	body := map[string]any{
+		"filter": map[string]any{
+			"must": []map[string]any{
+				{"key": "doc_id", "match": map[string]any{"value": docID}},
+			},
+		},
+	}
 	resp, err := c.do(ctx, http.MethodPost, "/collections/"+c.collection+"/points/delete", body)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("qdrant: delete %d: %s", resp.StatusCode, readBody(resp.Body))
+		return fmt.Errorf("qdrant: delete by doc_id %d: %s", resp.StatusCode, readBody(resp.Body))
 	}
-	slog.Info("qdrant delete ok", "id", id[:8])
+	slog.Info("qdrant delete ok", "doc_id", docID[:8])
 	return nil
 }
 
