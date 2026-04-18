@@ -54,6 +54,7 @@ export default function Dashboard() {
   })
 
   const docs = page?.data ?? []
+  const seriesList = [...new Set(docs.map(d => d.series).filter((s): s is string => !!s))]
   const jobIds = docs.map(d => d.current_job_id).filter(Boolean).join(',')
 
   const { data: jobsPage } = useQuery({
@@ -176,6 +177,7 @@ export default function Dashboard() {
                         <InlineSeries
                           docId={doc.id}
                           series={doc.series ?? null}
+                          seriesList={seriesList}
                           onSaved={() => qc.invalidateQueries({ queryKey: ['documents'] })}
                         />
                       </td>
@@ -243,40 +245,58 @@ export default function Dashboard() {
 }
 
 
-function InlineSeries({ docId, series, onSaved }: {
+function InlineSeries({ docId, series, seriesList, onSaved }: {
   docId: string
   series: string | null
+  seriesList: string[]
   onSaved: () => void
 }) {
   const [editing, setEditing] = useState(false)
   const [value, setValue] = useState(series ?? '')
+  const [open, setOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const mut = useMutation({
     mutationFn: (s: string) => api.updateDocument(docId, { series: s || null }),
-    onSuccess: () => { onSaved(); setEditing(false) },
+    onSuccess: () => { onSaved(); setEditing(false); setOpen(false) },
   })
 
   useEffect(() => {
-    if (editing) inputRef.current?.select()
+    if (editing) { inputRef.current?.select(); setOpen(true) }
   }, [editing])
 
+  const save = (v: string) => { setOpen(false); mut.mutate(v) }
   const startEdit = (e: React.MouseEvent) => { e.stopPropagation(); setValue(series ?? ''); setEditing(true) }
+
+  const filtered = seriesList.filter(s => s.toLowerCase().includes(value.toLowerCase()) && s !== value)
 
   if (editing) {
     return (
-      <input
-        ref={inputRef}
-        value={value}
-        onChange={e => setValue(e.target.value)}
-        onBlur={() => mut.mutate(value)}
-        onKeyDown={e => {
-          if (e.key === 'Enter') { e.preventDefault(); mut.mutate(value) }
-          if (e.key === 'Escape') { setValue(series ?? ''); setEditing(false) }
-        }}
-        className="text-sm border-b border-blue-400 bg-transparent focus:outline-none w-full"
-        disabled={mut.isPending}
-        autoFocus
-      />
+      <span className="relative" onClick={e => e.stopPropagation()}>
+        <input
+          ref={inputRef}
+          value={value}
+          onChange={e => { setValue(e.target.value); setOpen(true) }}
+          onBlur={() => setTimeout(() => save(value), 150)}
+          onKeyDown={e => {
+            if (e.key === 'Enter') { e.preventDefault(); save(value) }
+            if (e.key === 'Escape') { setValue(series ?? ''); setEditing(false); setOpen(false) }
+          }}
+          className="text-sm border-b border-blue-400 bg-transparent focus:outline-none w-full"
+          disabled={mut.isPending}
+          autoFocus
+        />
+        {open && filtered.length > 0 && (
+          <ul className="absolute z-50 top-full left-0 mt-1 min-w-[160px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg py-1 text-sm">
+            {filtered.map(s => (
+              <li key={s}
+                onMouseDown={e => { e.preventDefault(); setValue(s); save(s) }}
+                className="px-3 py-1.5 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-100">
+                {s}
+              </li>
+            ))}
+          </ul>
+        )}
+      </span>
     )
   }
 
