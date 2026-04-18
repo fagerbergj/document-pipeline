@@ -408,12 +408,18 @@ function TextArtifact({ url, filename, raw, onToggleRaw }: {
 function LiveLogSection({ jobId, onDone }: { jobId: string; onDone: () => void }) {
   const logRef = useRef<HTMLPreElement>(null)
   const [status, setStatus] = useState('connecting…')
+  const hasTokens = useRef(false)
 
   useEffect(() => {
+    hasTokens.current = false
     const es = new EventSource(`/api/v1/jobs/${jobId}/stream`)
     es.addEventListener('token', (e) => {
       const data = JSON.parse((e as MessageEvent).data)
       if (logRef.current) {
+        if (!hasTokens.current) {
+          hasTokens.current = true
+          logRef.current.textContent = ''
+        }
         logRef.current.textContent = (logRef.current.textContent ?? '') + data.text
         logRef.current.scrollTop = logRef.current.scrollHeight
       }
@@ -439,7 +445,11 @@ function LiveLogSection({ jobId, onDone }: { jobId: string; onDone: () => void }
         <span className="text-xs text-gray-400 dark:text-gray-500">{status}</span>
       </div>
       <pre ref={logRef}
-        className="bg-gray-950 text-gray-100 rounded-lg p-3 text-xs min-h-24 max-h-96 overflow-y-auto whitespace-pre-wrap font-mono" />
+        className="bg-gray-950 text-gray-100 rounded-lg p-3 text-xs min-h-24 max-h-96 overflow-y-auto whitespace-pre-wrap font-mono">
+        {status === 'connecting…' && (
+          <span className="text-gray-500 animate-pulse">Waiting for model…</span>
+        )}
+      </pre>
     </div>
   )
 }
