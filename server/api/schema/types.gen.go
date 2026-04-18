@@ -816,6 +816,15 @@ type ListPipelinesParams struct {
 	PageSize *PageSize `form:"page_size,omitempty" json:"page_size,omitempty"`
 }
 
+// ReceiveWebhookMultipartBody defines parameters for ReceiveWebhook.
+type ReceiveWebhookMultipartBody struct {
+	// Attachment PNG image of the reMarkable sheet.
+	Attachment *openapi_types.File `json:"attachment,omitempty"`
+
+	// Data JSON-encoded document metadata from rmfakecloud.
+	Data *string `json:"data,omitempty"`
+}
+
 // CreateChatJSONRequestBody defines body for CreateChat for application/json ContentType.
 type CreateChatJSONRequestBody = CreateChatBody
 
@@ -845,3 +854,6 @@ type PatchRunJSONRequestBody = PatchRunBody
 
 // PutJobStatusJSONRequestBody defines body for PutJobStatus for application/json ContentType.
 type PutJobStatusJSONRequestBody = PutJobStatusBody
+
+// ReceiveWebhookMultipartRequestBody defines body for ReceiveWebhook for multipart/form-data ContentType.
+type ReceiveWebhookMultipartRequestBody ReceiveWebhookMultipartBody

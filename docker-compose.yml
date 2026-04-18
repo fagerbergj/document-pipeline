@@ -1,7 +1,7 @@
 services:
   pipeline:
     build: .
-    container_name: remarkable-bridge
+    container_name: document-pipeline
     ports:
       - "8000:8000"
     env_file:

@@ -853,6 +853,74 @@ func TestListDocuments_Pagination(t *testing.T) {
 	}
 }
 
+// ── ingest webhook tests ──────────────────────────────────────────────────────
+
+func doWebhookRequest(t *testing.T, h *handler, dataJSON string, imageBytes []byte, filename string) *httptest.ResponseRecorder {
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	if dataJSON != "" {
+		mw.WriteField("data", dataJSON)
+	}
+	fw, _ := mw.CreateFormFile("attachment", filename)
+	fw.Write(imageBytes)
+	mw.Close()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/remarkable/webhook", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	rr := httptest.NewRecorder()
+	NewRouter(h, nil).ServeHTTP(rr, req)
+	return rr
+}
+
+func TestReceiveWebhook_NewDocument(t *testing.T) {
+	h, docs, _ := newTestHandler(t)
+	rr := doWebhookRequest(t, h, `{}`, []byte("fake-png-bytes"), "remarkable.png")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, want 200 (body: %s)", rr.Code, rr.Body.String())
+	}
+	if len(docs.docs) != 1 {
+		t.Errorf("expected 1 document, got %d", len(docs.docs))
+	}
+}
+
+func TestReceiveWebhook_Duplicate(t *testing.T) {
+	h, _, _ := newTestHandler(t)
+	imageBytes := []byte("duplicate-png-bytes")
+	if rr := doWebhookRequest(t, h, `{}`, imageBytes, "remarkable.png"); rr.Code != http.StatusOK {
+		t.Fatalf("first webhook: %d", rr.Code)
+	}
+	// Second send of the same bytes must still return 200 (rmfakecloud retries on non-200).
+	if rr := doWebhookRequest(t, h, `{}`, imageBytes, "remarkable.png"); rr.Code != http.StatusOK {
+		t.Fatalf("duplicate webhook: %d, want 200", rr.Code)
+	}
+}
+
+func TestReceiveWebhook_TitleFromDestinations(t *testing.T) {
+	h, docs, _ := newTestHandler(t)
+	dataJSON := `{"destinations": ["My Notebook"]}`
+	doWebhookRequest(t, h, dataJSON, []byte("notebook-png-bytes"), "remarkable.png")
+	for _, doc := range docs.docs {
+		if doc.Title == nil || *doc.Title != "My Notebook" {
+			t.Errorf("title = %v, want 'My Notebook'", doc.Title)
+		}
+	}
+}
+
+func TestReceiveWebhook_MissingAttachment(t *testing.T) {
+	h, _, _ := newTestHandler(t)
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	mw.WriteField("data", "{}")
+	mw.Close()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/remarkable/webhook", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	rr := httptest.NewRecorder()
+	NewRouter(h, nil).ServeHTTP(rr, req)
+	if rr.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status %d, want 422", rr.Code)
+	}
+}
+
 // ── splitCSV ─────────────────────────────────────────────────────────────────
 
 func TestSplitCSV(t *testing.T) {
