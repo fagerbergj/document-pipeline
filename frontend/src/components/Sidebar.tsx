@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api'
+import type { JobSummary } from '../generated/types.gen'
 
 const STATUSES = ['pending', 'running', 'waiting', 'error', 'done']
 const STATUS_COLORS: Record<string, string> = {
@@ -38,10 +39,23 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     refetchInterval: 10_000,
   })
 
-  const jobs = jobsPage?.data ?? []
   const pipelineStages = pipelineDetail?.stages ?? []
 
-  // Aggregate counts from jobs list
+  // Keep only the current job per document (same priority as server pickCurrentJob).
+  const statusPriority: Record<string, number> = { running: 0, waiting: 1, pending: 2, error: 3, done: 4 }
+  const currentJobByDoc = new Map<string, JobSummary>()
+  for (const job of jobsPage?.data ?? []) {
+    const existing = currentJobByDoc.get(job.document_id)
+    if (!existing) { currentJobByDoc.set(job.document_id, job); continue }
+    const cur = statusPriority[existing.status] ?? 99
+    const next = statusPriority[job.status] ?? 99
+    if (next < cur || (next === cur && job.updated_at > existing.updated_at)) {
+      currentJobByDoc.set(job.document_id, job)
+    }
+  }
+  const jobs = Array.from(currentJobByDoc.values())
+
+  // Aggregate counts from current jobs only
   const statusCounts: Record<string, number> = {}
   const stageCounts: Record<string, number> = {}
   for (const job of jobs) {
