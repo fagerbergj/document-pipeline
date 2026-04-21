@@ -403,7 +403,7 @@ func (w *WorkerService) runLLMText(
 	}
 
 	mdl := adk.NewPortLLMModel(w.llm, stage.Model)
-	result, genErr := adk.RunAgent(ctx, mdl, []tool.Tool{ragTool}, "", userParts)
+	result, genErr := adk.RunAgent(ctx, mdl, []tool.Tool{ragTool}, "", userParts, nil)
 	if genErr != nil {
 		w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventDone})
 		return fmt.Errorf("LLM generate: %w", genErr)

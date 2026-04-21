@@ -162,11 +162,17 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	history, err := h.messages.List(r.Context(), chatID)
+	rawHistory, err := h.messages.List(r.Context(), chatID)
 	if err != nil {
 		slog.Error("sendChatMessage list history", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
+	}
+	history := make([]port.LLMMessage, 0, len(rawHistory))
+	for _, m := range rawHistory {
+		if m.Role == "user" || m.Role == "assistant" {
+			history = append(history, port.LLMMessage{Role: m.Role, Content: m.Content})
+		}
 	}
 
 	if _, err := h.messages.Append(r.Context(), chatID, "user", content, nil); err != nil {
@@ -203,22 +209,11 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
-	// Build conversation history as ADK instruction context.
-	var historyBlock strings.Builder
-	for _, m := range history {
-		if m.Role == "user" || m.Role == "assistant" {
-			historyBlock.WriteString(m.Role + ": " + m.Content + "\n")
-		}
-	}
-	systemPromptText := chat.SystemPrompt
 	instruction := "You are a helpful assistant with access to a personal notes knowledge base. " +
 		"Use the rag_search tool to find relevant notes before answering. " +
 		"If you cannot find relevant information, say so."
-	if systemPromptText != "" {
-		instruction += "\n\nAdditional context:\n" + systemPromptText
-	}
-	if historyBlock.Len() > 0 {
-		instruction += "\n\nConversation so far:\n" + historyBlock.String()
+	if chat.SystemPrompt != "" {
+		instruction += "\n\nAdditional context:\n" + chat.SystemPrompt
 	}
 
 	ragTool, err := adktools.NewRagSearchTool(h.embed, h.llm.GenerateEmbed, h.embedModel)
@@ -231,7 +226,7 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 
 	mdl := adk.NewPortLLMModel(h.llm, queryModel)
 	userParts := []*genai.Part{{Text: content}}
-	result, runErr := adk.RunAgent(ctx, mdl, []tool.Tool{ragTool}, instruction, userParts)
+	result, runErr := adk.RunAgent(ctx, mdl, []tool.Tool{ragTool}, instruction, userParts, history)
 	if runErr != nil {
 		b, _ := json.Marshal(map[string]string{port.EventFieldError: runErr.Error()})
 		writeSSEEvent(w, port.EventError, string(b))
