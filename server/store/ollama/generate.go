@@ -65,15 +65,100 @@ func (c *Client) GenerateText(ctx context.Context, model, prompt string, onChunk
 	})
 }
 
-// ChatStream streams /api/chat, calling onChunk for each token.
-func (c *Client) ChatStream(ctx context.Context, model string, messages []port.LLMMessage, onChunk func(string)) error {
-	msgs := make([]map[string]string, len(messages))
-	for i, m := range messages {
-		msgs[i] = map[string]string{"role": m.Role, "content": m.Content}
-	}
+// ChatWithTools calls /api/chat with optional tool definitions (non-streaming).
+// Returns (responseText, toolCalls, error). If the model requests tool calls,
+// responseText is empty; the caller should execute the tools and call again.
+func (c *Client) ChatWithTools(ctx context.Context, model string, messages []port.LLMMessage, tools []port.LLMTool) (string, []port.LLMToolCall, error) {
+	msgs := msgsToOllama(messages)
+
 	payload := map[string]any{
 		"model":    model,
 		"messages": msgs,
+		"stream":   false,
+	}
+	if len(tools) > 0 {
+		ollamaTools := make([]map[string]any, len(tools))
+		for i, t := range tools {
+			ollamaTools[i] = map[string]any{
+				"type": "function",
+				"function": map[string]any{
+					"name":        t.Name,
+					"description": t.Description,
+					"parameters":  t.Parameters,
+				},
+			}
+		}
+		payload["tools"] = ollamaTools
+	}
+
+	body, err := jsonPost(ctx, c.httpLong, c.baseURL+"/api/chat", payload)
+	if err != nil {
+		return "", nil, fmt.Errorf("ollama chat-with-tools: %w", err)
+	}
+
+	var resp struct {
+		Message struct {
+			Content   string `json:"content"`
+			ToolCalls []struct {
+				Function struct {
+					Name      string         `json:"name"`
+					Arguments map[string]any `json:"arguments"`
+				} `json:"function"`
+			} `json:"tool_calls"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return "", nil, fmt.Errorf("ollama chat-with-tools decode: %w", err)
+	}
+
+	if len(resp.Message.ToolCalls) > 0 {
+		calls := make([]port.LLMToolCall, len(resp.Message.ToolCalls))
+		for i, tc := range resp.Message.ToolCalls {
+			calls[i] = port.LLMToolCall{
+				ID:        fmt.Sprintf("call_%d", i),
+				Name:      tc.Function.Name,
+				Arguments: tc.Function.Arguments,
+			}
+		}
+		return "", calls, nil
+	}
+	return resp.Message.Content, nil, nil
+}
+
+// msgsToOllama converts port.LLMMessage slice to the Ollama API message format.
+func msgsToOllama(messages []port.LLMMessage) []map[string]any {
+	msgs := make([]map[string]any, 0, len(messages))
+	for _, m := range messages {
+		msg := map[string]any{"role": m.Role, "content": m.Content}
+		if len(m.Images) > 0 {
+			imgs := make([]string, len(m.Images))
+			for i, img := range m.Images {
+				imgs[i] = base64.StdEncoding.EncodeToString(img)
+			}
+			msg["images"] = imgs
+		}
+		if len(m.ToolCalls) > 0 {
+			tcs := make([]map[string]any, len(m.ToolCalls))
+			for i, tc := range m.ToolCalls {
+				tcs[i] = map[string]any{
+					"function": map[string]any{
+						"name":      tc.Name,
+						"arguments": tc.Arguments,
+					},
+				}
+			}
+			msg["tool_calls"] = tcs
+		}
+		msgs = append(msgs, msg)
+	}
+	return msgs
+}
+
+// ChatStream streams /api/chat, calling onChunk for each token.
+func (c *Client) ChatStream(ctx context.Context, model string, messages []port.LLMMessage, onChunk func(string)) error {
+	payload := map[string]any{
+		"model":    model,
+		"messages": msgsToOllama(messages),
 		"stream":   true,
 	}
 	return streamGenerate(ctx, c.httpLong, c.baseURL+"/api/chat", payload, func(line []byte) error {

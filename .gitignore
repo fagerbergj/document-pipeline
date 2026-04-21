@@ -3,6 +3,9 @@
 *.test
 coverage.out
 
+# JS
+node_modules
+
 # Environment
 .env
 .env.*

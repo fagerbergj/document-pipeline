@@ -301,6 +301,9 @@ func (m *mockLLM) GenerateVision(_ context.Context, _, _ string, _ []byte, _ fun
 	return nil
 }
 func (m *mockLLM) GenerateText(_ context.Context, _, _ string, _ func(string)) error { return nil }
+func (m *mockLLM) ChatWithTools(_ context.Context, _ string, _ []port.LLMMessage, _ []port.LLMTool) (string, []port.LLMToolCall, error) {
+	return "", nil, nil
+}
 func (m *mockLLM) ChatStream(_ context.Context, _ string, _ []port.LLMMessage, _ func(string)) error {
 	return nil
 }

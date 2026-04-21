@@ -10,6 +10,11 @@ import (
 	"strings"
 	"time"
 
+	"google.golang.org/adk/tool"
+	"google.golang.org/genai"
+
+	"github.com/fagerbergj/document-pipeline/server/core/adk"
+	adktools "github.com/fagerbergj/document-pipeline/server/core/adk/tools"
 	"github.com/fagerbergj/document-pipeline/server/core/model"
 	"github.com/fagerbergj/document-pipeline/server/core/port"
 	"github.com/google/uuid"
@@ -25,19 +30,20 @@ var confidenceLevels = map[model.Confidence]int{
 
 // WorkerService runs the pipeline stage loop.
 type WorkerService struct {
-	docs      port.DocumentRepo
-	jobs      port.JobRepo
-	artifacts port.ArtifactRepo
-	events    port.StageEventRepo
-	contexts  port.ContextRepo
-	kv        port.KeyValueRepo
-	store     port.DocumentArtifactStore
-	llm       port.LLMInference
-	embed     port.EmbedStore
-	streams   port.StreamManager
-	prompts   port.PromptRenderer
-	pipeline  model.PipelineConfig
-	vaultPath string
+	docs       port.DocumentRepo
+	jobs       port.JobRepo
+	artifacts  port.ArtifactRepo
+	events     port.StageEventRepo
+	contexts   port.ContextRepo
+	kv         port.KeyValueRepo
+	store      port.DocumentArtifactStore
+	llm        port.LLMInference
+	embed      port.EmbedStore
+	streams    port.StreamManager
+	prompts    port.PromptRenderer
+	pipeline   model.PipelineConfig
+	vaultPath  string
+	embedModel string // resolved once from pipeline config
 }
 
 func NewWorkerService(
@@ -55,9 +61,18 @@ func NewWorkerService(
 	pipeline model.PipelineConfig,
 	vaultPath string,
 ) *WorkerService {
+	em := "nomic-embed-text:v1.5"
+	for _, s := range pipeline.Stages {
+		if s.Type == model.StageTypeEmbed && s.Model != "" {
+			em = s.Model
+			break
+		}
+	}
 	return &WorkerService{
-		docs, jobs, artifacts, events, contexts, kv, store,
-		llm, embed, streams, prompts, pipeline, vaultPath,
+		docs: docs, jobs: jobs, artifacts: artifacts, events: events,
+		contexts: contexts, kv: kv, store: store, llm: llm, embed: embed,
+		streams: streams, prompts: prompts, pipeline: pipeline,
+		vaultPath: vaultPath, embedModel: em,
 	}
 }
 
@@ -371,29 +386,38 @@ func (w *WorkerService) runLLMText(
 	}
 
 	w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventStatus, Data: `{"text":"Loading model ` + stage.Model + `\u2026"}`})
-	var rawResp strings.Builder
-	onChunk := func(chunk string) {
-		rawResp.WriteString(chunk)
-		w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventToken, Data: chunk})
+
+	ragTool, ragErr := adktools.NewRagSearchTool(w.embed, w.llm.GenerateEmbed, w.embedModel)
+	if ragErr != nil {
+		w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventDone})
+		return fmt.Errorf("rag tool init: %w", ragErr)
 	}
 
-	var genErr error
+	// Build the user message parts: text prompt + optional image.
+	userText := promptText + "\n\n" + inputText
+	userParts := []*genai.Part{{Text: userText}}
 	if imageBytes != nil {
-		genErr = w.llm.GenerateVision(ctx, stage.Model, promptText, imageBytes, onChunk)
-	} else {
-		genErr = w.llm.GenerateText(ctx, stage.Model, promptText+"\n\n"+inputText, onChunk)
+		userParts = append(userParts, &genai.Part{
+			InlineData: &genai.Blob{MIMEType: "image/png", Data: imageBytes},
+		})
 	}
+
+	mdl := adk.NewPortLLMModel(w.llm, stage.Model)
+	result, genErr := adk.RunAgent(ctx, mdl, []tool.Tool{ragTool}, "", userParts)
 	if genErr != nil {
 		w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventDone})
 		return fmt.Errorf("LLM generate: %w", genErr)
 	}
+	rawResp := result.Text
+	// Stream collected text to SSE subscribers.
+	w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventToken, Data: rawResp})
 
 	if wasStopped(ctx, w.jobs, job.ID) {
 		w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventDone})
 		return nil
 	}
 
-	inputs, outputs, confidence, questions, suggestions := parseLLMResponse(rawResp.String(), inputField, inputText, stage)
+	inputs, outputs, confidence, questions, suggestions := parseLLMResponse(rawResp, inputField, inputText, stage)
 
 	now = time.Now().UTC()
 	run := makeRun(inputs, outputs, confidence, questions, suggestions)
@@ -509,12 +533,18 @@ func (w *WorkerService) runEmbed(
 	for i, chunk := range chunks {
 		chunkID := fmt.Sprintf("%s-%04d", doc.ID, i)
 
-		chunkPayload := make(map[string]any, len(basePayload)+3)
+		chunkPayload := make(map[string]any, len(basePayload)+5)
 		for k, v := range basePayload {
 			chunkPayload[k] = v
 		}
 		chunkPayload[port.PayloadText] = chunk
 		chunkPayload[port.PayloadChunkIndex] = i
+		if i > 0 {
+			chunkPayload[port.PayloadPrevChunk] = fmt.Sprintf("%s-%04d", doc.ID, i-1)
+		}
+		if i < len(chunks)-1 {
+			chunkPayload[port.PayloadNextChunk] = fmt.Sprintf("%s-%04d", doc.ID, i+1)
+		}
 
 		vec, err := w.llm.GenerateEmbed(ctx, stage.Model, chunk)
 		if err != nil {
@@ -603,6 +633,12 @@ func (w *WorkerService) rebuildSeriesCorpus(
 			port.PayloadSeriesName: series,
 			port.PayloadText:       chunk,
 			port.PayloadChunkIndex: i,
+		}
+		if i > 0 {
+			payload[port.PayloadPrevChunk] = fmt.Sprintf("series:%s-%04d", series, i-1)
+		}
+		if i < len(chunks)-1 {
+			payload[port.PayloadNextChunk] = fmt.Sprintf("series:%s-%04d", series, i+1)
 		}
 		vec, err := w.llm.GenerateEmbed(ctx, stage.Model, chunk)
 		if err != nil {
