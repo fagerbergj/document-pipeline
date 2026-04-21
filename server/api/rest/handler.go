@@ -3,6 +3,7 @@ package rest
 import (
 	"io/fs"
 	"net/http"
+	"os"
 
 	"github.com/fagerbergj/document-pipeline/server/core"
 	"github.com/fagerbergj/document-pipeline/server/core/model"
@@ -22,9 +23,10 @@ type handler struct {
 	llm       port.LLMInference
 	embed     port.EmbedStore
 	search    port.DocumentIndexer
-	ingest    *core.IngestService
-	pipeline  model.PipelineConfig
-	vaultPath string
+	ingest     *core.IngestService
+	pipeline   model.PipelineConfig
+	vaultPath  string
+	embedModel string
 }
 
 // Dependencies bundles the wiring passed to New. Using a struct instead of a long
@@ -49,6 +51,18 @@ type Dependencies struct {
 	FrontendFS fs.FS
 }
 
+func resolveEmbedModel(pipeline model.PipelineConfig) string {
+	for _, s := range pipeline.Stages {
+		if s.Type == model.StageTypeEmbed && s.Model != "" {
+			return s.Model
+		}
+	}
+	if em := os.Getenv("EMBED_MODEL"); em != "" {
+		return em
+	}
+	return "nomic-embed-text:v1.5"
+}
+
 // New constructs the HTTP handler and returns the fully wired router.
 func New(deps Dependencies) http.Handler {
 	h := &handler{
@@ -63,9 +77,10 @@ func New(deps Dependencies) http.Handler {
 		llm:       deps.LLM,
 		embed:     deps.Embed,
 		search:    deps.Search,
-		ingest:    deps.Ingest,
-		pipeline:  deps.Pipeline,
-		vaultPath: deps.VaultPath,
+		ingest:     deps.Ingest,
+		pipeline:   deps.Pipeline,
+		vaultPath:  deps.VaultPath,
+		embedModel: resolveEmbedModel(deps.Pipeline),
 	}
 	return NewRouter(h, deps.FrontendFS)
 }

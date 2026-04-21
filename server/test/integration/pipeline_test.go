@@ -96,6 +96,30 @@ func mockOllamaServer(t *testing.T, generateResponse string) *httptest.Server {
 			} else {
 				json.NewEncoder(w).Encode(map[string]any{"response": generateResponse})
 			}
+		case "/api/chat":
+			// Tool-use and chat endpoint — return fixed response as plain text (no tool calls).
+			body, _ := io.ReadAll(r.Body)
+			var req struct {
+				Stream bool `json:"stream"`
+			}
+			json.Unmarshal(body, &req)
+			if req.Stream {
+				for _, tok := range strings.Fields(generateResponse) {
+					json.NewEncoder(w).Encode(map[string]any{
+						"message": map[string]any{"role": "assistant", "content": tok + " "},
+						"done":    false,
+					})
+				}
+				json.NewEncoder(w).Encode(map[string]any{
+					"message": map[string]any{"role": "assistant", "content": ""},
+					"done":    true,
+				})
+			} else {
+				json.NewEncoder(w).Encode(map[string]any{
+					"message": map[string]any{"role": "assistant", "content": generateResponse},
+					"done":    true,
+				})
+			}
 		case "/api/embed":
 			json.NewEncoder(w).Encode(map[string]any{
 				"embeddings": [][]float32{{0.1, 0.2, 0.3, 0.4}},

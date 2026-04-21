@@ -6,11 +6,15 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"sort"
 	"strconv"
 	"strings"
 
+	"google.golang.org/adk/tool"
+	"google.golang.org/genai"
+
 	"github.com/fagerbergj/document-pipeline/server/api/schema"
+	"github.com/fagerbergj/document-pipeline/server/core/adk"
+	adktools "github.com/fagerbergj/document-pipeline/server/core/adk/tools"
 	"github.com/fagerbergj/document-pipeline/server/core/model"
 	"github.com/fagerbergj/document-pipeline/server/core/port"
 	"github.com/go-chi/chi/v5"
@@ -188,17 +192,6 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve embed model and query model from pipeline config
-	embedModel := os.Getenv("EMBED_MODEL")
-	if embedModel == "" {
-		embedModel = "nomic-embed-text:v1.5"
-	}
-	for _, s := range h.pipeline.Stages {
-		if s.Type == model.StageTypeEmbed && s.Model != "" {
-			embedModel = s.Model
-			break
-		}
-	}
 	queryModel := os.Getenv("QUERY_MODEL")
 	if queryModel == "" {
 		queryModel = os.Getenv("CLARIFY_MODEL")
@@ -210,123 +203,70 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
-	// RAG retrieval
-	rag := chat.RAGRetrieval
-	var sources []model.SourceRef
-	if rag.Enabled && rag.MaxSources > 0 {
-		queryVec, err := h.llm.GenerateEmbed(ctx, embedModel, content)
-		if err != nil {
-			b, _ := json.Marshal(map[string]string{port.EventFieldError: err.Error()})
-			writeSSEEvent(w, port.EventError, string(b))
-			flusher.Flush()
-			return
-		}
-		results, err := h.embed.Search(ctx, queryVec, rag.MaxSources*5)
-		if err != nil {
-			slog.Warn("sendChatMessage embed search", "err", err)
-		}
-		// Deduplicate by doc_id (per-doc chunks) or series_name (corpus chunks),
-		// keeping the highest-scoring chunk per unique source.
-		seen := map[string]model.SourceRef{}
-		for _, res := range results {
-			if rag.MinimumScore > 0 && res.Score < rag.MinimumScore {
-				continue
-			}
-			docID := stringPayload(res.Payload, port.PayloadDocID)
-			seriesName := stringPayload(res.Payload, port.PayloadSeriesName)
-			key := docID
-			if key == "" {
-				key = "series:" + seriesName
-			}
-			if key == "series:" {
-				continue
-			}
-			ref := model.SourceRef{
-				DocumentID: docID,
-				SeriesName: seriesName,
-				Title:      stringPayload(res.Payload, port.PayloadTitle),
-				Summary:    stringPayload(res.Payload, port.PayloadSummary),
-				Text:       stringPayload(res.Payload, port.PayloadText),
-				DateMonth:  stringPayload(res.Payload, port.PayloadDateMonth),
-				Score:      res.Score,
-			}
-			if existing, ok := seen[key]; !ok || res.Score > existing.Score {
-				seen[key] = ref
-			}
-		}
-		// Collect, sort by score descending, trim to MaxSources.
-		for _, ref := range seen {
-			sources = append(sources, ref)
-		}
-		sort.Slice(sources, func(i, j int) bool { return sources[i].Score > sources[j].Score })
-		if len(sources) > rag.MaxSources {
-			sources = sources[:rag.MaxSources]
-		}
-	}
-
-	// Send sources event
-	sourceBytes, _ := json.Marshal(sources)
-	writeSSEEvent(w, "sources", string(sourceBytes))
-	flusher.Flush()
-
-	// Build system prompt with RAG context
-	var notesBlock strings.Builder
-	for _, res := range sources {
-		notesBlock.WriteString("---\n")
-		notesBlock.WriteString("Title: " + res.Title)
-		if res.DateMonth != "" {
-			notesBlock.WriteString(" (" + res.DateMonth + ")")
-		}
-		text := res.Text
-		if text == "" {
-			text = res.Summary
-		}
-		notesBlock.WriteString("\n" + text + "\n\n")
-	}
-	systemPrompt := chat.SystemPrompt
-	ctxBlock := ""
-	if systemPrompt != "" {
-		ctxBlock = "\nAdditional context:\n" + systemPrompt + "\n"
-	}
-	notesSection := "\n(No matching notes found.)\n"
-	if notesBlock.Len() > 0 {
-		notesSection = "\nRetrieved notes:\n" + notesBlock.String()
-	}
-	systemContent := "You are a helpful assistant with access to a personal notes knowledge base. " +
-		"Answer based on the retrieved notes. If they don't contain enough information, say so." +
-		ctxBlock + notesSection
-
-	// Build message history
-	llmMessages := []port.LLMMessage{{Role: "system", Content: systemContent}}
+	// Build conversation history as ADK instruction context.
+	var historyBlock strings.Builder
 	for _, m := range history {
 		if m.Role == "user" || m.Role == "assistant" {
-			llmMessages = append(llmMessages, port.LLMMessage{Role: m.Role, Content: m.Content})
+			historyBlock.WriteString(m.Role + ": " + m.Content + "\n")
 		}
 	}
-	llmMessages = append(llmMessages, port.LLMMessage{Role: "user", Content: content})
+	systemPromptText := chat.SystemPrompt
+	instruction := "You are a helpful assistant with access to a personal notes knowledge base. " +
+		"Use the rag_search tool to find relevant notes before answering. " +
+		"If you cannot find relevant information, say so."
+	if systemPromptText != "" {
+		instruction += "\n\nAdditional context:\n" + systemPromptText
+	}
+	if historyBlock.Len() > 0 {
+		instruction += "\n\nConversation so far:\n" + historyBlock.String()
+	}
 
-	// Stream LLM response
-	var buf strings.Builder
-	streamErr := h.llm.ChatStream(ctx, queryModel, llmMessages, func(token string) {
-		buf.WriteString(token)
-		b, _ := json.Marshal(map[string]string{port.EventFieldText: token})
-		writeSSEEvent(w, port.EventToken, string(b))
-		flusher.Flush()
-	})
-
-	if streamErr != nil {
-		b, _ := json.Marshal(map[string]string{port.EventFieldError: streamErr.Error()})
+	ragTool, err := adktools.NewRagSearchTool(h.embed, h.llm.GenerateEmbed, h.embedModel)
+	if err != nil {
+		b, _ := json.Marshal(map[string]string{port.EventFieldError: err.Error()})
 		writeSSEEvent(w, port.EventError, string(b))
 		flusher.Flush()
 		return
 	}
 
+	mdl := adk.NewPortLLMModel(h.llm, queryModel)
+	userParts := []*genai.Part{{Text: content}}
+	result, runErr := adk.RunAgent(ctx, mdl, []tool.Tool{ragTool}, instruction, userParts)
+	if runErr != nil {
+		b, _ := json.Marshal(map[string]string{port.EventFieldError: runErr.Error()})
+		writeSSEEvent(w, port.EventError, string(b))
+		flusher.Flush()
+		return
+	}
+
+	// Collect sources from tool call results.
+	retrievedChunks := adktools.RagSourcesFromPayloads(result.ToolResponses)
+	var sources []model.SourceRef
+	for _, c := range retrievedChunks {
+		sources = append(sources, model.SourceRef{
+			Title:     c.Title,
+			Text:      c.Text,
+			DateMonth: c.DateMonth,
+			Score:     c.Score,
+		})
+	}
+
+	// Send sources event then the full response text.
+	sourceBytes, _ := json.Marshal(sources)
+	writeSSEEvent(w, "sources", string(sourceBytes))
+	flusher.Flush()
+
+	responseText := result.Text
+	b, _ := json.Marshal(map[string]string{port.EventFieldText: responseText})
+	writeSSEEvent(w, port.EventToken, string(b))
+	flusher.Flush()
+
 	writeSSEEvent(w, port.EventDone, "{}")
 	flusher.Flush()
 
-	// Persist assistant message
-	if buf.Len() > 0 {
-		if _, err := h.messages.Append(r.Context(), chatID, "assistant", buf.String(), sources); err != nil {
+	// Persist assistant message.
+	if responseText != "" {
+		if _, err := h.messages.Append(r.Context(), chatID, "assistant", responseText, sources); err != nil {
 			slog.Error("sendChatMessage append assistant", "err", err)
 		}
 	}

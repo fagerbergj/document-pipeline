@@ -247,6 +247,9 @@ func (m *mockLLM) GenerateText(ctx context.Context, model_, prompt string, onChu
 	onChunk(m.textResponse)
 	return nil
 }
+func (m *mockLLM) ChatWithTools(ctx context.Context, model_ string, messages []port.LLMMessage, tools []port.LLMTool) (string, []port.LLMToolCall, error) {
+	return m.textResponse, nil, m.err
+}
 func (m *mockLLM) ChatStream(ctx context.Context, model_ string, messages []port.LLMMessage, onChunk func(string)) error {
 	return nil
 }

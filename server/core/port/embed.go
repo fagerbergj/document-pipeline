@@ -11,6 +11,8 @@ const (
 	PayloadSummary    = "summary"
 	PayloadChunkIndex = "chunk_index"
 	PayloadSeriesName = "series_name"
+	PayloadPrevChunk  = "prev_chunk_id"
+	PayloadNextChunk  = "next_chunk_id"
 )
 
 // EmbedStore stores and retrieves document embeddings.
