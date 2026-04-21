@@ -12,17 +12,17 @@ import (
 
 // handler holds all dependencies needed by the HTTP handlers.
 type handler struct {
-	docs      port.DocumentRepo
-	jobs      port.JobRepo
-	artifacts port.ArtifactRepo
-	contexts  port.ContextRepo
-	chats     port.ChatRepo
-	messages  port.ChatMessageRepo
-	store     port.DocumentArtifactStore
-	streams   port.StreamManager
-	llm       port.LLMInference
-	embed     port.EmbedStore
-	search    port.DocumentIndexer
+	docs       port.DocumentRepo
+	jobs       port.JobRepo
+	artifacts  port.ArtifactRepo
+	contexts   port.ContextRepo
+	chats      port.ChatRepo
+	messages   port.ChatMessageRepo
+	store      port.DocumentArtifactStore
+	streams    port.StreamManager
+	llm        port.LLMInference
+	embed      port.EmbedStore
+	search     port.DocumentIndexer
 	ingest     *core.IngestService
 	pipeline   model.PipelineConfig
 	vaultPath  string
@@ -66,17 +66,17 @@ func resolveEmbedModel(pipeline model.PipelineConfig) string {
 // New constructs the HTTP handler and returns the fully wired router.
 func New(deps Dependencies) http.Handler {
 	h := &handler{
-		docs:      deps.Documents,
-		jobs:      deps.Jobs,
-		artifacts: deps.Artifacts,
-		contexts:  deps.Contexts,
-		chats:     deps.Chats,
-		messages:  deps.Messages,
-		store:     deps.Store,
-		streams:   deps.Streams,
-		llm:       deps.LLM,
-		embed:     deps.Embed,
-		search:    deps.Search,
+		docs:       deps.Documents,
+		jobs:       deps.Jobs,
+		artifacts:  deps.Artifacts,
+		contexts:   deps.Contexts,
+		chats:      deps.Chats,
+		messages:   deps.Messages,
+		store:      deps.Store,
+		streams:    deps.Streams,
+		llm:        deps.LLM,
+		embed:      deps.Embed,
+		search:     deps.Search,
 		ingest:     deps.Ingest,
 		pipeline:   deps.Pipeline,
 		vaultPath:  deps.VaultPath,
