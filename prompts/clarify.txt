@@ -54,11 +54,6 @@ Set confidence based on how certain you are of the output:
 - "medium": some uncertainty resolved via context, minor questions remain
 - "low": significant ambiguities, illegible segments, or missing context
 
-After producing the output, suggest updates to the context fields:
-
-- <document_context_update>: Write the full updated per-document context (the "chapter" notes). Complete replacement, not a diff. Start from the existing <document_context> (if any), incorporate everything new you learned about this specific document — names, abbreviations, subject matter, structure — and write it out in full. A future model must be able to use it alone. Always write the full text; never leave it empty or write only what changed.
-- <linked_context_update>: Only include this if a <linked_context> was provided. Write the full updated shared context (the "book" notes) — same rules: complete replacement, not a diff, self-contained. Only include facts that apply broadly across many documents in the same collection, not details specific to this single page. Omit this tag entirely if no linked context was provided or if it needs no changes.
-
 Respond using exactly this format — no extra text before or after:
 
 <clarified_text>
@@ -66,9 +61,3 @@ corrected and expanded text in Markdown
 </clarified_text>
 <confidence>high|medium|low</confidence>
 <questions>[{"segment": "exact text from OCR", "question": "specific question"}]</questions>
-<document_context_update>
-full updated per-document context — complete replacement, not a diff
-</document_context_update>
-<linked_context_update>
-full updated shared context — complete replacement, not a diff (omit tag entirely if no linked context was provided)
-</linked_context_update>

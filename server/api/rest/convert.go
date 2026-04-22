@@ -108,14 +108,13 @@ func toRuns(runs []model.Run) []schema.Run {
 
 func toRun(r model.Run) schema.Run {
 	return schema.Run{
-		Id:          toUUID(r.ID),
-		Inputs:      toIOFields(r.Inputs),
-		Outputs:     toIOFields(r.Outputs),
-		Confidence:  schema.RunConfidence(r.Confidence),
-		Questions:   toQuestions(r.Questions),
-		Suggestions: toSuggestions(r.Suggestions),
-		CreatedAt:   r.CreatedAt,
-		UpdatedAt:   r.UpdatedAt,
+		Id:         toUUID(r.ID),
+		Inputs:     toIOFields(r.Inputs),
+		Outputs:    toIOFields(r.Outputs),
+		Confidence: schema.RunConfidence(r.Confidence),
+		Questions:  toQuestions(r.Questions),
+		CreatedAt:  r.CreatedAt,
+		UpdatedAt:  r.UpdatedAt,
 	}
 }
 
@@ -141,14 +140,6 @@ func toQuestions(qs []model.Question) []schema.RunQuestion {
 		})
 	}
 	return out
-}
-
-func toSuggestions(s model.Suggestions) schema.RunSuggestions {
-	return schema.RunSuggestions{
-		AdditionalContext: strPtr(s.AdditionalContext),
-		LinkedContext:     strPtr(s.LinkedContext),
-		LinkedContextId:   toUUIDPtr(s.LinkedContextID),
-	}
 }
 
 // ── Documents ─────────────────────────────────────────────────────────────────

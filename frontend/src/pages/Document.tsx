@@ -106,7 +106,7 @@ export default function Document() {
           <h2 className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-widest">Jobs</h2>
           {job?.status === 'running' && <LiveLogSection jobId={job.id} onDone={refresh} />}
           {job?.status === 'waiting' && latestRun && (
-            <ReviewSection job={job} run={latestRun} doc={doc} onRefresh={refresh} />
+            <ReviewSection job={job} run={latestRun} onRefresh={refresh} />
           )}
           {job?.status === 'error' && (
             <ErrorSection job={job} onRefresh={refresh} />
@@ -539,20 +539,18 @@ function LiveLogSection({ jobId, onDone }: { jobId: string; onDone: () => void }
         <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">Live output</div>
         <span className="text-xs text-gray-400 dark:text-gray-500">{status}</span>
       </div>
+      {status === 'connecting…' && (
+        <p className="text-xs text-gray-500 animate-pulse mb-2">{statusMsg || 'Waiting for model…'}</p>
+      )}
       <pre ref={logRef}
-        className="bg-gray-950 text-gray-100 rounded-lg p-3 text-xs min-h-24 max-h-96 overflow-y-auto whitespace-pre-wrap font-mono">
-        {status === 'connecting…' && (
-          <span className="text-gray-500 animate-pulse">{statusMsg || 'Waiting for model…'}</span>
-        )}
-      </pre>
+        className="bg-gray-950 text-gray-100 rounded-lg p-3 text-xs min-h-24 max-h-96 overflow-y-auto whitespace-pre-wrap font-mono" />
     </div>
   )
 }
 
-function ReviewSection({ job, run, doc, onRefresh }: {
+function ReviewSection({ job, run, onRefresh }: {
   job: JobDetail
   run: Run
-  doc: DocumentDetail
   onRefresh: () => void
 }) {
   const [answers, setAnswers] = useState<Record<number, string>>({})
@@ -654,94 +652,7 @@ function ReviewSection({ job, run, doc, onRefresh }: {
         </div>
       </div>
 
-      {/* Context suggestions from LLM */}
-      {run.suggestions?.additional_context?.trim() && (
-        <ContextSuggestionSection
-          label="Additional context suggestion"
-          current={doc.additional_context}
-          proposed={run.suggestions.additional_context.trim()}
-          onSave={(text) => api.updateDocument(doc.id, { additional_context: text })}
-          onRefresh={onRefresh}
-        />
-      )}
-      {run.suggestions?.linked_context?.trim() && run.suggestions.linked_context_id && (
-        <LinkedContextSuggestion
-          contextId={run.suggestions.linked_context_id}
-          proposed={run.suggestions.linked_context.trim()}
-          onRefresh={onRefresh}
-        />
-      )}
     </div>
-  )
-}
-
-function ContextSuggestionSection({ label, current, proposed, onSave, onRefresh }: {
-  label: string
-  current?: string | null
-  proposed: string
-  onSave: (text: string) => Promise<unknown>
-  onRefresh: () => void
-}) {
-  const [edited, setEdited] = useState(proposed)
-  const [dismissed, setDismissed] = useState(false)
-
-  const saveMut = useMutation({
-    mutationFn: () => onSave(edited),
-    onSuccess: onRefresh,
-  })
-
-  if (dismissed) return null
-
-  return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-      <div className="flex items-center justify-between mb-4">
-        <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">{label}</div>
-        <div className="flex gap-2">
-          <button onClick={() => saveMut.mutate()} disabled={saveMut.isPending}
-            className="px-4 py-1.5 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
-            {saveMut.isSuccess ? 'Saved' : 'Accept'}
-          </button>
-          <button onClick={() => setDismissed(true)}
-            className="px-4 py-1.5 text-sm font-medium border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
-            Dismiss
-          </button>
-        </div>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div>
-          <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 mb-1">Current</div>
-          <pre className="bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 text-gray-800 dark:text-gray-200 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap h-48 overflow-y-auto">{current || '(empty)'}</pre>
-        </div>
-        <div>
-          <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 mb-1">Proposed — editable</div>
-          <textarea value={edited} onChange={e => setEdited(e.target.value)}
-            className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-100 dark:border-gray-600 text-gray-800 dark:text-gray-100 rounded-lg p-3 text-xs font-mono h-48 resize-none focus:outline-none focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800" />
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function LinkedContextSuggestion({ contextId, proposed, onRefresh }: {
-  contextId: string
-  proposed: string
-  onRefresh: () => void
-}) {
-  const { data: contextsPage } = useQuery({
-    queryKey: ['contexts'],
-    queryFn: () => api.contexts(),
-    staleTime: 30_000,
-  })
-  const entry = contextsPage?.data?.find(e => e.id === contextId)
-
-  return (
-    <ContextSuggestionSection
-      label={entry ? `Linked context suggestion — "${entry.name}"` : 'Linked context suggestion'}
-      current={entry?.text}
-      proposed={proposed}
-      onSave={(text) => api.updateContext(contextId, { text })}
-      onRefresh={onRefresh}
-    />
   )
 }
 
