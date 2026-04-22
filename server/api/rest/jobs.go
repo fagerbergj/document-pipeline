@@ -146,8 +146,7 @@ func (h *handler) patchRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Questions   []model.Question   `json:"questions"`
-		Suggestions *model.Suggestions `json:"suggestions"`
+		Questions []model.Question `json:"questions"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
@@ -169,9 +168,6 @@ func (h *handler) patchRun(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
 	if body.Questions != nil {
 		job.Runs[runIdx].Questions = body.Questions
-	}
-	if body.Suggestions != nil {
-		job.Runs[runIdx].Suggestions = *body.Suggestions
 	}
 	job.Runs[runIdx].UpdatedAt = now
 

@@ -450,30 +450,6 @@ func TestBuildQAHistory_NoAnswers(t *testing.T) {
 	}
 }
 
-func TestNullIfGeneric(t *testing.T) {
-	cases := []struct {
-		in   string
-		want string
-	}{
-		{"none", ""},
-		{"None", ""},
-		{"null", ""},
-		{"n/a", ""},
-		{"nothing", ""},
-		{"no updates", ""},
-		{"no new information", ""},
-		{"", ""},
-		{"Some real context", "Some real context"},
-		{"Updated notes about the doc", "Updated notes about the doc"},
-	}
-	for _, c := range cases {
-		got := nullIfGeneric(c.in)
-		if got != c.want {
-			t.Errorf("nullIfGeneric(%q) = %q, want %q", c.in, got, c.want)
-		}
-	}
-}
-
 // ---- chunkText ----
 
 func TestChunkText(t *testing.T) {
@@ -515,7 +491,7 @@ func TestParseLLMResponse_JSON(t *testing.T) {
 		},
 	}
 
-	_, outputs, confidence, questions, _ := parseLLMResponse(raw, "", "", stage)
+	_, outputs, confidence, questions := parseLLMResponse(raw, "", "", stage)
 
 	if confidence != model.ConfidenceHigh {
 		t.Errorf("confidence: got %q, want %q", confidence, model.ConfidenceHigh)
@@ -532,7 +508,7 @@ func TestParseLLMResponse_JSONWithCodeFences(t *testing.T) {
 	raw := "```json\n{\"confidence\": \"medium\", \"summary\": \"test\"}\n```"
 	stage := model.StageDefinition{Output: "summary"}
 
-	_, outputs, confidence, _, _ := parseLLMResponse(raw, "", "", stage)
+	_, outputs, confidence, _ := parseLLMResponse(raw, "", "", stage)
 
 	if confidence != model.ConfidenceMedium {
 		t.Errorf("confidence: got %q", confidence)
@@ -547,12 +523,10 @@ func TestParseLLMResponse_ClarifiedText(t *testing.T) {
 Hello world
 </clarified_text>
 <confidence>medium</confidence>
-<questions>[]</questions>
-<document_context_update>Updated context</document_context_update>
-<linked_context_update>none</linked_context_update>`
+<questions>[]</questions>`
 
 	stage := model.StageDefinition{Output: "clarified_text"}
-	_, outputs, confidence, questions, suggestions := parseLLMResponse(raw, "ocr_raw", "raw input", stage)
+	_, outputs, confidence, questions := parseLLMResponse(raw, "ocr_raw", "raw input", stage)
 
 	if confidence != model.ConfidenceMedium {
 		t.Errorf("confidence: got %q", confidence)
@@ -563,23 +537,15 @@ Hello world
 	if len(questions) != 0 {
 		t.Errorf("expected no questions, got %d", len(questions))
 	}
-	if suggestions.AdditionalContext != "Updated context" {
-		t.Errorf("suggestions.AdditionalContext: got %q", suggestions.AdditionalContext)
-	}
-	// "none" is a generic null value — should be cleared
-	if suggestions.LinkedContext != "" {
-		t.Errorf("suggestions.LinkedContext should be empty for 'none', got %q", suggestions.LinkedContext)
-	}
 }
 
 func TestParseLLMResponse_ClarifiedTextWithQuestions(t *testing.T) {
 	raw := `<clarified_text>Some text</clarified_text>
 <confidence>low</confidence>
-<questions>[{"segment": "ambiguous part", "question": "What does this mean?"}]</questions>
-<document_context_update>some context</document_context_update>`
+<questions>[{"segment": "ambiguous part", "question": "What does this mean?"}]</questions>`
 
 	stage := model.StageDefinition{Output: "clarified_text"}
-	_, _, confidence, questions, _ := parseLLMResponse(raw, "", "", stage)
+	_, _, confidence, questions := parseLLMResponse(raw, "", "", stage)
 
 	if confidence != model.ConfidenceLow {
 		t.Errorf("confidence: got %q", confidence)
@@ -595,11 +561,10 @@ func TestParseLLMResponse_ClarifiedTextWithQuestions(t *testing.T) {
 func TestParseLLMResponse_ClarifiedTextStripsHTMLComments(t *testing.T) {
 	raw := `<clarified_text><!-- comment -->Real content</clarified_text>
 <confidence>high</confidence>
-<questions>[]</questions>
-<document_context_update></document_context_update>`
+<questions>[]</questions>`
 
 	stage := model.StageDefinition{Output: "clarified_text"}
-	_, outputs, _, _, _ := parseLLMResponse(raw, "", "", stage)
+	_, outputs, _, _ := parseLLMResponse(raw, "", "", stage)
 
 	if len(outputs) != 1 || outputs[0].Text != "Real content" {
 		t.Errorf("HTML comment not stripped: %+v", outputs)
@@ -609,7 +574,7 @@ func TestParseLLMResponse_ClarifiedTextStripsHTMLComments(t *testing.T) {
 func TestParseLLMResponse_InputPassthrough(t *testing.T) {
 	raw := `{"confidence": "high", "summary": "ok"}`
 	stage := model.StageDefinition{Output: "summary"}
-	inputs, _, _, _, _ := parseLLMResponse(raw, "ocr_raw", "the input text", stage)
+	inputs, _, _, _ := parseLLMResponse(raw, "ocr_raw", "the input text", stage)
 
 	if len(inputs) != 1 || inputs[0].Field != "ocr_raw" || inputs[0].Text != "the input text" {
 		t.Errorf("inputs not passed through: %+v", inputs)

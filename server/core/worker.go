@@ -242,7 +242,7 @@ func (w *WorkerService) runOCR(
 			title = titleFromText(meta.AttachmentFilename, rawText)
 		}
 
-		run := makeRun(inputs, outputs, model.ConfidenceHigh, nil, model.Suggestions{})
+		run := makeRun(inputs, outputs, model.ConfidenceHigh, nil)
 		if err := w.jobs.UpdateRuns(ctx, job.ID, appendRun(job.Runs, run), now); err != nil {
 			return err
 		}
@@ -316,7 +316,7 @@ func (w *WorkerService) runOCR(
 	}
 
 	now = time.Now().UTC()
-	run := makeRun(inputs, outputs, model.ConfidenceHigh, nil, model.Suggestions{})
+	run := makeRun(inputs, outputs, model.ConfidenceHigh, nil)
 	if err := w.jobs.UpdateRuns(ctx, job.ID, appendRun(job.Runs, run), now); err != nil {
 		return err
 	}
@@ -417,10 +417,10 @@ func (w *WorkerService) runLLMText(
 		return nil
 	}
 
-	inputs, outputs, confidence, questions, suggestions := parseLLMResponse(rawResp, inputField, inputText, stage)
+	inputs, outputs, confidence, questions := parseLLMResponse(rawResp, inputField, inputText, stage)
 
 	now = time.Now().UTC()
-	run := makeRun(inputs, outputs, confidence, questions, suggestions)
+	run := makeRun(inputs, outputs, confidence, questions)
 	if err := w.jobs.UpdateRuns(ctx, job.ID, appendRun(job.Runs, run), now); err != nil {
 		w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventDone})
 		return err
@@ -571,7 +571,7 @@ func (w *WorkerService) runEmbed(
 	if inputField != "" {
 		inputs = []model.Field{{Field: inputField, Text: inputText}}
 	}
-	run := makeRun(inputs, []model.Field{{Field: "chunks", Text: fmt.Sprintf("%d", len(chunks))}}, model.ConfidenceHigh, nil, model.Suggestions{})
+	run := makeRun(inputs, []model.Field{{Field: "chunks", Text: fmt.Sprintf("%d", len(chunks))}}, model.ConfidenceHigh, nil)
 	if err := w.jobs.UpdateRuns(ctx, job.ID, appendRun(job.Runs, run), now); err != nil {
 		return err
 	}
@@ -653,7 +653,7 @@ func (w *WorkerService) rebuildSeriesCorpus(
 	run := makeRun(nil, []model.Field{
 		{Field: "series_docs", Text: fmt.Sprintf("%d", len(seriesDocs))},
 		{Field: "chunks", Text: fmt.Sprintf("%d", len(chunks))},
-	}, model.ConfidenceHigh, nil, model.Suggestions{})
+	}, model.ConfidenceHigh, nil)
 	if err := w.jobs.UpdateRuns(ctx, job.ID, appendRun(job.Runs, run), now); err != nil {
 		return err
 	}
@@ -687,7 +687,7 @@ func (w *WorkerService) handleJobError(ctx context.Context, doc model.Document, 
 		_ = w.jobs.UpdateStatus(ctx, job.ID, string(model.JobStatusPending), now)
 	} else {
 		slog.Error("exhausted retries", "doc_id", doc.ID[:8], "stage", stage.Name)
-		errorRun := makeRun(nil, []model.Field{{Field: "error", Text: jobErr.Error()}}, model.ConfidenceLow, nil, model.Suggestions{})
+		errorRun := makeRun(nil, []model.Field{{Field: "error", Text: jobErr.Error()}}, model.ConfidenceLow, nil)
 		_ = w.jobs.UpdateRuns(ctx, job.ID, appendRun(job.Runs, errorRun), now)
 		_ = w.jobs.UpdateStatus(ctx, job.ID, string(model.JobStatusError), now)
 	}
@@ -874,20 +874,19 @@ func buildQAHistory(runs []model.Run) []QARound {
 	return history
 }
 
-func makeRun(inputs []model.Field, outputs []model.Field, confidence model.Confidence, questions []model.Question, suggestions model.Suggestions) model.Run {
+func makeRun(inputs []model.Field, outputs []model.Field, confidence model.Confidence, questions []model.Question) model.Run {
 	now := time.Now().UTC()
 	if questions == nil {
 		questions = []model.Question{}
 	}
 	return model.Run{
-		ID:          uuid.NewString(),
-		Inputs:      inputs,
-		Outputs:     outputs,
-		Confidence:  confidence,
-		Questions:   questions,
-		Suggestions: suggestions,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		ID:         uuid.NewString(),
+		Inputs:     inputs,
+		Outputs:    outputs,
+		Confidence: confidence,
+		Questions:  questions,
+		CreatedAt:  now,
+		UpdatedAt:  now,
 	}
 }
 
@@ -909,7 +908,7 @@ func wasStopped(ctx context.Context, jobs port.JobRepo, jobID string) bool {
 
 // parseLLMResponse handles both the <clarified_text> XML format and the JSON format.
 func parseLLMResponse(raw, inputField, inputText string, stage model.StageDefinition) (
-	inputs []model.Field, outputs []model.Field, confidence model.Confidence, questions []model.Question, suggestions model.Suggestions,
+	inputs []model.Field, outputs []model.Field, confidence model.Confidence, questions []model.Question,
 ) {
 	confidence = model.ConfidenceMedium
 	if inputField != "" {
@@ -932,13 +931,6 @@ func parseLLMResponse(raw, inputField, inputText string, stage model.StageDefini
 		_ = json.Unmarshal([]byte(rawQ), &parsedQ)
 		for _, q := range parsedQ {
 			questions = append(questions, model.Question{Segment: q.Segment, Question: q.Question})
-		}
-
-		docCtxUpdate := extractXMLTag(raw, "document_context_update")
-		linkedCtxUpdate := extractXMLTag(raw, "linked_context_update")
-		suggestions = model.Suggestions{
-			AdditionalContext: nullIfGeneric(docCtxUpdate),
-			LinkedContext:     nullIfGeneric(linkedCtxUpdate),
 		}
 
 		outputField := stage.Output
@@ -997,16 +989,4 @@ func extractXMLTag(s, tag string) string {
 
 func stripHTMLComments(s string) string {
 	return strings.TrimSpace(htmlCommentRe.ReplaceAllString(s, ""))
-}
-
-var nullVals = map[string]bool{
-	"none": true, "null": true, "n/a": true, "nothing": true,
-	"no updates": true, "no new information": true, "": true,
-}
-
-func nullIfGeneric(s string) string {
-	if nullVals[strings.ToLower(strings.TrimSpace(s))] {
-		return ""
-	}
-	return s
 }

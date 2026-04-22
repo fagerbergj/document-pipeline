@@ -41,14 +41,13 @@ const (
 )
 
 type Run struct {
-	ID          string
-	Inputs      []Field
-	Outputs     []Field
-	Confidence  Confidence
-	Questions   []Question
-	Suggestions Suggestions
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID         string
+	Inputs     []Field
+	Outputs    []Field
+	Confidence Confidence
+	Questions  []Question
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 type Field struct {
@@ -60,10 +59,4 @@ type Question struct {
 	Segment  string `json:"segment"`
 	Question string `json:"question"`
 	Answer   string `json:"answer"`
-}
-
-type Suggestions struct {
-	AdditionalContext string  `json:"additional_context"`
-	LinkedContext     string  `json:"linked_context"`
-	LinkedContextID   *string `json:"linked_context_id"`
 }
