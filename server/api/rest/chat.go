@@ -271,14 +271,3 @@ func (h *handler) updateChatTitle(ctx context.Context, chatID, title string) err
 	_, err := h.chats.Update(ctx, chatID, port.ChatSessionUpdates{Title: &title})
 	return err
 }
-
-// ── helpers ───────────────────────────────────────────────────────────────────
-
-func stringPayload(payload map[string]any, key string) string {
-	if v, ok := payload[key]; ok {
-		if s, ok := v.(string); ok {
-			return s
-		}
-	}
-	return ""
-}

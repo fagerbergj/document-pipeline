@@ -39,7 +39,7 @@ Examples: `title:meeting`, `status:pending`, `tags:invoice AND summary:budget`, 
 
 ### Chat / RAG
 
-A built-in chat interface sends queries to an embedding model, retrieves matching notes from Qdrant, and streams LLM responses with cited sources. Chat sessions persist with full message history.
+A built-in chat interface streams LLM responses with cited sources. Chat sessions persist with full message history. The LLM queries the knowledge base autonomously via the `rag_search` tool (see LLM loops below).
 
 ### Context library
 
@@ -138,6 +138,161 @@ auto-generated from `openapi.yaml` via `@hey-api/openapi-ts`. The build output
 (`frontend/dist/`) is copied into `server/web/dist/` at Docker-build time and
 baked into the Go binary by `//go:embed`, which the REST router serves with SPA
 fallback at `/`.
+
+## LLM Processing Loops
+
+There are three distinct LLM call paths. Two are agentic (the model can invoke tools); one is a direct single-shot call.
+
+---
+
+### Loop 1 — OCR (`computer_vision` stage)
+
+Single-shot vision call. No tool use. The model transcribes the image directly.
+
+**Prompt:** [`prompts/ocr.txt`](prompts/ocr.txt) — instructs the model to produce structured Markdown. Optionally injects `document_context` if set.
+
+```
+PNG bytes
+  │
+  ▼
+Ollama /api/generate  ←─ ocr.txt prompt (system) + image (user)
+  │
+  ▼  streamed tokens
+parse raw text
+  │
+  ▼
+SQLite: save run (ocr_raw field) → advance pipeline
+```
+
+---
+
+### Loop 2 — LLM Text (`llm_text` stage: clarify, classify, …)
+
+Agentic loop via [ADK-go](https://github.com/google/adk-go). The model calls `rag_search` as many times as it needs before producing a final answer.
+
+**Prompts:**
+- [`prompts/clarify.txt`](prompts/clarify.txt) — system instruction for the clarify stage. Injects `document_context`, `linked_context`, Q&A history from prior rounds, and previous output when re-running. Expects XML response: `<clarified_text>`, `<confidence>`, `<questions>`.
+- [`prompts/classify.txt`](prompts/classify.txt) — system instruction for the classify stage. Injects linked context and document context. Expects JSON response: `{tags, summary, clarification_requests, confidence}`.
+
+```
+Render prompt template (system instruction)
+  │   ├─ document_context (per-doc notes)
+  │   ├─ linked_context (shared series/collection notes)
+  │   ├─ Q&A history (answers from prior waiting rounds)
+  │   └─ previous_output (when refining after review)
+  │
+  ▼
+ADK Runner ── creates in-memory session
+  │
+  ├──► Ollama /api/chat  ◄─ system: rendered prompt  ◄─ user: OCR/input text
+  │         │
+  │    returns tool_calls=[{rag_search, {query, top_k}}]?
+  │         │
+  │    YES  ▼
+  │    embed(query) → Qdrant search → [{text, title, score}]
+  │    append tool response to session → call Ollama again
+  │         │  (repeats until no tool calls)
+  │    NO   ▼
+  │    final text response
+  │
+  ▼
+parse response (XML for clarify, JSON for classify)
+  │   ├─ clarified_text / tags+summary
+  │   ├─ confidence: high | medium | low
+  │   └─ questions: [{segment, question}]
+  │
+  ├─ confidence < threshold OR questions present?
+  │     YES → park job at `waiting` (human review)
+  │     NO  → advance pipeline
+  │
+  ▼
+SQLite: save run → SSE token event to browser
+```
+
+**Human review loop** (when job parks at `waiting`):
+
+```
+Human answers questions / edits text / approves
+  │
+  ▼
+PUT /jobs/:id/status → pending
+  │
+  ▼
+Worker re-runs stage with Q&A answers injected into prompt via QAHistory
+```
+
+---
+
+### Loop 3 — Chat
+
+Agentic loop, same `rag_search` tool as Loop 2. Conversation history is pre-loaded into the ADK session as real session events so the model sees genuine dialogue context.
+
+**System instruction:** built inline in `server/api/rest/chat.go`. Optionally extended by the chat session's custom `system_prompt`.
+
+```
+Load message history from SQLite
+  │
+  ▼
+ADK Runner
+  ├─ inject prior turns as session events (user + assistant roles)
+  ├─ system: "helpful assistant with rag_search tool" + optional custom prompt
+  └─ user: current message
+  │
+  ├──► Ollama /api/chat
+  │         │
+  │    tool_calls=[{rag_search, {query, top_k}}]?
+  │         │
+  │    YES  ▼
+  │    embed(query) → Qdrant → results appended to session → call again
+  │         │  (repeats until no tool calls)
+  │    NO   ▼
+  │    final text response
+  │
+  ▼
+collect sources from all rag_search responses
+  │
+  ▼
+SSE stream to browser:
+  event: sources  → [{title, text, score, date_month}]
+  event: token    → full response text
+  event: done
+  │
+  ▼
+SQLite: save assistant message + sources
+```
+
+---
+
+### The `rag_search` tool
+
+Shared between loops 2 and 3. Defined in [`server/core/adk/tools/rag_search.go`](server/core/adk/tools/rag_search.go).
+
+```
+Input:  { query: string, top_k: int (1–10, default 5) }
+
+embed(query) via Ollama embedding model
+  │
+  ▼
+Qdrant vector search (cosine similarity)
+  │
+  ▼
+Output: { results: [{text, title, date_month, score}] }
+```
+
+The tool is constructed once at `WorkerService` startup and shared across all `llm_text` stage runs. For chat, it is constructed per-request (handler has no shared state).
+
+---
+
+### Prompt → loop mapping
+
+| Prompt file | Loop | Stage type | Response format |
+|---|---|---|---|
+| `prompts/ocr.txt` | OCR (direct) | `computer_vision` | plain Markdown |
+| `prompts/clarify.txt` | LLM Text (agentic) | `llm_text` | XML tags |
+| `prompts/classify.txt` | LLM Text (agentic) | `llm_text` | JSON object |
+| _(inline in chat.go)_ | Chat (agentic) | REST handler | plain text |
+
+---
 
 ## How to develop
 

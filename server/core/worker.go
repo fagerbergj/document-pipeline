@@ -43,7 +43,8 @@ type WorkerService struct {
 	prompts    port.PromptRenderer
 	pipeline   model.PipelineConfig
 	vaultPath  string
-	embedModel string // resolved once from pipeline config
+	embedModel string    // resolved once from pipeline config
+	ragTool    tool.Tool // shared across all llm_text stage runs
 }
 
 func NewWorkerService(
@@ -68,11 +69,12 @@ func NewWorkerService(
 			break
 		}
 	}
+	ragTool, _ := adktools.NewRagSearchTool(embed, llm.GenerateEmbed, em)
 	return &WorkerService{
 		docs: docs, jobs: jobs, artifacts: artifacts, events: events,
 		contexts: contexts, kv: kv, store: store, llm: llm, embed: embed,
 		streams: streams, prompts: prompts, pipeline: pipeline,
-		vaultPath: vaultPath, embedModel: em,
+		vaultPath: vaultPath, embedModel: em, ragTool: ragTool,
 	}
 }
 
@@ -387,15 +389,10 @@ func (w *WorkerService) runLLMText(
 
 	w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventStatus, Data: `{"text":"Loading model ` + stage.Model + `\u2026"}`})
 
-	ragTool, ragErr := adktools.NewRagSearchTool(w.embed, w.llm.GenerateEmbed, w.embedModel)
-	if ragErr != nil {
-		w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventDone})
-		return fmt.Errorf("rag tool init: %w", ragErr)
-	}
-
-	// Build the user message parts: text prompt + optional image.
-	userText := promptText + "\n\n" + inputText
-	userParts := []*genai.Part{{Text: userText}}
+	// The rendered prompt is the system instruction; the input text is the user message.
+	// Keeping them in separate roles gives the model a clean boundary between
+	// "what to do" (system) and "what to process" (user).
+	userParts := []*genai.Part{{Text: inputText}}
 	if imageBytes != nil {
 		userParts = append(userParts, &genai.Part{
 			InlineData: &genai.Blob{MIMEType: "image/png", Data: imageBytes},
@@ -403,7 +400,7 @@ func (w *WorkerService) runLLMText(
 	}
 
 	mdl := adk.NewPortLLMModel(w.llm, stage.Model)
-	result, genErr := adk.RunAgent(ctx, mdl, []tool.Tool{ragTool}, "", userParts, nil)
+	result, genErr := adk.RunAgent(ctx, mdl, []tool.Tool{w.ragTool}, promptText, userParts, nil)
 	if genErr != nil {
 		w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventDone})
 		return fmt.Errorf("LLM generate: %w", genErr)
