@@ -9,6 +9,7 @@ import (
 
 	"github.com/fagerbergj/document-pipeline/server/api/schema"
 	"github.com/fagerbergj/document-pipeline/server/core"
+	"github.com/fagerbergj/document-pipeline/server/core/adk"
 	"github.com/fagerbergj/document-pipeline/server/core/model"
 	"github.com/fagerbergj/document-pipeline/server/core/port"
 	"github.com/go-chi/chi/v5"
@@ -227,6 +228,13 @@ func (h *handler) putJobStatus(w http.ResponseWriter, r *http.Request) {
 		stageOrder := make([]string, len(h.pipeline.Stages))
 		for i, s := range h.pipeline.Stages {
 			stageOrder[i] = s.Name
+		}
+		// Delete ADK sessions for this job and all downstream jobs so they
+		// restart with a clean conversation context on next run.
+		if allJobs, err := h.jobs.ListForDocument(r.Context(), job.DocumentID); err == nil {
+			for _, j := range allJobs {
+				adk.DeleteSession(r.Context(), h.sessionSvc, j.ID)
+			}
 		}
 		if err := h.jobs.CascadeReplay(r.Context(), job.DocumentID, job.Stage, stageOrder, now); err != nil {
 			slog.Error("putJobStatus CascadeReplay", "err", err)

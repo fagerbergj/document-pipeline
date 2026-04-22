@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"google.golang.org/adk/session"
 	"google.golang.org/adk/tool"
 	"google.golang.org/genai"
 
@@ -41,10 +42,11 @@ type WorkerService struct {
 	embed      port.EmbedStore
 	streams    port.StreamManager
 	prompts    port.PromptRenderer
+	sessionSvc session.Service
 	pipeline   model.PipelineConfig
 	vaultPath  string
-	embedModel string    // resolved once from pipeline config
-	ragTool    tool.Tool // shared across all llm_text stage runs
+	embedModel string
+	ragTool    tool.Tool
 }
 
 func NewWorkerService(
@@ -59,6 +61,7 @@ func NewWorkerService(
 	embed port.EmbedStore,
 	streams port.StreamManager,
 	prompts port.PromptRenderer,
+	sessionSvc session.Service,
 	pipeline model.PipelineConfig,
 	vaultPath string,
 ) *WorkerService {
@@ -73,8 +76,8 @@ func NewWorkerService(
 	return &WorkerService{
 		docs: docs, jobs: jobs, artifacts: artifacts, events: events,
 		contexts: contexts, kv: kv, store: store, llm: llm, embed: embed,
-		streams: streams, prompts: prompts, pipeline: pipeline,
-		vaultPath: vaultPath, embedModel: em, ragTool: ragTool,
+		streams: streams, prompts: prompts, sessionSvc: sessionSvc,
+		pipeline: pipeline, vaultPath: vaultPath, embedModel: em, ragTool: ragTool,
 	}
 }
 
@@ -354,21 +357,11 @@ func (w *WorkerService) runLLMText(
 	promptText := ""
 	if stage.Prompt != "" {
 		linkedContext, linkedContextName := w.loadLinkedContext(ctx, doc)
-		qaHistory := buildQAHistory(job.Runs)
-		previousOutput := ""
-		if len(job.Runs) > 0 {
-			last := job.Runs[len(job.Runs)-1]
-			if len(last.Outputs) > 0 {
-				previousOutput = last.Outputs[0].Text
-			}
-		}
 		data := map[string]any{
 			"DocumentContext":   doc.AdditionalContext,
 			"Context":           linkedContext,
 			"LinkedContext":     linkedContext,
 			"LinkedContextName": linkedContextName,
-			"QAHistory":         qaHistory,
-			"PreviousOutput":    previousOutput,
 		}
 		var err error
 		promptText, err = w.prompts.Render(stage.Prompt, data)
@@ -400,7 +393,7 @@ func (w *WorkerService) runLLMText(
 	}
 
 	mdl := adk.NewPortLLMModel(w.llm, stage.Model)
-	result, genErr := adk.RunAgent(ctx, mdl, []tool.Tool{w.ragTool}, promptText, userParts, nil)
+	result, genErr := adk.RunAgent(ctx, mdl, []tool.Tool{w.ragTool}, promptText, userParts, w.sessionSvc, job.ID)
 	if genErr != nil {
 		w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventDone})
 		return fmt.Errorf("LLM generate: %w", genErr)
@@ -855,21 +848,10 @@ func findInput(stageData map[string]map[string]any, inputField string) (text, fi
 	return "", ""
 }
 
-func buildQAHistory(runs []model.Run) []QARound {
-	var history []QARound
-	for _, run := range runs {
-		var responses []QAResponse
-		for _, q := range run.Questions {
-			if q.Answer != "" {
-				responses = append(responses, QAResponse{Segment: q.Segment, Answer: q.Answer})
-			}
-		}
-		if len(responses) > 0 {
-			history = append(history, QARound{Responses: responses})
-		}
-	}
-	return history
-}
+// buildRunHistory converts prior clarify runs into LLM session history.
+// Each run contributes an assistant turn (the clarified output) and, if the run
+// had answered questions, a user turn (the answers) so the model treats them as
+// a continued conversation rather than repeated system-prompt text.
 
 func makeRun(inputs []model.Field, outputs []model.Field, confidence model.Confidence, questions []model.Question) model.Run {
 	now := time.Now().UTC()

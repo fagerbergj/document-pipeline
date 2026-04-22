@@ -57,14 +57,12 @@ func (d *DB) Close() error {
 func (d *DB) DB() *sql.DB { return d.db }
 
 // Repos returns all repository implementations backed by this DB.
-func (d *DB) Documents() *DocumentRepo       { return &DocumentRepo{db: d.db} }
-func (d *DB) Jobs() *JobRepo                 { return &JobRepo{db: d.db} }
-func (d *DB) Artifacts() *ArtifactRepo       { return &ArtifactRepo{db: d.db} }
-func (d *DB) StageEvents() *StageEventRepo   { return &StageEventRepo{db: d.db} }
-func (d *DB) Contexts() *ContextRepo         { return &ContextRepo{db: d.db} }
-func (d *DB) Chats() *ChatRepo               { return &ChatRepo{db: d.db} }
-func (d *DB) ChatMessages() *ChatMessageRepo { return &ChatMessageRepo{db: d.db} }
-func (d *DB) KeyValues() *KeyValueRepo       { return &KeyValueRepo{db: d.db} }
+func (d *DB) Documents() *DocumentRepo     { return &DocumentRepo{db: d.db} }
+func (d *DB) Jobs() *JobRepo               { return &JobRepo{db: d.db} }
+func (d *DB) Artifacts() *ArtifactRepo     { return &ArtifactRepo{db: d.db} }
+func (d *DB) StageEvents() *StageEventRepo { return &StageEventRepo{db: d.db} }
+func (d *DB) Contexts() *ContextRepo       { return &ContextRepo{db: d.db} }
+func (d *DB) KeyValues() *KeyValueRepo     { return &KeyValueRepo{db: d.db} }
 
 // migrate creates the _migrations tracking table and applies any unapplied
 // *.up.sql files from migrationsDir in lexicographic (numeric) order.

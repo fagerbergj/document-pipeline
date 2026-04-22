@@ -18,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/adk/session"
+
 	"github.com/fagerbergj/document-pipeline/server/api/rest"
 	"github.com/fagerbergj/document-pipeline/server/core"
 	"github.com/fagerbergj/document-pipeline/server/core/model"
@@ -194,22 +196,21 @@ func newTestEnv(t *testing.T, ollamaResp string) *testEnv {
 	renderer := &prompts.FilePromptRenderer{}
 
 	ingest := core.NewIngestService(docs, jobs, artifacts, events, kv, fs, pipeline, vault)
-	worker := core.NewWorkerService(docs, jobs, artifacts, events, contexts, kv, fs, llm, embed, sm, renderer, pipeline, vault)
+	worker := core.NewWorkerService(docs, jobs, artifacts, events, contexts, kv, fs, llm, embed, sm, renderer, session.InMemoryService(), pipeline, vault)
 
 	handler := rest.New(rest.Dependencies{
-		Documents: docs,
-		Jobs:      jobs,
-		Artifacts: artifacts,
-		Contexts:  contexts,
-		Chats:     db.Chats(),
-		Messages:  db.ChatMessages(),
-		Store:     fs,
-		Streams:   sm,
-		LLM:       llm,
-		Embed:     embed,
-		Ingest:    ingest,
-		Pipeline:  pipeline,
-		VaultPath: vault,
+		Documents:  docs,
+		Jobs:       jobs,
+		Artifacts:  artifacts,
+		Contexts:   contexts,
+		SessionSvc: session.InMemoryService(),
+		Store:      fs,
+		Streams:    sm,
+		LLM:        llm,
+		Embed:      embed,
+		Ingest:     ingest,
+		Pipeline:   pipeline,
+		VaultPath:  vault,
 	})
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)

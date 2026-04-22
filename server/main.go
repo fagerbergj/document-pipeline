@@ -9,6 +9,12 @@ import (
 	"os/signal"
 	"syscall"
 
+	gormsqlite "github.com/glebarez/sqlite"
+	"google.golang.org/adk/session"
+	"google.golang.org/adk/session/database"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+
 	"github.com/fagerbergj/document-pipeline/server/api/rest"
 	"github.com/fagerbergj/document-pipeline/server/core"
 	"github.com/fagerbergj/document-pipeline/server/core/port"
@@ -54,6 +60,17 @@ func main() {
 	defer db.Close()
 	log.Info("database ready", "path", *dbPath)
 
+	// --- ADK session service ---
+	// Opens a second connection to the same SQLite file (WAL mode allows this).
+	// GORM auto-migrates its four tables (sessions, events, app_states,
+	// user_states) outside our migration system on startup.
+	sessionSvc, err := newSessionService(*dbPath)
+	if err != nil {
+		log.Error("failed to create ADK session service", "err", err)
+		os.Exit(1)
+	}
+	log.Info("ADK session service ready")
+
 	// --- pipeline config ---
 	pipeline, err := (&config.YAMLPipelineSource{Path: *pipelineCfg}).Load()
 	if err != nil {
@@ -68,7 +85,6 @@ func main() {
 	sm := stream.New()
 	renderer := &prompts.FilePromptRenderer{}
 
-	// Build embed store: requires Qdrant; Open WebUI is optional.
 	var embedStore port.EmbedStore
 	if *qdrantURL != "" {
 		q := qdrant.New(*qdrantURL, *qdrantCollection, *qdrantKey)
@@ -85,7 +101,6 @@ func main() {
 		log.Warn("embed store: disabled (no --qdrant URL)")
 	}
 
-	// --- OpenSearch (optional) ---
 	var searchStore port.DocumentIndexer
 	var indexerSvc *core.IndexerService
 	if *opensearchURL != "" {
@@ -108,19 +123,17 @@ func main() {
 
 	// --- services ---
 	ingest := core.NewIngestService(docs, jobs, artifacts, events, kv, fs, pipeline, *vault)
-	worker := core.NewWorkerService(docs, jobs, artifacts, events, contexts, kv, fs, llm, embedStore, sm, renderer, pipeline, *vault)
+	worker := core.NewWorkerService(docs, jobs, artifacts, events, contexts, kv, fs, llm, embedStore, sm, renderer, sessionSvc, pipeline, *vault)
 	if searchStore != nil {
 		indexerSvc = core.NewIndexerService(db.DB(), docs, jobs, searchStore)
 	}
 
-	// --- HTTP server ---
 	handler := rest.New(rest.Dependencies{
 		Documents:  docs,
 		Jobs:       jobs,
 		Artifacts:  artifacts,
 		Contexts:   contexts,
-		Chats:      db.Chats(),
-		Messages:   db.ChatMessages(),
+		SessionSvc: sessionSvc,
 		Store:      fs,
 		Streams:    sm,
 		LLM:        llm,
@@ -133,7 +146,6 @@ func main() {
 	})
 	srv := &http.Server{Addr: *addr, Handler: handler}
 
-	// --- run until signal ---
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
@@ -168,6 +180,18 @@ func main() {
 		os.Exit(1)
 	}
 	log.Info("shutdown complete")
+}
+
+// newSessionService creates an ADK session.Service backed by the same SQLite
+// file. GORM manages its own four tables and auto-migrates on startup.
+func newSessionService(dbPath string) (session.Service, error) {
+	svc, err := database.NewSessionService(gormsqlite.Open(dbPath), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return svc, database.AutoMigrate(svc)
 }
 
 func envOr(key, fallback string) string {

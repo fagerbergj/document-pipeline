@@ -215,50 +215,6 @@ func toRagRetrieval(r model.RAGConfig) schema.RagRetrieval {
 	}
 }
 
-func toChatSummary(c model.ChatSession) schema.ChatSummary {
-	return schema.ChatSummary{
-		Id:           c.ID,
-		Title:        strPtr(c.Title),
-		SystemPrompt: strPtr(c.SystemPrompt),
-		RagRetrieval: toRagRetrieval(c.RAGRetrieval),
-		CreatedAt:    c.CreatedAt,
-		UpdatedAt:    c.UpdatedAt,
-	}
-}
-
-func toChatDetail(c model.ChatSession, msgs []model.ChatMessage) schema.ChatDetail {
-	messages := toChatMessages(msgs)
-	return schema.ChatDetail{
-		Id:           c.ID,
-		Title:        strPtr(c.Title),
-		SystemPrompt: strPtr(c.SystemPrompt),
-		RagRetrieval: toRagRetrieval(c.RAGRetrieval),
-		Messages:     &messages,
-		CreatedAt:    c.CreatedAt,
-		UpdatedAt:    c.UpdatedAt,
-	}
-}
-
-func toChatMessages(msgs []model.ChatMessage) []schema.ChatMessage {
-	out := make([]schema.ChatMessage, 0, len(msgs))
-	for _, m := range msgs {
-		out = append(out, toChatMessage(m))
-	}
-	return out
-}
-
-func toChatMessage(m model.ChatMessage) schema.ChatMessage {
-	sources := toSourceDocs(m.Sources)
-	return schema.ChatMessage{
-		Id:         toUUID(m.ID),
-		ExternalId: m.ExternalID,
-		Role:       schema.ChatMessageRole(m.Role),
-		Content:    m.Content,
-		Sources:    &sources,
-		CreatedAt:  m.CreatedAt,
-	}
-}
-
 func toSourceDocs(refs []model.SourceRef) []schema.SourceDoc {
 	out := make([]schema.SourceDoc, 0, len(refs))
 	for _, r := range refs {

@@ -67,27 +67,6 @@ type ContextRepo interface {
 	Delete(ctx context.Context, id string) (bool, error)
 }
 
-// ChatRepo manages chat sessions.
-type ChatRepo interface {
-	Create(ctx context.Context, systemPrompt string, rag model.RAGConfig) (model.ChatSession, error)
-	Get(ctx context.Context, id string) (model.ChatSession, bool, error)
-	Update(ctx context.Context, id string, updates ChatSessionUpdates) (model.ChatSession, error)
-	Delete(ctx context.Context, id string) (bool, error)
-	List(ctx context.Context, pageSize int, beforeID *string) ([]model.ChatSession, error)
-}
-
-type ChatSessionUpdates struct {
-	Title        *string
-	SystemPrompt *string
-	RAGRetrieval *model.RAGConfig
-}
-
-// ChatMessageRepo manages messages within a chat session.
-type ChatMessageRepo interface {
-	Append(ctx context.Context, sessionID, role, content string, sources []model.SourceRef) (model.ChatMessage, error)
-	List(ctx context.Context, sessionID string) ([]model.ChatMessage, error)
-}
-
 // KeyValueRepo is a simple persistent key-value store.
 type KeyValueRepo interface {
 	Set(ctx context.Context, key, value string) error

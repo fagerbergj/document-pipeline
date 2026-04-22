@@ -5,7 +5,11 @@ import (
 	"net/http"
 	"os"
 
+	"google.golang.org/adk/session"
+	"google.golang.org/adk/tool"
+
 	"github.com/fagerbergj/document-pipeline/server/core"
+	adktools "github.com/fagerbergj/document-pipeline/server/core/adk/tools"
 	"github.com/fagerbergj/document-pipeline/server/core/model"
 	"github.com/fagerbergj/document-pipeline/server/core/port"
 )
@@ -16,8 +20,7 @@ type handler struct {
 	jobs       port.JobRepo
 	artifacts  port.ArtifactRepo
 	contexts   port.ContextRepo
-	chats      port.ChatRepo
-	messages   port.ChatMessageRepo
+	sessionSvc session.Service
 	store      port.DocumentArtifactStore
 	streams    port.StreamManager
 	llm        port.LLMInference
@@ -27,19 +30,16 @@ type handler struct {
 	pipeline   model.PipelineConfig
 	vaultPath  string
 	embedModel string
+	ragTool    tool.Tool
 }
 
-// Dependencies bundles the wiring passed to New. Using a struct instead of a long
-// positional parameter list prevents silent nil mis-wiring (previously main.go
-// accidentally passed nil for FrontendFS, which made the SPA fallback a dead
-// branch at runtime).
+// Dependencies bundles the wiring passed to New.
 type Dependencies struct {
 	Documents  port.DocumentRepo
 	Jobs       port.JobRepo
 	Artifacts  port.ArtifactRepo
 	Contexts   port.ContextRepo
-	Chats      port.ChatRepo
-	Messages   port.ChatMessageRepo
+	SessionSvc session.Service
 	Store      port.DocumentArtifactStore
 	Streams    port.StreamManager
 	LLM        port.LLMInference
@@ -65,13 +65,14 @@ func resolveEmbedModel(pipeline model.PipelineConfig) string {
 
 // New constructs the HTTP handler and returns the fully wired router.
 func New(deps Dependencies) http.Handler {
+	em := resolveEmbedModel(deps.Pipeline)
+	ragTool, _ := adktools.NewRagSearchTool(deps.Embed, deps.LLM.GenerateEmbed, em)
 	h := &handler{
 		docs:       deps.Documents,
 		jobs:       deps.Jobs,
 		artifacts:  deps.Artifacts,
 		contexts:   deps.Contexts,
-		chats:      deps.Chats,
-		messages:   deps.Messages,
+		sessionSvc: deps.SessionSvc,
 		store:      deps.Store,
 		streams:    deps.Streams,
 		llm:        deps.LLM,
@@ -80,7 +81,8 @@ func New(deps Dependencies) http.Handler {
 		ingest:     deps.Ingest,
 		pipeline:   deps.Pipeline,
 		vaultPath:  deps.VaultPath,
-		embedModel: resolveEmbedModel(deps.Pipeline),
+		embedModel: em,
+		ragTool:    ragTool,
 	}
 	return NewRouter(h, deps.FrontendFS)
 }

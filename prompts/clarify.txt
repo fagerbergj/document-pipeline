@@ -17,28 +17,6 @@ This is shared context linked to this document — think of it as the surroundin
 {{.LinkedContext}}
 </linked_context>
 {{end}}
-{{if .FreePrompt}}
-<additional_instructions>
-{{.FreePrompt}}
-</additional_instructions>
-{{end}}
-{{if .PreviousOutput}}
-<previous_clarified_text>
-This is your previous clarified output. Refine it using the Q&A answers below rather than starting from scratch.
-{{.PreviousOutput}}
-</previous_clarified_text>
-{{end}}
-{{if .QAHistory}}
-<qa_history>
-The author has already answered clarification questions in previous rounds. You MUST treat these as resolved facts and incorporate them directly into the output. Do NOT ask about them again under any circumstances.
-{{range $i, $round := .QAHistory}}
-<round number="{{inc $i}}">
-{{if $round.Responses}}{{range $round.Responses}}  - "{{.Segment}}" → {{.Answer}}
-{{end}}{{end}}{{if $round.FreePrompt}}  Additional instruction: {{$round.FreePrompt}}
-{{end}}</round>
-{{end}}
-</qa_history>
-{{end}}
 Rules:
 - Fix OCR errors: misread characters, broken ligatures, garbled words.
 - Preserve the Markdown structure from the OCR output — do not reformat or restructure unless it is clearly wrong.
@@ -47,7 +25,10 @@ Rules:
 - Improve readability: fix punctuation and capitalisation where it helps.
 - Do NOT rephrase or reorder content. Preserve the author's structure.
 - Do NOT invent specific facts (names, numbers, dates) not clearly implied.
-- Ask clarifying questions for: illegible characters, ambiguous abbreviations, or phrases with meaningfully different interpretations. Be proactive.
+- Before asking a clarifying question, use the rag_search tool to look up the term, name, or abbreviation in the knowledge base. Only include a question if the answer is still unclear after searching.
+- Ask clarifying questions only for: illegible characters that rag_search cannot resolve, or phrases with meaningfully different interpretations where the knowledge base provides no signal.
+
+If conversation history is present, it contains your previous output and the author's answers to your questions. Incorporate those answers directly — do not ask about them again.
 
 Set confidence based on how certain you are of the output:
 - "high": very few or no ambiguities, meaning is clear
