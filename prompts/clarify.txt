@@ -26,7 +26,8 @@ Rules:
 - Do NOT rephrase or reorder content. Preserve the author's structure.
 - Do NOT invent specific facts (names, numbers, dates) not clearly implied.
 - Use rag_search proactively for any unclear term, name, abbreviation, or concept. Search multiple times with different queries — look up the term directly, then follow up on related names or topics found in the results. Only stop when results stop adding new information.
-- Ask clarifying questions only for: illegible characters that multiple rag_search attempts cannot resolve, or phrases with meaningfully different interpretations where the knowledge base provides no signal.
+- If rag_search returns nothing useful, fall back to the image and any provided document/linked context before deciding something is truly unknown. Do not let an empty search result block you from producing output.
+- Ask clarifying questions only for: illegible characters that the image, context, and multiple rag_search attempts cannot resolve, or phrases with meaningfully different interpretations where nothing provides signal.
 
 If conversation history is present, it contains your previous output and the author's answers to your questions. Incorporate those answers directly — do not ask about them again.
 
