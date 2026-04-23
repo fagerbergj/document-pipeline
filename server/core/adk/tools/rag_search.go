@@ -14,8 +14,7 @@ import (
 
 // RagSearchArgs is the input schema for the rag_search tool.
 type RagSearchArgs struct {
-	Query string `json:"query" jsonschema:"Natural language query to search the knowledge base"`
-	TopK  int    `json:"top_k" jsonschema:"Number of results to return (1-10)"`
+	Query string `json:"query"`
 }
 
 // RagSearchResult is what rag_search returns to the LLM.
@@ -41,17 +40,12 @@ func NewRagSearchTool(store port.EmbedStore, embedFn EmbedFn, embedModel string)
 		Name:        "rag_search",
 		Description: "Search the personal knowledge base for notes and documents relevant to a query. Use this when you need context about a topic, person, abbreviation, or event mentioned in the text.",
 	}, func(tctx tool.Context, args RagSearchArgs) (RagSearchResult, error) {
-		topK := args.TopK
-		if topK <= 0 || topK > 10 {
-			topK = 5
-		}
-
 		vec, err := embedFn(tctx, embedModel, args.Query)
 		if err != nil {
 			return RagSearchResult{}, fmt.Errorf("rag_search embed: %w", err)
 		}
 
-		results, err := store.Search(tctx, vec, topK)
+		results, err := store.Search(tctx, vec, 5)
 		if err != nil {
 			return RagSearchResult{}, fmt.Errorf("rag_search query: %w", err)
 		}
