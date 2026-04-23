@@ -13,8 +13,14 @@ import (
 	"google.golang.org/adk/session"
 	"google.golang.org/adk/tool"
 	"google.golang.org/genai"
+)
 
-	"github.com/fagerbergj/document-pipeline/server/core/port"
+// AppName and UserID are the fixed ADK session coordinates used throughout the
+// pipeline. All session creates, gets, and deletes must use these values so
+// sessions are addressable by the same key from any caller.
+const (
+	AppName = "document-pipeline"
+	UserID  = "pipeline"
 )
 
 // RunResult holds the final text and any tool responses accumulated during the
@@ -24,19 +30,20 @@ type RunResult struct {
 	ToolResponses []map[string]any
 }
 
-// RunAgent runs a single-turn ADK agent and returns the final text response
-// plus any tool call results collected during the loop.
+// RunAgent runs an ADK agent loop against a persistent session identified by
+// sessionID. The session is created if it does not already exist.
 //
-// history contains prior conversation turns (user/assistant roles only) which
-// are injected as real session events so the model sees them as proper dialogue
-// context rather than system-prompt text.
+// sessionSvc must be a database-backed session.Service so sessions persist
+// across calls. Each call to RunAgent appends new events to the session,
+// giving the model full conversation history without any manual replay.
 func RunAgent(
 	ctx context.Context,
 	mdl adkmodel.LLM,
 	tools []tool.Tool,
 	instruction string,
 	userParts []*genai.Part,
-	history []port.LLMMessage,
+	sessionSvc session.Service,
+	sessionID string,
 ) (RunResult, error) {
 	ag, err := llmagent.New(llmagent.Config{
 		Name:        "pipeline_agent",
@@ -49,42 +56,14 @@ func RunAgent(
 		return RunResult{}, fmt.Errorf("adk agent: %w", err)
 	}
 
-	sessionSvc := session.InMemoryService()
-	sessionID := uuid.NewString()
-
-	createResp, err := sessionSvc.Create(ctx, &session.CreateRequest{
-		AppName:   "document-pipeline",
-		UserID:    "pipeline",
-		SessionID: sessionID,
-	})
+	sess, err := getOrCreateSession(ctx, sessionSvc, sessionID)
 	if err != nil {
-		return RunResult{}, fmt.Errorf("adk session: %w", err)
+		return RunResult{}, err
 	}
-	sess := createResp.Session
-
-	for _, msg := range history {
-		role, author := msg.Role, msg.Role
-		if msg.Role == "assistant" {
-			role = "model"
-			author = "pipeline_agent"
-		} else if msg.Role != "user" {
-			continue
-		}
-		e := session.NewEvent(uuid.NewString())
-		e.Author = author
-		e.LLMResponse = adkmodel.LLMResponse{
-			Content: &genai.Content{
-				Role:  role,
-				Parts: []*genai.Part{{Text: msg.Content}},
-			},
-		}
-		if err := sessionSvc.AppendEvent(ctx, sess, e); err != nil {
-			return RunResult{}, fmt.Errorf("adk history append: %w", err)
-		}
-	}
+	_ = sess
 
 	r, err := runner.New(runner.Config{
-		AppName:           "document-pipeline",
+		AppName:           AppName,
 		Agent:             ag,
 		SessionService:    sessionSvc,
 		AutoCreateSession: false,
@@ -101,7 +80,7 @@ func RunAgent(
 		toolResponses []map[string]any
 	)
 
-	for event, err := range r.Run(ctx, "pipeline", sessionID, userMsg, runCfg) {
+	for event, err := range r.Run(ctx, UserID, sessionID, userMsg, runCfg) {
 		if err != nil {
 			return RunResult{}, fmt.Errorf("adk run: %w", err)
 		}
@@ -122,4 +101,54 @@ func RunAgent(
 		Text:          finalText.String(),
 		ToolResponses: toolResponses,
 	}, nil
+}
+
+// getOrCreateSession retrieves the session with sessionID, creating it if it
+// does not exist yet.
+func getOrCreateSession(ctx context.Context, svc session.Service, sessionID string) (session.Session, error) {
+	resp, err := svc.Create(ctx, &session.CreateRequest{
+		AppName:   AppName,
+		UserID:    UserID,
+		SessionID: sessionID,
+	})
+	if err == nil {
+		return resp.Session, nil
+	}
+	// Session likely already exists — fall through to Get.
+	getResp, getErr := svc.Get(ctx, &session.GetRequest{
+		AppName:   AppName,
+		UserID:    UserID,
+		SessionID: sessionID,
+	})
+	if getErr != nil {
+		return nil, fmt.Errorf("adk session create: %w; get: %w", err, getErr)
+	}
+	return getResp.Session, nil
+}
+
+// DeleteSession removes the persistent ADK session for a given ID.
+// Safe to call when the session does not exist.
+func DeleteSession(ctx context.Context, svc session.Service, sessionID string) {
+	_ = svc.Delete(ctx, &session.DeleteRequest{
+		AppName:   AppName,
+		UserID:    UserID,
+		SessionID: sessionID,
+	})
+}
+
+// AppendStateEvent appends a metadata-only event to an existing session,
+// applying stateDelta to the persistent session state.
+func AppendStateEvent(ctx context.Context, svc session.Service, sessionID string, stateDelta map[string]any) error {
+	getResp, err := svc.Get(ctx, &session.GetRequest{
+		AppName:   AppName,
+		UserID:    UserID,
+		SessionID: sessionID,
+	})
+	if err != nil {
+		return fmt.Errorf("session get: %w", err)
+	}
+	e := session.NewEvent(uuid.NewString())
+	e.Author = "system"
+	e.Actions.StateDelta = stateDelta
+	return svc.AppendEvent(ctx, getResp.Session, e)
 }

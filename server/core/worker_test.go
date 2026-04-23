@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/adk/session"
+
 	"github.com/fagerbergj/document-pipeline/server/core/model"
 	"github.com/fagerbergj/document-pipeline/server/core/port"
 	"github.com/google/uuid"
@@ -322,6 +324,7 @@ func newWorker(t *testing.T, docs *mockDocRepo, jobs *mockJobRepo, events *mockE
 		embed,
 		&mockStreamManager{},
 		prompts,
+		session.InMemoryService(),
 		pipeline,
 		t.TempDir(),
 	)
@@ -408,45 +411,6 @@ func TestFindInput(t *testing.T) {
 	text, field = findInput(stageData, "missing_field")
 	if text != "" || field != "" {
 		t.Errorf("missing field should return empty, got text=%q field=%q", text, field)
-	}
-}
-
-func TestBuildQAHistory(t *testing.T) {
-	runs := []model.Run{
-		{
-			Questions: []model.Question{
-				{Segment: "seg1", Question: "q1", Answer: "a1"},
-				{Segment: "seg2", Question: "q2", Answer: ""},
-			},
-		},
-		{
-			Questions: []model.Question{
-				{Segment: "seg3", Question: "q3", Answer: "a3"},
-			},
-		},
-	}
-
-	history := buildQAHistory(runs)
-	if len(history) != 2 {
-		t.Fatalf("expected 2 rounds, got %d", len(history))
-	}
-	// First round: only the answered question
-	if len(history[0].Responses) != 1 || history[0].Responses[0].Segment != "seg1" {
-		t.Errorf("round 0 responses: %+v", history[0].Responses)
-	}
-	// Second round
-	if len(history[1].Responses) != 1 || history[1].Responses[0].Answer != "a3" {
-		t.Errorf("round 1 responses: %+v", history[1].Responses)
-	}
-}
-
-func TestBuildQAHistory_NoAnswers(t *testing.T) {
-	runs := []model.Run{
-		{Questions: []model.Question{{Segment: "s", Question: "q", Answer: ""}}},
-	}
-	history := buildQAHistory(runs)
-	if len(history) != 0 {
-		t.Errorf("runs with no answers should produce no history rounds, got %d", len(history))
 	}
 }
 

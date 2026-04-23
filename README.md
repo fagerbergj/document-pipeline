@@ -39,7 +39,7 @@ Examples: `title:meeting`, `status:pending`, `tags:invoice AND summary:budget`, 
 
 ### Chat / RAG
 
-A built-in chat interface sends queries to an embedding model, retrieves matching notes from Qdrant, and streams LLM responses with cited sources. Chat sessions persist with full message history.
+A built-in chat interface streams LLM responses with cited sources. Chat sessions persist with full message history. The LLM queries the knowledge base autonomously via the `rag_search` tool (see LLM loops below).
 
 ### Context library
 

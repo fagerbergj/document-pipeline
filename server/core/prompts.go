@@ -10,21 +10,6 @@ type ClarifyPromptData struct {
 	DocumentContext   string
 	LinkedContext     string
 	LinkedContextName string
-	FreePrompt        string
-	PreviousOutput    string
-	QAHistory         []QARound
-}
-
-// QARound is one round of Q&A answers from a prior clarify run.
-type QARound struct {
-	Responses  []QAResponse
-	FreePrompt string
-}
-
-// QAResponse is one answered clarification question.
-type QAResponse struct {
-	Segment string
-	Answer  string
 }
 
 // ClassifyPromptData is the template data for the classify llm_text stage.

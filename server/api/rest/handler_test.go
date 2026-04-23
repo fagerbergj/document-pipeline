@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/adk/session"
+
 	"github.com/fagerbergj/document-pipeline/server/core"
 	"github.com/fagerbergj/document-pipeline/server/core/model"
 	"github.com/fagerbergj/document-pipeline/server/core/port"
@@ -220,67 +222,6 @@ func (m *mockContextRepo) Delete(_ context.Context, id string) (bool, error) {
 	return true, nil
 }
 
-type mockChatRepo struct {
-	sessions map[string]model.ChatSession
-}
-
-func newMockChatRepo() *mockChatRepo {
-	return &mockChatRepo{sessions: map[string]model.ChatSession{}}
-}
-func (m *mockChatRepo) Create(_ context.Context, sp string, rag model.RAGConfig) (model.ChatSession, error) {
-	s := model.ChatSession{
-		ID:           "chat-1",
-		SystemPrompt: sp,
-		RAGRetrieval: rag,
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
-	}
-	m.sessions[s.ID] = s
-	return s, nil
-}
-func (m *mockChatRepo) Get(_ context.Context, id string) (model.ChatSession, bool, error) {
-	s, ok := m.sessions[id]
-	return s, ok, nil
-}
-func (m *mockChatRepo) Update(_ context.Context, id string, u port.ChatSessionUpdates) (model.ChatSession, error) {
-	s, ok := m.sessions[id]
-	if !ok {
-		return model.ChatSession{}, errNotFound("chat")
-	}
-	if u.Title != nil {
-		s.Title = *u.Title
-	}
-	if u.SystemPrompt != nil {
-		s.SystemPrompt = *u.SystemPrompt
-	}
-	if u.RAGRetrieval != nil {
-		s.RAGRetrieval = *u.RAGRetrieval
-	}
-	m.sessions[id] = s
-	return s, nil
-}
-func (m *mockChatRepo) Delete(_ context.Context, id string) (bool, error) {
-	_, ok := m.sessions[id]
-	delete(m.sessions, id)
-	return ok, nil
-}
-func (m *mockChatRepo) List(_ context.Context, pageSize int, beforeID *string) ([]model.ChatSession, error) {
-	out := make([]model.ChatSession, 0, len(m.sessions))
-	for _, s := range m.sessions {
-		out = append(out, s)
-	}
-	return out, nil
-}
-
-type mockMessageRepo struct{}
-
-func (m *mockMessageRepo) Append(_ context.Context, _, _, _ string, _ []model.SourceRef) (model.ChatMessage, error) {
-	return model.ChatMessage{ID: "msg-1"}, nil
-}
-func (m *mockMessageRepo) List(_ context.Context, _ string) ([]model.ChatMessage, error) {
-	return nil, nil
-}
-
 type mockArtifactStore struct{}
 
 func (m *mockArtifactStore) Save(_, _, _ string, _ []byte) error { return nil }
@@ -355,7 +296,6 @@ func newTestHandler(t *testing.T) (*handler, *mockDocRepo, *mockJobRepo) {
 	jobs := newMockJobRepo()
 	artifacts := newMockArtifactRepo()
 	contexts := newMockContextRepo()
-	chats := newMockChatRepo()
 	events := &mockStageEventRepo{}
 	kv := &mockKVRepo{data: map[string]string{}}
 
@@ -370,19 +310,18 @@ func newTestHandler(t *testing.T) (*handler, *mockDocRepo, *mockJobRepo) {
 	ingest := core.NewIngestService(docs, jobs, artifacts, events, kv, &mockArtifactStore{}, pipeline, t.TempDir())
 
 	h := &handler{
-		docs:      docs,
-		jobs:      jobs,
-		artifacts: artifacts,
-		contexts:  contexts,
-		chats:     chats,
-		messages:  &mockMessageRepo{},
-		store:     &mockArtifactStore{},
-		streams:   &mockStreamManager{},
-		llm:       &mockLLM{},
-		embed:     &mockEmbedStore{},
-		ingest:    ingest,
-		pipeline:  pipeline,
-		vaultPath: t.TempDir(),
+		docs:       docs,
+		jobs:       jobs,
+		artifacts:  artifacts,
+		contexts:   contexts,
+		sessionSvc: session.InMemoryService(),
+		store:      &mockArtifactStore{},
+		streams:    &mockStreamManager{},
+		llm:        &mockLLM{},
+		embed:      &mockEmbedStore{},
+		ingest:     ingest,
+		pipeline:   pipeline,
+		vaultPath:  t.TempDir(),
 	}
 	return h, docs, jobs
 }
