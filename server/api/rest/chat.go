@@ -316,9 +316,12 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 
 	queryModel := h.queryModel()
 
-	instruction := "You are a helpful assistant with access to a personal notes knowledge base. " +
+	instruction := "You are a helpful assistant with access to a personal notes knowledge base.\n\n" +
 		"Use the rag_search tool to find relevant notes before answering. " +
-		"If you cannot find relevant information, say so."
+		"Search multiple times with different, specific queries — start broad, then follow up on names, " +
+		"terms, or concepts you encounter in the results. " +
+		"Only stop searching when the results stop adding new information. " +
+		"If you cannot find relevant information after several searches, say so."
 	if systemPrompt != "" {
 		instruction += "\n\nAdditional context:\n" + systemPrompt
 	}
