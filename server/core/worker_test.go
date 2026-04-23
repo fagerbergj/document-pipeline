@@ -276,6 +276,9 @@ func (m *mockEmbedStore) DeleteByDocID(ctx context.Context, docID string) error 
 	m.deleteCalled = true
 	return nil
 }
+func (m *mockEmbedStore) GetByIDs(_ context.Context, _ []string) ([]port.EmbedResult, error) {
+	return nil, nil
+}
 func (m *mockEmbedStore) DeleteBySeries(_ context.Context, _ string) error { return nil }
 
 type mockStreamManager struct {

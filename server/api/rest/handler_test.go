@@ -262,6 +262,9 @@ func (m *mockEmbedStore) Search(_ context.Context, _ []float32, _ int) ([]port.E
 	return nil, nil
 }
 func (m *mockEmbedStore) DeleteByDocID(_ context.Context, _ string) error  { return nil }
+func (m *mockEmbedStore) GetByIDs(_ context.Context, _ []string) ([]port.EmbedResult, error) {
+	return nil, nil
+}
 func (m *mockEmbedStore) DeleteBySeries(_ context.Context, _ string) error { return nil }
 
 type mockStageEventRepo struct{}

@@ -28,6 +28,9 @@ func (f *fakeQdrant) DeleteByDocID(_ context.Context, docID string) error {
 	f.deleted = append(f.deleted, docID)
 	return f.err
 }
+func (f *fakeQdrant) GetByIDs(_ context.Context, _ []string) ([]port.EmbedResult, error) {
+	return nil, nil
+}
 func (f *fakeQdrant) DeleteBySeries(_ context.Context, series string) error {
 	f.deleted = append(f.deleted, series)
 	return f.err

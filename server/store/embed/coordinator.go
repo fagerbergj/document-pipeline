@@ -13,6 +13,7 @@ import (
 type qdrantStore interface {
 	Upsert(ctx context.Context, id string, textVector []float32, imageVector []float32, payload map[string]any) error
 	Search(ctx context.Context, vector []float32, topK int) ([]port.EmbedResult, error)
+	GetByIDs(ctx context.Context, ids []string) ([]port.EmbedResult, error)
 	DeleteByDocID(ctx context.Context, docID string) error
 	DeleteBySeries(ctx context.Context, series string) error
 }
@@ -70,6 +71,11 @@ func (c *EmbedStoreCoordinator) Upsert(ctx context.Context, id string, textVecto
 // Search queries Qdrant for the nearest neighbours of vector.
 func (c *EmbedStoreCoordinator) Search(ctx context.Context, vector []float32, topK int) ([]port.EmbedResult, error) {
 	return c.qdrant.Search(ctx, vector, topK)
+}
+
+// GetByIDs fetches specific points from Qdrant by their chunk string IDs.
+func (c *EmbedStoreCoordinator) GetByIDs(ctx context.Context, ids []string) ([]port.EmbedResult, error) {
+	return c.qdrant.GetByIDs(ctx, ids)
 }
 
 func shortID(id string) string {

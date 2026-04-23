@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
@@ -45,15 +46,41 @@ func NewRagSearchTool(store port.EmbedStore, embedFn EmbedFn, embedModel string)
 			return RagSearchResult{}, fmt.Errorf("rag_search embed: %w", err)
 		}
 
-		results, err := store.Search(tctx, vec, 5)
+		hits, err := store.Search(tctx, vec, 5)
 		if err != nil {
 			return RagSearchResult{}, fmt.Errorf("rag_search query: %w", err)
 		}
 
-		chunks := make([]RagChunk, 0, len(results))
-		for _, r := range results {
+		// Fetch prev/next neighbors so each result includes surrounding context.
+		neighborIDs := make([]string, 0, len(hits)*2)
+		for _, r := range hits {
+			if id := stringVal(r.Payload, port.PayloadPrevChunk); id != "" {
+				neighborIDs = append(neighborIDs, id)
+			}
+			if id := stringVal(r.Payload, port.PayloadNextChunk); id != "" {
+				neighborIDs = append(neighborIDs, id)
+			}
+		}
+		neighborText := map[string]string{} // chunk string ID → text
+		if len(neighborIDs) > 0 {
+			fetched, _ := store.GetByIDs(tctx, neighborIDs)
+			for _, f := range fetched {
+				neighborText[f.ID] = stringVal(f.Payload, port.PayloadText)
+			}
+		}
+
+		chunks := make([]RagChunk, 0, len(hits))
+		for _, r := range hits {
+			var parts []string
+			if t := neighborText[stringVal(r.Payload, port.PayloadPrevChunk)]; t != "" {
+				parts = append(parts, t)
+			}
+			parts = append(parts, stringVal(r.Payload, port.PayloadText))
+			if t := neighborText[stringVal(r.Payload, port.PayloadNextChunk)]; t != "" {
+				parts = append(parts, t)
+			}
 			chunks = append(chunks, RagChunk{
-				Text:      stringVal(r.Payload, port.PayloadText),
+				Text:      strings.Join(parts, "\n\n"),
 				Title:     stringVal(r.Payload, port.PayloadTitle),
 				DateMonth: stringVal(r.Payload, port.PayloadDateMonth),
 				Score:     r.Score,

@@ -21,6 +21,7 @@ const (
 type EmbedStore interface {
 	Upsert(ctx context.Context, id string, textVector []float32, imageVector []float32, payload map[string]any) error
 	Search(ctx context.Context, vector []float32, topK int) ([]EmbedResult, error)
+	GetByIDs(ctx context.Context, ids []string) ([]EmbedResult, error)
 	DeleteByDocID(ctx context.Context, docID string) error
 	DeleteBySeries(ctx context.Context, series string) error
 }

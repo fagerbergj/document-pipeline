@@ -143,3 +143,48 @@ func (c *Client) Search(ctx context.Context, vector []float32, topK int) ([]port
 	}
 	return results, nil
 }
+
+// GetByIDs fetches specific points by their string chunk IDs. Returned results
+// have ID set to the original string chunk ID (not the Qdrant numeric ID) so
+// callers can index results by the same IDs they requested.
+func (c *Client) GetByIDs(ctx context.Context, ids []string) ([]port.EmbedResult, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	numericToString := make(map[uint64]string, len(ids))
+	numericIDs := make([]uint64, len(ids))
+	for i, id := range ids {
+		n := idFromUUID(id)
+		numericIDs[i] = n
+		numericToString[n] = id
+	}
+	body := map[string]any{
+		"ids":          numericIDs,
+		"with_payload": true,
+	}
+	resp, err := c.do(ctx, http.MethodPost, "/collections/"+c.collection+"/points", body)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return nil, nil
+	}
+	var out struct {
+		Result []struct {
+			ID      uint64         `json:"id"`
+			Payload map[string]any `json:"payload"`
+		} `json:"result"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("qdrant: decode points response: %w", err)
+	}
+	results := make([]port.EmbedResult, 0, len(out.Result))
+	for _, h := range out.Result {
+		results = append(results, port.EmbedResult{
+			ID:      numericToString[h.ID],
+			Payload: h.Payload,
+		})
+	}
+	return results, nil
+}
