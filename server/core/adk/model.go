@@ -131,11 +131,27 @@ func (m *PortLLMModel) buildTools(req *model.LLMRequest) []port.LLMTool {
 			tools = append(tools, port.LLMTool{
 				Name:        fd.Name,
 				Description: fd.Description,
-				Parameters:  schemaToMap(fd.Parameters),
+				Parameters:  fdParameters(fd),
 			})
 		}
 	}
 	return tools
+}
+
+// fdParameters extracts the tool parameter schema from a function declaration.
+// FunctionTool populates ParametersJsonSchema (raw JSON schema) rather than
+// Parameters (genai.Schema), so we prefer that when available.
+func fdParameters(fd *genai.FunctionDeclaration) map[string]any {
+	if fd.ParametersJsonSchema != nil {
+		b, err := json.Marshal(fd.ParametersJsonSchema)
+		if err == nil {
+			var m map[string]any
+			if json.Unmarshal(b, &m) == nil {
+				return m
+			}
+		}
+	}
+	return schemaToMap(fd.Parameters)
 }
 
 func partsText(parts []*genai.Part) string {
