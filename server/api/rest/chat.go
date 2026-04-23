@@ -292,7 +292,6 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sess := sessResp.Session
-	rag := ragConfigFromSession(sess)
 	systemPrompt := stateStr(sess, stateKeySystemPrompt)
 	existingTitle := stateStr(sess, stateKeyTitle)
 
@@ -323,7 +322,6 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 	if systemPrompt != "" {
 		instruction += "\n\nAdditional context:\n" + systemPrompt
 	}
-	_ = rag
 
 	mdl := adk.NewPortLLMModel(h.llm, queryModel)
 	userParts := []*genai.Part{{Text: content}}
@@ -466,7 +464,7 @@ func messagesFromSession(sess session.Session) []schema.ChatMessage {
 	for _, id := range order {
 		t := turns[id]
 		if t.userContent != "" {
-			var emptyDocs []schema.SourceDoc
+			emptyDocs := []schema.SourceDoc{}
 			msgs = append(msgs, schema.ChatMessage{
 				Id:        toUUID(t.userEventID),
 				Role:      schema.User,

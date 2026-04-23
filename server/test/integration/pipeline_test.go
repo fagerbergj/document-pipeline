@@ -195,15 +195,16 @@ func newTestEnv(t *testing.T, ollamaResp string) *testEnv {
 	embed := &noopEmbed{}
 	renderer := &prompts.FilePromptRenderer{}
 
+	sessionSvc := session.InMemoryService()
 	ingest := core.NewIngestService(docs, jobs, artifacts, events, kv, fs, pipeline, vault)
-	worker := core.NewWorkerService(docs, jobs, artifacts, events, contexts, kv, fs, llm, embed, sm, renderer, session.InMemoryService(), pipeline, vault)
+	worker := core.NewWorkerService(docs, jobs, artifacts, events, contexts, kv, fs, llm, embed, sm, renderer, sessionSvc, pipeline, vault)
 
 	handler := rest.New(rest.Dependencies{
 		Documents:  docs,
 		Jobs:       jobs,
 		Artifacts:  artifacts,
 		Contexts:   contexts,
-		SessionSvc: session.InMemoryService(),
+		SessionSvc: sessionSvc,
 		Store:      fs,
 		Streams:    sm,
 		LLM:        llm,
