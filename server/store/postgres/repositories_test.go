@@ -1,4 +1,4 @@
-package sqlite
+package postgres
 
 import (
 	"context"
@@ -9,18 +9,6 @@ import (
 	"github.com/fagerbergj/document-pipeline/server/core/model"
 	"github.com/fagerbergj/document-pipeline/server/core/port"
 )
-
-// openTestDB opens a temp-file SQLite DB with all migrations applied.
-func openTestDB(t *testing.T) *DB {
-	t.Helper()
-	path := t.TempDir() + "/test.db"
-	db, err := Open(path, migrationsDir(t))
-	if err != nil {
-		t.Fatalf("open test db: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	return db
-}
 
 func ts() time.Time { return time.Now().UTC().Truncate(time.Second) }
 

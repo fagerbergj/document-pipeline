@@ -1,16 +1,17 @@
-package sqlite
+package postgres
 
 import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
-	_ "github.com/glebarez/go-sqlite"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 // DB wraps a *sql.DB with migration support.
@@ -19,25 +20,23 @@ type DB struct {
 	migrationsDir string
 }
 
-// Open opens (or creates) the SQLite database at dbPath, enables WAL mode,
-// and applies any pending up-migrations found in migrationsDir.
-func Open(dbPath, migrationsDir string) (*DB, error) {
-	conn, err := sql.Open("sqlite", dbPath)
+// Open connects to the PostgreSQL database at dsn, ensures the schema named in
+// search_path exists, and applies any pending up-migrations from migrationsDir.
+func Open(dsn, migrationsDir string) (*DB, error) {
+	conn, err := sql.Open("pgx", dsn)
 	if err != nil {
-		return nil, fmt.Errorf("open sqlite: %w", err)
+		return nil, fmt.Errorf("open postgres: %w", err)
 	}
-
-	// Single writer, many readers.
-	conn.SetMaxOpenConns(1)
 
 	ctx := context.Background()
-	if _, err := conn.ExecContext(ctx, "PRAGMA journal_mode=WAL"); err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("enable WAL: %w", err)
-	}
-	if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys=ON"); err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("enable foreign keys: %w", err)
+
+	// Create the schema before the migration runner creates _migrations so that
+	// all tables (including _migrations) land in the right schema.
+	if schema := searchPathFromDSN(dsn); schema != "" {
+		if _, err := conn.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS "+schema); err != nil {
+			conn.Close()
+			return nil, fmt.Errorf("create schema %q: %w", schema, err)
+		}
 	}
 
 	d := &DB{db: conn, migrationsDir: migrationsDir}
@@ -87,7 +86,7 @@ func (d *DB) migrate(ctx context.Context) error {
 
 		var exists int
 		if err := d.db.QueryRowContext(ctx,
-			"SELECT COUNT(*) FROM _migrations WHERE name = ?", name,
+			"SELECT COUNT(*) FROM _migrations WHERE name = $1", name,
 		).Scan(&exists); err != nil {
 			return fmt.Errorf("check migration %s: %w", name, err)
 		}
@@ -105,7 +104,7 @@ func (d *DB) migrate(ctx context.Context) error {
 		}
 
 		if _, err := d.db.ExecContext(ctx,
-			"INSERT INTO _migrations (name, applied_at) VALUES (?, ?)",
+			"INSERT INTO _migrations (name, applied_at) VALUES ($1, $2)",
 			name, time.Now().UTC().Format(time.RFC3339),
 		); err != nil {
 			return fmt.Errorf("record migration %s: %w", name, err)
@@ -140,4 +139,29 @@ func (d *DB) rollback(ctx context.Context) error {
 func migrationName(path string) string {
 	name := filepath.Base(path)
 	return strings.TrimSuffix(name, ".up.sql")
+}
+
+// rebind converts SQLite-style ? placeholders to Postgres $1, $2, … positional
+// parameters. Call this on every query string before passing it to the driver.
+func rebind(query string) string {
+	var b strings.Builder
+	n := 0
+	for _, c := range query {
+		if c == '?' {
+			n++
+			fmt.Fprintf(&b, "$%d", n)
+		} else {
+			b.WriteRune(c)
+		}
+	}
+	return b.String()
+}
+
+// searchPathFromDSN extracts the search_path query parameter from a Postgres DSN.
+func searchPathFromDSN(dsn string) string {
+	u, err := url.Parse(dsn)
+	if err != nil {
+		return ""
+	}
+	return u.Query().Get("search_path")
 }

@@ -1,6 +1,11 @@
-DROP TRIGGER IF EXISTS idx_jobs_update;
-DROP TRIGGER IF EXISTS idx_jobs_insert;
-DROP TRIGGER IF EXISTS idx_documents_delete;
-DROP TRIGGER IF EXISTS idx_documents_update;
-DROP TRIGGER IF EXISTS idx_documents_insert;
+DROP TRIGGER IF EXISTS idx_jobs_update ON jobs;
+DROP TRIGGER IF EXISTS idx_jobs_insert ON jobs;
+DROP TRIGGER IF EXISTS idx_documents_delete ON documents;
+DROP TRIGGER IF EXISTS idx_documents_update ON documents;
+DROP TRIGGER IF EXISTS idx_documents_insert ON documents;
+DROP FUNCTION IF EXISTS fn_idx_job_update();
+DROP FUNCTION IF EXISTS fn_idx_job_insert();
+DROP FUNCTION IF EXISTS fn_idx_doc_delete();
+DROP FUNCTION IF EXISTS fn_idx_doc_update();
+DROP FUNCTION IF EXISTS fn_idx_doc_insert();
 DROP TABLE IF EXISTS index_queue;

@@ -1,4 +1,4 @@
-package sqlite
+package postgres
 
 import (
 	"context"
@@ -59,7 +59,7 @@ func (r *ContextRepo) Update(ctx context.Context, id string, name, text *string)
 	}
 	if len(sets) > 0 {
 		params = append(params, id)
-		stmt := "UPDATE contexts SET " + strings.Join(sets, ", ") + " WHERE id=?"
+		stmt := rebind("UPDATE contexts SET " + strings.Join(sets, ", ") + " WHERE id=?")
 		if _, err := r.db.ExecContext(ctx, stmt, params...); err != nil {
 			return model.Context{}, err
 		}

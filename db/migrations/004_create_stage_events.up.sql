@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS stage_events (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    id          SERIAL PRIMARY KEY,
     document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
     timestamp   TEXT NOT NULL,
     stage       TEXT NOT NULL,

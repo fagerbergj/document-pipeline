@@ -1,4 +1,4 @@
-package sqlite
+package postgres
 
 import (
 	"embed"
@@ -37,7 +37,7 @@ func mustLoadQueries() map[string]string {
 				panic("load queries: " + err.Error())
 			}
 			stem := strings.TrimSuffix(f.Name(), ".sql")
-			m[dir.Name()+"."+stem] = strings.TrimSpace(string(content))
+			m[dir.Name()+"."+stem] = rebind(strings.TrimSpace(string(content)))
 		}
 	}
 	return m

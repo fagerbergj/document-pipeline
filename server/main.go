@@ -9,9 +9,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	gormsqlite "github.com/glebarez/sqlite"
 	"google.golang.org/adk/session"
 	"google.golang.org/adk/session/database"
+	gormpostgres "gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
@@ -24,16 +24,16 @@ import (
 	"github.com/fagerbergj/document-pipeline/server/store/ollama"
 	storeopensearch "github.com/fagerbergj/document-pipeline/server/store/opensearch"
 	"github.com/fagerbergj/document-pipeline/server/store/openwebui"
+	"github.com/fagerbergj/document-pipeline/server/store/postgres"
 	"github.com/fagerbergj/document-pipeline/server/store/prompts"
 	"github.com/fagerbergj/document-pipeline/server/store/qdrant"
-	"github.com/fagerbergj/document-pipeline/server/store/sqlite"
 	"github.com/fagerbergj/document-pipeline/server/store/stream"
 	"github.com/fagerbergj/document-pipeline/server/web"
 	"golang.org/x/sync/errgroup"
 )
 
 func main() {
-	dbPath := flag.String("db", envOr("DB_PATH", "/data/pipeline.db"), "SQLite database path")
+	dsn := flag.String("db", envOr("DATABASE_URL", ""), "PostgreSQL DSN")
 	migrationsDir := flag.String("migrations", envOr("MIGRATIONS_DIR", "db/migrations"), "Path to SQL migration files")
 	vault := flag.String("vault", envOr("VAULT_PATH", "/data/vault"), "Artifact vault path")
 	pipelineCfg := flag.String("pipeline", envOr("PIPELINE_CONFIG", "config/pipeline.yaml"), "Pipeline YAML config path")
@@ -52,19 +52,22 @@ func main() {
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 	// --- database ---
-	db, err := sqlite.Open(*dbPath, *migrationsDir)
+	if *dsn == "" {
+		log.Error("DATABASE_URL is required")
+		os.Exit(1)
+	}
+	db, err := postgres.Open(*dsn, *migrationsDir)
 	if err != nil {
 		log.Error("failed to open database", "err", err)
 		os.Exit(1)
 	}
 	defer db.Close()
-	log.Info("database ready", "path", *dbPath)
+	log.Info("database ready")
 
 	// --- ADK session service ---
-	// Opens a second connection to the same SQLite file (WAL mode allows this).
-	// GORM auto-migrates its four tables (sessions, events, app_states,
-	// user_states) outside our migration system on startup.
-	sessionSvc, err := newSessionService(*dbPath)
+	// Shares the same Postgres DSN; GORM auto-migrates its four tables
+	// (sessions, events, app_states, user_states) outside our migration system.
+	sessionSvc, err := newSessionService(*dsn)
 	if err != nil {
 		log.Error("failed to create ADK session service", "err", err)
 		os.Exit(1)
@@ -182,13 +185,10 @@ func main() {
 	log.Info("shutdown complete")
 }
 
-// newSessionService creates an ADK session.Service backed by the same SQLite
-// file. GORM manages its own four tables and auto-migrates on startup.
-func newSessionService(dbPath string) (session.Service, error) {
-	// Use URI DSN so we can set busy_timeout — prevents SQLITE_BUSY when the
-	// app's connection pool and GORM's pool write concurrently to the same file.
-	dsn := "file:" + dbPath + "?_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)"
-	svc, err := database.NewSessionService(gormsqlite.Open(dsn), &gorm.Config{
+// newSessionService creates an ADK session.Service backed by Postgres.
+// GORM auto-migrates its four tables on startup.
+func newSessionService(dsn string) (session.Service, error) {
+	svc, err := database.NewSessionService(gormpostgres.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
 	if err != nil {

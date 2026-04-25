@@ -1,13 +1,15 @@
 // Package integration runs end-to-end tests against the full wired server:
-// real SQLite, real filesystem, mock Ollama, no-op EmbedStore.
+// real Postgres (testcontainers), real filesystem, mock Ollama, no-op EmbedStore.
 package integration_test
 
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -15,9 +17,12 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	_ "github.com/jackc/pgx/v5/stdlib"
+	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"google.golang.org/adk/session"
 
 	"github.com/fagerbergj/document-pipeline/server/api/rest"
@@ -26,8 +31,8 @@ import (
 	"github.com/fagerbergj/document-pipeline/server/core/port"
 	"github.com/fagerbergj/document-pipeline/server/store/filesystem"
 	"github.com/fagerbergj/document-pipeline/server/store/ollama"
+	"github.com/fagerbergj/document-pipeline/server/store/postgres"
 	"github.com/fagerbergj/document-pipeline/server/store/prompts"
-	"github.com/fagerbergj/document-pipeline/server/store/sqlite"
 	"github.com/fagerbergj/document-pipeline/server/store/stream"
 )
 
@@ -139,7 +144,7 @@ func mockOllamaServer(t *testing.T, generateResponse string) *httptest.Server {
 
 type testEnv struct {
 	srv    *httptest.Server
-	db     *sqlite.DB
+	db     *postgres.DB
 	worker *core.WorkerService
 }
 
@@ -168,18 +173,67 @@ func makePipeline(promptPath string) model.PipelineConfig {
 	}
 }
 
+var (
+	sharedDSNOnce sync.Once
+	sharedDSN     string
+	sharedDSNErr  error
+)
+
+func ensureSharedPostgres(t *testing.T) string {
+	t.Helper()
+	sharedDSNOnce.Do(func() {
+		ctx := context.Background()
+		ctr, err := tcpostgres.Run(ctx, "postgres:17-alpine",
+			tcpostgres.WithDatabase("testdb"),
+			tcpostgres.WithUsername("test"),
+			tcpostgres.WithPassword("test"),
+			tcpostgres.BasicWaitStrategies(),
+			tcpostgres.WithSQLDriver("pgx"),
+		)
+		if err != nil {
+			sharedDSNErr = fmt.Errorf("start postgres container: %w", err)
+			return
+		}
+		dsn, err := ctr.ConnectionString(ctx, "sslmode=disable")
+		if err != nil {
+			sharedDSNErr = fmt.Errorf("connection string: %w", err)
+			return
+		}
+		sharedDSN = dsn
+	})
+	if sharedDSNErr != nil {
+		t.Fatal(sharedDSNErr)
+	}
+	return sharedDSN
+}
+
 // newTestEnv wires the full server stack with an in-process mock Ollama.
 func newTestEnv(t *testing.T, ollamaResp string) *testEnv {
 	t.Helper()
 
-	dir := t.TempDir()
-	dbPath := filepath.Join(dir, "test.db")
-	vault := filepath.Join(dir, "vault")
-
-	db, err := sqlite.Open(dbPath, migrationsDir())
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+	base := ensureSharedPostgres(t)
+	schema := fmt.Sprintf("test_%d_%d", time.Now().UnixNano(), rand.Intn(1<<16))
+	sep := "?"
+	if strings.Contains(base, "?") {
+		sep = "&"
 	}
+	dsn := base + sep + "search_path=" + schema
+
+	vault := t.TempDir()
+
+	db, err := postgres.Open(dsn, migrationsDir())
+	if err != nil {
+		t.Fatalf("open postgres: %v", err)
+	}
+	t.Cleanup(func() {
+		db.Close()
+		admin, err := sql.Open("pgx", base)
+		if err != nil {
+			return
+		}
+		defer admin.Close()
+		_, _ = admin.ExecContext(context.Background(), "DROP SCHEMA IF EXISTS "+schema+" CASCADE")
+	})
 
 	ollamaSrv := mockOllamaServer(t, ollamaResp)
 	t.Cleanup(ollamaSrv.Close)

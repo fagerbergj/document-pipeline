@@ -95,9 +95,10 @@ func (s *IndexerService) backfillIfEmpty(ctx context.Context) error {
 // processQueue handles up to 50 deduplicated entries per cycle.
 func (s *IndexerService) processQueue(ctx context.Context) error {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, doc_id, action FROM index_queue AS iq
-		WHERE id = (SELECT MAX(id) FROM index_queue WHERE doc_id = iq.doc_id)
-		GROUP BY doc_id ORDER BY id ASC LIMIT 50
+		SELECT DISTINCT ON (doc_id) id, doc_id, action
+		FROM index_queue
+		ORDER BY doc_id, id DESC
+		LIMIT 50
 	`)
 	if err != nil {
 		return err
