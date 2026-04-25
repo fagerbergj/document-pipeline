@@ -185,7 +185,10 @@ func main() {
 // newSessionService creates an ADK session.Service backed by the same SQLite
 // file. GORM manages its own four tables and auto-migrates on startup.
 func newSessionService(dbPath string) (session.Service, error) {
-	svc, err := database.NewSessionService(gormsqlite.Open(dbPath), &gorm.Config{
+	// Use URI DSN so we can set busy_timeout — prevents SQLITE_BUSY when the
+	// app's connection pool and GORM's pool write concurrently to the same file.
+	dsn := "file:" + dbPath + "?_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)"
+	svc, err := database.NewSessionService(gormsqlite.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
 	if err != nil {

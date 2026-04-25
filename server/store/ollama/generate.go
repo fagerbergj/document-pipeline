@@ -93,6 +93,9 @@ func (c *Client) ChatWithTools(ctx context.Context, model string, messages []por
 
 	body, err := jsonPost(ctx, c.httpLong, c.baseURL+"/api/chat", payload)
 	if err != nil {
+		if b, jerr := json.Marshal(payload); jerr == nil {
+			slog.Debug("ollama chat-with-tools failed", "payload", string(b))
+		}
 		return "", nil, fmt.Errorf("ollama chat-with-tools: %w", err)
 	}
 
