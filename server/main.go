@@ -9,9 +9,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	gormpostgres "gorm.io/driver/postgres"
 	"google.golang.org/adk/session"
 	"google.golang.org/adk/session/database"
+	gormpostgres "gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
@@ -24,9 +24,9 @@ import (
 	"github.com/fagerbergj/document-pipeline/server/store/ollama"
 	storeopensearch "github.com/fagerbergj/document-pipeline/server/store/opensearch"
 	"github.com/fagerbergj/document-pipeline/server/store/openwebui"
+	"github.com/fagerbergj/document-pipeline/server/store/postgres"
 	"github.com/fagerbergj/document-pipeline/server/store/prompts"
 	"github.com/fagerbergj/document-pipeline/server/store/qdrant"
-	"github.com/fagerbergj/document-pipeline/server/store/postgres"
 	"github.com/fagerbergj/document-pipeline/server/store/stream"
 	"github.com/fagerbergj/document-pipeline/server/web"
 	"golang.org/x/sync/errgroup"

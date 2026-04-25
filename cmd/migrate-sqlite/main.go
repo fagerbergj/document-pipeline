@@ -58,38 +58,38 @@ func run(ctx context.Context, src, dst *sql.DB) error {
 	// FK-safe insertion order.
 	tables := []table{
 		{
-			name:    "documents",
-			columns: []string{"id", "content_hash", "created_at", "updated_at", "title", "date_month", "png_path", "duplicate_of", "additional_context", "linked_contexts"},
+			name:     "documents",
+			columns:  []string{"id", "content_hash", "created_at", "updated_at", "title", "date_month", "png_path", "duplicate_of", "additional_context", "linked_contexts"},
 			conflict: "id",
 		},
 		{
-			name:    "jobs",
-			columns: []string{"id", "document_id", "stage", "status", "options", "runs", "created_at", "updated_at"},
+			name:     "jobs",
+			columns:  []string{"id", "document_id", "stage", "status", "options", "runs", "created_at", "updated_at"},
 			conflict: "id",
 		},
 		{
-			name:    "artifacts",
-			columns: []string{"id", "document_id", "filename", "content_type", "created_job_id", "created_at", "updated_at"},
+			name:     "artifacts",
+			columns:  []string{"id", "document_id", "filename", "content_type", "created_job_id", "created_at", "updated_at"},
 			conflict: "id",
 		},
 		{
-			name:    "stage_events",
-			columns: []string{"id", "document_id", "timestamp", "stage", "event_type", "data"},
+			name:     "stage_events",
+			columns:  []string{"id", "document_id", "timestamp", "stage", "event_type", "data"},
 			conflict: "id",
 		},
 		{
-			name:    "contexts",
-			columns: []string{"id", "name", "text", "created_at"},
+			name:     "contexts",
+			columns:  []string{"id", "name", "text", "created_at"},
 			conflict: "id",
 		},
 		{
-			name:    "key_value",
-			columns: []string{"key", "value"},
+			name:     "key_value",
+			columns:  []string{"key", "value"},
 			conflict: "key",
 		},
 		{
-			name:    "index_queue",
-			columns: []string{"id", "doc_id", "action", "created_at"},
+			name:     "index_queue",
+			columns:  []string{"id", "doc_id", "action", "created_at"},
 			conflict: "id",
 		},
 	}
