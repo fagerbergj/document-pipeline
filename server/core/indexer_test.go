@@ -2,12 +2,17 @@ package core_test
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
+	"math/rand"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	_ "github.com/jackc/pgx/v5/stdlib"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
 	"github.com/fagerbergj/document-pipeline/server/core"
@@ -23,29 +28,65 @@ func migrationsDir(t *testing.T) string {
 	return filepath.Join(root, "db", "migrations")
 }
 
+var (
+	sharedDSNOnce sync.Once
+	sharedDSN     string
+	sharedDSNErr  error
+)
+
+func ensureSharedPostgres(t *testing.T) string {
+	t.Helper()
+	sharedDSNOnce.Do(func() {
+		ctx := context.Background()
+		ctr, err := tcpostgres.Run(ctx,
+			"postgres:17-alpine",
+			tcpostgres.WithDatabase("testdb"),
+			tcpostgres.WithUsername("test"),
+			tcpostgres.WithPassword("test"),
+			tcpostgres.BasicWaitStrategies(),
+			tcpostgres.WithSQLDriver("pgx"),
+		)
+		if err != nil {
+			sharedDSNErr = fmt.Errorf("start postgres container: %w", err)
+			return
+		}
+		dsn, err := ctr.ConnectionString(ctx, "sslmode=disable")
+		if err != nil {
+			sharedDSNErr = fmt.Errorf("connection string: %w", err)
+			return
+		}
+		sharedDSN = dsn
+	})
+	if sharedDSNErr != nil {
+		t.Fatal(sharedDSNErr)
+	}
+	return sharedDSN
+}
+
 func openTestDB(t *testing.T) *postgres.DB {
 	t.Helper()
-	ctx := context.Background()
-	ctr, err := tcpostgres.Run(ctx,
-		"postgres:17-alpine",
-		tcpostgres.WithDatabase("testdb"),
-		tcpostgres.WithUsername("test"),
-		tcpostgres.WithPassword("test"),
-	)
-	if err != nil {
-		t.Fatalf("start postgres container: %v", err)
-	}
-	t.Cleanup(func() { _ = ctr.Terminate(ctx) })
+	base := ensureSharedPostgres(t)
 
-	dsn, err := ctr.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("connection string: %v", err)
+	schema := fmt.Sprintf("test_%d_%d", time.Now().UnixNano(), rand.Intn(1<<16))
+	sep := "?"
+	if strings.Contains(base, "?") {
+		sep = "&"
 	}
+	dsn := base + sep + "search_path=" + schema
+
 	db, err := postgres.Open(dsn, migrationsDir(t))
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() {
+		db.Close()
+		admin, err := sql.Open("pgx", base)
+		if err != nil {
+			return
+		}
+		defer admin.Close()
+		_, _ = admin.ExecContext(context.Background(), "DROP SCHEMA IF EXISTS "+schema+" CASCADE")
+	})
 	return db
 }
 

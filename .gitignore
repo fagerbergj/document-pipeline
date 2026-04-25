@@ -1,5 +1,6 @@
 # Go
 /pipeline
+/migrate-sqlite
 *.test
 coverage.out
 

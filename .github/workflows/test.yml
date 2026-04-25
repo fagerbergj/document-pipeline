@@ -9,11 +9,13 @@ on:
 jobs:
   go-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+      - run: docker pull postgres:17-alpine
       - run: go vet ./...
       - run: go test ./...
 
