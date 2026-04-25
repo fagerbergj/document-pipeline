@@ -59,7 +59,7 @@ func run(ctx context.Context, src, dst *sql.DB) error {
 	tables := []table{
 		{
 			name:     "documents",
-			columns:  []string{"id", "content_hash", "created_at", "updated_at", "title", "date_month", "png_path", "duplicate_of", "additional_context", "linked_contexts"},
+			columns:  []string{"id", "content_hash", "created_at", "updated_at", "title", "date_month", "png_path", "duplicate_of", "additional_context", "linked_contexts", "series"},
 			conflict: "id",
 		},
 		{
