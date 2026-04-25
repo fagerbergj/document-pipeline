@@ -328,7 +328,11 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 
 	mdl := adk.NewPortLLMModel(h.llm, queryModel)
 	userParts := []*genai.Part{{Text: content}}
-	result, runErr := adk.RunAgent(r.Context(), mdl, []tool.Tool{h.ragTool}, instruction, userParts, h.sessionSvc, chatID)
+	result, runErr := adk.RunAgent(r.Context(), mdl, []tool.Tool{h.ragTool}, instruction, userParts, h.sessionSvc, chatID, func(token string) {
+		b, _ := json.Marshal(map[string]string{port.EventFieldText: token})
+		writeSSEEvent(w, port.EventToken, string(b))
+		flusher.Flush()
+	})
 	if runErr != nil {
 		b, _ := json.Marshal(map[string]string{port.EventFieldError: runErr.Error()})
 		writeSSEEvent(w, port.EventError, string(b))
@@ -358,11 +362,6 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 
 	sourceBytes, _ := json.Marshal(toSourceDocs(sources))
 	writeSSEEvent(w, "sources", string(sourceBytes))
-	flusher.Flush()
-
-	responseText := result.Text
-	b, _ := json.Marshal(map[string]string{port.EventFieldText: responseText})
-	writeSSEEvent(w, port.EventToken, string(b))
 	flusher.Flush()
 
 	writeSSEEvent(w, port.EventDone, "{}")

@@ -63,7 +63,10 @@ export default function Document() {
     )
   }
 
-  const latestRun = job?.runs && job.runs.length > 0 ? job.runs[job.runs.length - 1] : null
+  const latestRun = job?.runs && job.runs.length > 0
+    ? (job.runs.slice().reverse().find(r => (r.outputs?.length ?? 0) > 0 || (r.questions?.length ?? 0) > 0)
+       ?? job.runs[job.runs.length - 1])
+    : null
 
   return (
     <div>

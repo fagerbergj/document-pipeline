@@ -36,6 +36,9 @@ type RunResult struct {
 // sessionSvc must be a database-backed session.Service so sessions persist
 // across calls. Each call to RunAgent appends new events to the session,
 // giving the model full conversation history without any manual replay.
+// RunAgent runs an ADK agent loop. onToken is called with each streamed chunk
+// as it becomes available — tool-call announcements and final text. Pass nil to
+// discard intermediate output.
 func RunAgent(
 	ctx context.Context,
 	mdl adkmodel.LLM,
@@ -44,6 +47,7 @@ func RunAgent(
 	userParts []*genai.Part,
 	sessionSvc session.Service,
 	sessionID string,
+	onToken func(string),
 ) (RunResult, error) {
 	ag, err := llmagent.New(llmagent.Config{
 		Name:        "pipeline_agent",
@@ -88,11 +92,21 @@ func RunAgent(
 			continue
 		}
 		for _, p := range event.Content.Parts {
+			if p.FunctionCall != nil && onToken != nil {
+				query := ""
+				if q, ok := p.FunctionCall.Args["query"].(string); ok {
+					query = q
+				}
+				onToken(fmt.Sprintf("*Searching: %q…*\n\n", query))
+			}
 			if p.FunctionResponse != nil && p.FunctionResponse.Response != nil {
 				toolResponses = append(toolResponses, p.FunctionResponse.Response)
 			}
 			if event.IsFinalResponse() && p.Text != "" {
 				finalText.WriteString(p.Text)
+				if onToken != nil {
+					onToken(p.Text)
+				}
 			}
 		}
 	}

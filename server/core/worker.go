@@ -393,14 +393,14 @@ func (w *WorkerService) runLLMText(
 	}
 
 	mdl := adk.NewPortLLMModel(w.llm, stage.Model)
-	result, genErr := adk.RunAgent(ctx, mdl, []tool.Tool{w.ragTool}, promptText, userParts, w.sessionSvc, job.ID)
+	result, genErr := adk.RunAgent(ctx, mdl, []tool.Tool{w.ragTool}, promptText, userParts, w.sessionSvc, job.ID, func(token string) {
+		w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventToken, Data: token})
+	})
 	if genErr != nil {
 		w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventDone})
 		return fmt.Errorf("LLM generate: %w", genErr)
 	}
 	rawResp := result.Text
-	// Stream collected text to SSE subscribers.
-	w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventToken, Data: rawResp})
 
 	if wasStopped(ctx, w.jobs, job.ID) {
 		w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventDone})
@@ -408,6 +408,9 @@ func (w *WorkerService) runLLMText(
 	}
 
 	inputs, outputs, confidence, questions := parseLLMResponse(rawResp, inputField, inputText, stage)
+	if len(outputs) == 0 {
+		slog.Warn("LLM response produced no outputs", "stage", stage.Name, "raw_len", len(rawResp), "raw_preview", truncate(rawResp, 200))
+	}
 
 	now = time.Now().UTC()
 	run := makeRun(inputs, outputs, confidence, questions)
@@ -930,7 +933,17 @@ func parseLLMResponse(raw, inputField, inputText string, stage model.StageDefini
 
 	var parsed map[string]any
 	if err := json.Unmarshal([]byte(cleaned), &parsed); err != nil {
-		slog.Warn("failed to parse LLM JSON response", "err", err)
+		// Model returned plain text (e.g. markdown) — use it directly as the output field.
+		outputField := stage.Output
+		if outputField == "" && len(stage.Outputs) > 0 {
+			outputField = stage.Outputs[0].Field
+		}
+		if outputField != "" && strings.TrimSpace(raw) != "" {
+			slog.Info("LLM returned plain text; using as output", "stage", stage.Name, "field", outputField)
+			outputs = []model.Field{{Field: outputField, Text: strings.TrimSpace(raw)}}
+		} else {
+			slog.Warn("failed to parse LLM JSON response", "err", err)
+		}
 		return
 	}
 
@@ -968,4 +981,11 @@ func extractXMLTag(s, tag string) string {
 
 func stripHTMLComments(s string) string {
 	return strings.TrimSpace(htmlCommentRe.ReplaceAllString(s, ""))
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }
