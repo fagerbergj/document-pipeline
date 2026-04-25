@@ -1,4 +1,4 @@
-package sqlite
+package postgres
 
 import (
 	"context"
@@ -149,7 +149,7 @@ func (r *JobRepo) ListPaginated(ctx context.Context, filter port.JobFilter, page
 	}
 	params = append(params, limit+1)
 
-	stmt := fmt.Sprintf("SELECT * FROM jobs %s ORDER BY %s LIMIT ?", where, sc.order)
+	stmt := rebind(fmt.Sprintf("SELECT * FROM jobs %s ORDER BY %s LIMIT ?", where, sc.order))
 	rows, err := r.db.QueryContext(ctx, stmt, params...)
 	if err != nil {
 		return model.PageResult[model.Job]{}, err
@@ -204,7 +204,7 @@ func (r *JobRepo) CascadeReplay(ctx context.Context, documentID, fromStage strin
 		params = append(params, s)
 	}
 	_, err := r.db.ExecContext(ctx,
-		"UPDATE jobs SET status='pending', updated_at=? WHERE document_id=? AND stage IN "+inClause(len(downstream)),
+		rebind("UPDATE jobs SET status='pending', updated_at=? WHERE document_id=? AND stage IN "+inClause(len(downstream))),
 		params...)
 	return err
 }

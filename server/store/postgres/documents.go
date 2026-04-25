@@ -1,4 +1,4 @@
-package sqlite
+package postgres
 
 import (
 	"context"
@@ -102,7 +102,7 @@ func (r *DocumentRepo) ListPaginated(ctx context.Context, filter port.DocumentFi
 	}
 	params = append(params, limit+1)
 
-	stmt := fmt.Sprintf("SELECT d.* FROM documents d %s ORDER BY %s LIMIT ?", where, sc.order)
+	stmt := rebind(fmt.Sprintf("SELECT d.* FROM documents d %s ORDER BY %s LIMIT ?", where, sc.order))
 	rows, err := r.db.QueryContext(ctx, stmt, params...)
 	if err != nil {
 		return model.PageResult[model.Document]{}, err
@@ -129,7 +129,7 @@ func (r *DocumentRepo) ListPaginated(ctx context.Context, filter port.DocumentFi
 }
 
 func (r *DocumentRepo) ListBySeries(ctx context.Context, series string) ([]model.Document, error) {
-	rows, err := r.db.QueryContext(ctx, "SELECT * FROM documents WHERE series = ? ORDER BY created_at ASC", series)
+	rows, err := r.db.QueryContext(ctx, "SELECT * FROM documents WHERE series = $1 ORDER BY created_at ASC", series)
 	if err != nil {
 		return nil, err
 	}

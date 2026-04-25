@@ -1,5 +1,5 @@
 // Package integration runs end-to-end tests against the full wired server:
-// real SQLite, real filesystem, mock Ollama, no-op EmbedStore.
+// real Postgres (testcontainers), real filesystem, mock Ollama, no-op EmbedStore.
 package integration_test
 
 import (
@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"google.golang.org/adk/session"
 
 	"github.com/fagerbergj/document-pipeline/server/api/rest"
@@ -26,8 +27,8 @@ import (
 	"github.com/fagerbergj/document-pipeline/server/core/port"
 	"github.com/fagerbergj/document-pipeline/server/store/filesystem"
 	"github.com/fagerbergj/document-pipeline/server/store/ollama"
+	"github.com/fagerbergj/document-pipeline/server/store/postgres"
 	"github.com/fagerbergj/document-pipeline/server/store/prompts"
-	"github.com/fagerbergj/document-pipeline/server/store/sqlite"
 	"github.com/fagerbergj/document-pipeline/server/store/stream"
 )
 
@@ -139,7 +140,7 @@ func mockOllamaServer(t *testing.T, generateResponse string) *httptest.Server {
 
 type testEnv struct {
 	srv    *httptest.Server
-	db     *sqlite.DB
+	db     *postgres.DB
 	worker *core.WorkerService
 }
 
@@ -172,14 +173,29 @@ func makePipeline(promptPath string) model.PipelineConfig {
 func newTestEnv(t *testing.T, ollamaResp string) *testEnv {
 	t.Helper()
 
-	dir := t.TempDir()
-	dbPath := filepath.Join(dir, "test.db")
-	vault := filepath.Join(dir, "vault")
-
-	db, err := sqlite.Open(dbPath, migrationsDir())
+	ctx := context.Background()
+	ctr, err := tcpostgres.Run(ctx, "postgres:17-alpine",
+		tcpostgres.WithDatabase("testdb"),
+		tcpostgres.WithUsername("test"),
+		tcpostgres.WithPassword("test"),
+	)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("start postgres container: %v", err)
 	}
+	t.Cleanup(func() { _ = ctr.Terminate(ctx) })
+
+	dsn, err := ctr.ConnectionString(ctx, "sslmode=disable")
+	if err != nil {
+		t.Fatalf("postgres connection string: %v", err)
+	}
+
+	vault := t.TempDir()
+
+	db, err := postgres.Open(dsn, migrationsDir())
+	if err != nil {
+		t.Fatalf("open postgres: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
 
 	ollamaSrv := mockOllamaServer(t, ollamaResp)
 	t.Cleanup(ollamaSrv.Close)

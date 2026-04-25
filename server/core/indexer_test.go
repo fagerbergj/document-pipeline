@@ -8,24 +8,40 @@ import (
 	"testing"
 	"time"
 
+	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
+
 	"github.com/fagerbergj/document-pipeline/server/core"
 	"github.com/fagerbergj/document-pipeline/server/core/model"
 	"github.com/fagerbergj/document-pipeline/server/core/port"
-	"github.com/fagerbergj/document-pipeline/server/store/sqlite"
+	"github.com/fagerbergj/document-pipeline/server/store/postgres"
 )
 
-// migrationsDir returns the absolute path to db/migrations.
 func migrationsDir(t *testing.T) string {
 	t.Helper()
 	_, thisFile, _, _ := runtime.Caller(0)
-	// thisFile is .../server/core/indexer_test.go
 	root := filepath.Join(filepath.Dir(thisFile), "..", "..")
 	return filepath.Join(root, "db", "migrations")
 }
 
-func openTestDB(t *testing.T) *sqlite.DB {
+func openTestDB(t *testing.T) *postgres.DB {
 	t.Helper()
-	db, err := sqlite.Open(t.TempDir()+"/test.db", migrationsDir(t))
+	ctx := context.Background()
+	ctr, err := tcpostgres.Run(ctx,
+		"postgres:17-alpine",
+		tcpostgres.WithDatabase("testdb"),
+		tcpostgres.WithUsername("test"),
+		tcpostgres.WithPassword("test"),
+	)
+	if err != nil {
+		t.Fatalf("start postgres container: %v", err)
+	}
+	t.Cleanup(func() { _ = ctr.Terminate(ctx) })
+
+	dsn, err := ctr.ConnectionString(ctx, "sslmode=disable")
+	if err != nil {
+		t.Fatalf("connection string: %v", err)
+	}
+	db, err := postgres.Open(dsn, migrationsDir(t))
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -63,7 +79,7 @@ func (m *mockIndexer) Search(_ context.Context, _ string, _, _ int) ([]string, i
 	return nil, 0, nil
 }
 
-func seedDocument(t *testing.T, db *sqlite.DB, id string) {
+func seedDocument(t *testing.T, db *postgres.DB, id string) {
 	t.Helper()
 	err := db.Documents().Insert(context.Background(), model.Document{
 		ID:             id,
@@ -82,16 +98,14 @@ func TestIndexerService_BackfillIfEmpty(t *testing.T) {
 	seedDocument(t, db, "doc-1")
 	seedDocument(t, db, "doc-2")
 
-	idx := &mockIndexer{count: 0} // empty index triggers backfill
+	idx := &mockIndexer{count: 0}
 	svc := core.NewIndexerService(db.DB(), db.Documents(), db.Jobs(), idx)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Run one cycle: backfill enqueues docs, then processQueue indexes them.
 	go svc.Run(ctx)
 
-	// Wait for both docs to be indexed (up to 4s).
 	deadline := time.Now().Add(4 * time.Second)
 	for time.Now().Before(deadline) {
 		idx.mu.Lock()
@@ -116,7 +130,7 @@ func TestIndexerService_BackfillSkippedWhenNonEmpty(t *testing.T) {
 	db := openTestDB(t)
 	seedDocument(t, db, "doc-1")
 
-	idx := &mockIndexer{count: 5} // non-empty index — skip backfill
+	idx := &mockIndexer{count: 5}
 	svc := core.NewIndexerService(db.DB(), db.Documents(), db.Jobs(), idx)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
@@ -137,14 +151,13 @@ func TestIndexerService_ProcessQueue_Delete(t *testing.T) {
 	db := openTestDB(t)
 	seedDocument(t, db, "doc-del")
 
-	// Manually insert a delete action into index_queue.
 	_, err := db.DB().ExecContext(context.Background(),
-		"INSERT INTO index_queue (doc_id, action) VALUES (?, 'delete')", "doc-del")
+		"INSERT INTO index_queue (doc_id, action) VALUES ($1, 'delete')", "doc-del")
 	if err != nil {
 		t.Fatalf("insert queue entry: %v", err)
 	}
 
-	idx := &mockIndexer{count: 1} // non-empty so backfill skipped
+	idx := &mockIndexer{count: 1}
 	svc := core.NewIndexerService(db.DB(), db.Documents(), db.Jobs(), idx)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -176,10 +189,9 @@ func TestIndexerService_Deduplication(t *testing.T) {
 	db := openTestDB(t)
 	seedDocument(t, db, "doc-dup")
 
-	// Insert three index entries for the same doc — only one Index call expected.
 	for i := 0; i < 3; i++ {
 		_, err := db.DB().ExecContext(context.Background(),
-			"INSERT INTO index_queue (doc_id, action) VALUES (?, 'index')", "doc-dup")
+			"INSERT INTO index_queue (doc_id, action) VALUES ($1, 'index')", "doc-dup")
 		if err != nil {
 			t.Fatalf("insert: %v", err)
 		}
@@ -204,7 +216,6 @@ func TestIndexerService_Deduplication(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 
-	// Give it an extra tick to ensure no duplicates.
 	time.Sleep(100 * time.Millisecond)
 
 	idx.mu.Lock()
