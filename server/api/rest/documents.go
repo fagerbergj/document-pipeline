@@ -296,7 +296,12 @@ func (h *handler) getArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, err := h.store.Read(h.vaultPath, artifactID, artifact.Filename)
+	var data []byte
+	if artifact.Path != nil && *artifact.Path != "" {
+		data, err = h.store.ReadAt(h.vaultPath, *artifact.Path)
+	} else {
+		data, err = h.store.Read(h.vaultPath, artifactID, artifact.Filename)
+	}
 	if err != nil {
 		writeError(w, http.StatusNotFound, "artifact file not found")
 		return

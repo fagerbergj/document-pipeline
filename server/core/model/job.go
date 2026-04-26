@@ -50,9 +50,15 @@ type Run struct {
 	UpdatedAt  time.Time
 }
 
+// Field is a stage input or output. Text content lives on disk and is exposed
+// as a row in the artifacts table; only the artifact id, size, and a short
+// preview are persisted in the jobs.runs JSON column. The frontend fetches the
+// full value via GET /api/v1/documents/{doc_id}/artifacts/{artifact_id}.
 type Field struct {
-	Field string `json:"field"`
-	Text  string `json:"text"`
+	Field      string `json:"field"`
+	ArtifactID string `json:"artifact_id,omitempty"`
+	Size       int64  `json:"size,omitempty"`
+	Preview    string `json:"preview,omitempty"`
 }
 
 type Question struct {

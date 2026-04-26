@@ -48,7 +48,6 @@ func (s *YAMLPipelineSource) Load() (model.PipelineConfig, error) {
 			SkipIf         map[string]any      `yaml:"skip_if"`
 			MaxConcurrent  *int                `yaml:"max_concurrent"`
 			Vision         bool                `yaml:"vision"`
-			SaveAsArtifact bool                `yaml:"save_as_artifact"`
 		} `yaml:"stages"`
 	}
 
@@ -78,7 +77,6 @@ func (s *YAMLPipelineSource) Load() (model.PipelineConfig, error) {
 			SkipIf:         s.SkipIf,
 			MaxConcurrent:  s.MaxConcurrent,
 			Vision:         s.Vision,
-			SaveAsArtifact: s.SaveAsArtifact,
 		})
 	}
 

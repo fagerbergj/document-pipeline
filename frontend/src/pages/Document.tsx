@@ -114,7 +114,7 @@ export default function Document() {
           {job?.status === 'error' && (
             <ErrorSection job={job} onRefresh={refresh} />
           )}
-          {doneJobs.length > 0 && <PipelineResultsSection jobs={doneJobs} currentJobId={jobId} />}
+          {doneJobs.length > 0 && <PipelineResultsSection docId={doc.id} jobs={doneJobs} currentJobId={jobId} />}
           {!job && doneJobs.length === 0 && (
             <div className="text-xs text-gray-400 dark:text-gray-500">No jobs yet.</div>
           )}
@@ -368,7 +368,7 @@ function ArtifactsSection({ doc }: { doc: DocumentDetail }) {
   )
 }
 
-function PipelineResultsSection({ jobs, currentJobId }: { jobs: JobSummary[]; currentJobId: string | null }) {
+function PipelineResultsSection({ docId, jobs, currentJobId }: { docId: string; jobs: JobSummary[]; currentJobId: string | null }) {
   const sorted = [...jobs].sort((a, b) => a.updated_at.localeCompare(b.updated_at))
   const [expandedId, setExpandedId] = useState<string | null>(currentJobId)
 
@@ -379,6 +379,7 @@ function PipelineResultsSection({ jobs, currentJobId }: { jobs: JobSummary[]; cu
       {sorted.map(j => (
         <StageOutputCard
           key={j.id}
+          docId={docId}
           jobSummary={j}
           expanded={j.id === expandedId}
           onToggle={() => setExpandedId(id => id === j.id ? null : j.id)}
@@ -388,14 +389,14 @@ function PipelineResultsSection({ jobs, currentJobId }: { jobs: JobSummary[]; cu
   )
 }
 
-function StageOutputCard({ jobSummary, expanded, onToggle }: { jobSummary: JobSummary; expanded: boolean; onToggle: () => void }) {
+function StageOutputCard({ docId, jobSummary, expanded, onToggle }: { docId: string; jobSummary: JobSummary; expanded: boolean; onToggle: () => void }) {
   const { data: job } = useQuery({
     queryKey: ['job', jobSummary.id],
     queryFn: () => api.job(jobSummary.id),
     enabled: expanded,
   })
   const outputs = (job?.runs?.length ? job.runs[job.runs.length - 1].outputs : [])
-    ?.filter(o => o.text?.trim()) ?? []
+    ?.filter(o => (o.preview ?? '').trim() || (o.size ?? 0) > 0) ?? []
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
@@ -410,7 +411,7 @@ function StageOutputCard({ jobSummary, expanded, onToggle }: { jobSummary: JobSu
         <div className="px-4 pb-4 space-y-4">
           {outputs.length === 0
             ? <div className="text-xs text-gray-400 dark:text-gray-500">No text outputs for this stage.</div>
-            : outputs.map((out, i) => <OutputField key={i} field={out.field ?? ''} text={out.text} />)
+            : outputs.map((out, i) => <OutputField key={i} docId={docId} field={out.field ?? ''} artifactId={out.artifact_id} preview={out.preview ?? ''} />)
           }
         </div>
       )}
@@ -607,7 +608,7 @@ function ReviewSection({ job, run, onRefresh }: {
             {run.outputs.map((out, i) => (
               <div key={i} className="mb-3">
                 {out.field && <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-1">{out.field}</div>}
-                <pre className="bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 text-gray-800 dark:text-gray-200 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap max-h-80 overflow-y-auto">{out.text}</pre>
+                <pre className="bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 text-gray-800 dark:text-gray-200 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap max-h-80 overflow-y-auto">{out.preview}</pre>
               </div>
             ))}
           </div>
@@ -677,7 +678,7 @@ function ErrorSection({ job, onRefresh }: { job: JobDetail; onRefresh: () => voi
       </div>
       {latestRun && latestRun.outputs?.length > 0 && (
         <pre className="bg-red-50 dark:bg-red-950/30 border border-red-100 dark:border-red-800 rounded-lg px-3 py-2 text-xs font-mono whitespace-pre-wrap max-h-48 overflow-y-auto text-red-700 dark:text-red-400">
-          {latestRun.outputs.map(o => o.text).join('\n')}
+          {latestRun.outputs.map(o => o.preview).join('\n')}
         </pre>
       )}
     </div>
@@ -685,13 +686,22 @@ function ErrorSection({ job, onRefresh }: { job: JobDetail; onRefresh: () => voi
 }
 
 
-function OutputField({ field, text }: { field: string; text: string }) {
-  const isMarkdown = field === 'clarified_text' || field === 'summary'
+function OutputField({ docId, field, artifactId, preview }: { docId: string; field: string; artifactId: string; preview: string }) {
+  const isMarkdown = field === 'clarified_text' || field === 'summary' || field === 'narrative_summary'
   const isTags = field === 'tags'
+  const [text, setText] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!artifactId) { setText(preview); return }
+    const url = `/api/v1/documents/${docId}/artifacts/${artifactId}`
+    fetch(url).then(r => r.text()).then(setText).catch(() => setText(preview))
+  }, [docId, artifactId, preview])
+
+  const display = text ?? preview
 
   let tags: string[] = []
   if (isTags) {
-    try { tags = JSON.parse(text) } catch { tags = [] }
+    try { tags = JSON.parse(display) } catch { tags = [] }
   }
 
   return (
@@ -707,10 +717,10 @@ function OutputField({ field, text }: { field: string; text: string }) {
         </div>
       ) : isMarkdown ? (
         <div className="prose prose-sm dark:prose-invert max-w-none text-sm text-gray-700 dark:text-gray-200">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{text}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{display}</ReactMarkdown>
         </div>
       ) : (
-        <pre className="bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 text-gray-800 dark:text-gray-200 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap max-h-80 overflow-y-auto">{text}</pre>
+        <pre className="bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 text-gray-800 dark:text-gray-200 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap max-h-80 overflow-y-auto">{display}</pre>
       )}
     </div>
   )

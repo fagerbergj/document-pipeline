@@ -36,3 +36,23 @@ func (s *Store) Read(vaultPath, artifactID, filename string) ([]byte, error) {
 	}
 	return data, nil
 }
+
+func (s *Store) SaveAt(vaultPath, relPath string, data []byte) error {
+	path := filepath.Join(vaultPath, relPath)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("filesystem: mkdir for %s: %w", path, err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("filesystem: write %s: %w", path, err)
+	}
+	return nil
+}
+
+func (s *Store) ReadAt(vaultPath, relPath string) ([]byte, error) {
+	path := filepath.Join(vaultPath, relPath)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("filesystem: read %s: %w", path, err)
+	}
+	return data, nil
+}

@@ -13,14 +13,17 @@ import (
 
 // IndexerService polls the index_queue table and keeps OpenSearch in sync with SQLite.
 type IndexerService struct {
-	db      *sql.DB
-	docs    port.DocumentRepo
-	jobs    port.JobRepo
-	indexer port.DocumentIndexer
+	db        *sql.DB
+	docs      port.DocumentRepo
+	jobs      port.JobRepo
+	artifacts port.ArtifactRepo
+	store     port.DocumentArtifactStore
+	indexer   port.DocumentIndexer
+	vaultPath string
 }
 
-func NewIndexerService(db *sql.DB, docs port.DocumentRepo, jobs port.JobRepo, indexer port.DocumentIndexer) *IndexerService {
-	return &IndexerService{db: db, docs: docs, jobs: jobs, indexer: indexer}
+func NewIndexerService(db *sql.DB, docs port.DocumentRepo, jobs port.JobRepo, artifacts port.ArtifactRepo, store port.DocumentArtifactStore, indexer port.DocumentIndexer, vaultPath string) *IndexerService {
+	return &IndexerService{db: db, docs: docs, jobs: jobs, artifacts: artifacts, store: store, indexer: indexer, vaultPath: vaultPath}
 }
 
 // Run starts the indexer loop. It blocks until ctx is cancelled.
@@ -142,7 +145,7 @@ func (s *IndexerService) indexDoc(ctx context.Context, docID string) error {
 		return err
 	}
 
-	stageData, err := CollectStageData(ctx, s.jobs, docID)
+	stageData, err := CollectStageData(ctx, s.jobs, s.artifacts, s.store, s.vaultPath, docID)
 	if err != nil {
 		return err
 	}

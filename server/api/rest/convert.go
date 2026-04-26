@@ -123,8 +123,10 @@ func toIOFields(fields []model.Field) []schema.RunIOField {
 	for _, f := range fields {
 		name := f.Field
 		out = append(out, schema.RunIOField{
-			Field: &name,
-			Text:  f.Text,
+			Field:      &name,
+			ArtifactId: f.ArtifactID,
+			Size:       f.Size,
+			Preview:    f.Preview,
 		})
 	}
 	return out
