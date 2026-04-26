@@ -32,9 +32,17 @@ services:
     networks:
       - default
       - api_gateway
+      - api_default
+      - llm_default
     restart: unless-stopped
 
 networks:
   api_gateway:
     external: true
     name: api_gateway
+  api_default:
+    external: true
+    name: api_default
+  llm_default:
+    external: true
+    name: llm_default
