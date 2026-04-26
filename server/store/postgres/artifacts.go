@@ -51,6 +51,59 @@ func (r *ArtifactRepo) ListForDocument(ctx context.Context, documentID string) (
 	return artifacts, rows.Err()
 }
 
+// ListPaginated walks all artifacts via cursor pagination keyed on (created_at, id).
+// Filter is currently empty; the cursor pattern matches JobRepo.ListPaginated.
+func (r *ArtifactRepo) ListPaginated(ctx context.Context, _ port.ArtifactFilter, page model.PageRequest) (model.PageResult[model.Artifact], error) {
+	limit := page.PageSize
+	if limit <= 0 {
+		limit = 100
+	}
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if page.PageToken != nil {
+		rows, err = r.db.QueryContext(ctx, rebind(
+			"SELECT * FROM artifacts WHERE (created_at, id) > (?, ?) ORDER BY created_at, id LIMIT ?"),
+			page.PageToken.SortKey, page.PageToken.LastID, limit+1)
+	} else {
+		rows, err = r.db.QueryContext(ctx, rebind(
+			"SELECT * FROM artifacts ORDER BY created_at, id LIMIT ?"), limit+1)
+	}
+	if err != nil {
+		return model.PageResult[model.Artifact]{}, err
+	}
+	defer rows.Close()
+
+	var out []model.Artifact
+	for rows.Next() {
+		a, err := scanArtifact(rows)
+		if err != nil {
+			return model.PageResult[model.Artifact]{}, err
+		}
+		out = append(out, a)
+	}
+	if err := rows.Err(); err != nil {
+		return model.PageResult[model.Artifact]{}, err
+	}
+
+	hasMore := len(out) > limit
+	if hasMore {
+		out = out[:limit]
+	}
+	var nextToken *string
+	if hasMore && len(out) > 0 {
+		last := out[len(out)-1]
+		nextToken = encodeToken(last.CreatedAt.UTC().Format(time.RFC3339Nano), last.ID)
+	}
+	return model.PageResult[model.Artifact]{Data: out, NextPageToken: nextToken}, nil
+}
+
+func (r *ArtifactRepo) Delete(ctx context.Context, id string) error {
+	_, err := r.db.ExecContext(ctx, rebind("DELETE FROM artifacts WHERE id = ?"), id)
+	return err
+}
+
 func scanArtifact(row rowScanner) (model.Artifact, error) {
 	var (
 		a         model.Artifact

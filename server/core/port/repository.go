@@ -46,11 +46,17 @@ type JobFilter struct {
 	Sort        string
 }
 
+// ArtifactFilter narrows ArtifactRepo.ListPaginated. Empty filter == every row.
+type ArtifactFilter struct{}
+
 // ArtifactRepo persists and retrieves artifacts.
 type ArtifactRepo interface {
 	Insert(ctx context.Context, artifact model.Artifact) error
 	Get(ctx context.Context, documentID, artifactID string) (model.Artifact, error)
 	ListForDocument(ctx context.Context, documentID string) ([]model.Artifact, error)
+	ListPaginated(ctx context.Context, filter ArtifactFilter, page model.PageRequest) (model.PageResult[model.Artifact], error)
+	// Delete removes the row by id. The file on disk is the caller's concern.
+	Delete(ctx context.Context, id string) error
 }
 
 // StageEventRepo appends to the audit log and queries failure counts.
