@@ -59,7 +59,7 @@ export default function UploadModal({ onClose }: Props) {
           <input
             ref={fileRef}
             type="file"
-            accept=".txt,.md,.png,.jpg,.jpeg"
+            accept=".txt,.md,.png,.jpg,.jpeg,.webm,.wav,.mp3,.m4a,.ogg,.flac"
             className="hidden"
             onChange={e => handleFile(e.target.files?.[0] ?? null)}
           />
@@ -71,7 +71,7 @@ export default function UploadModal({ onClose }: Props) {
           ) : (
             <div>
               <div className="text-sm text-gray-500 dark:text-gray-400">Click to choose a file</div>
-              <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">.txt · .md · .png · .jpg</div>
+              <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">.txt · .md · .png · .jpg · audio (.webm/.wav/.mp3/.m4a/.ogg/.flac)</div>
             </div>
           )}
         </div>

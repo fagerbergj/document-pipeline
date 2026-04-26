@@ -413,12 +413,19 @@ func newWorker(t *testing.T, docs *mockDocRepo, jobs *mockJobRepo, events *mockE
 		&mockArtifactStore{},
 		llm,
 		embed,
+		&mockTranscriber{},
 		&mockStreamManager{},
 		prompts,
 		session.InMemoryService(),
 		pipeline,
 		t.TempDir(),
 	)
+}
+
+type mockTranscriber struct{ response string }
+
+func (m *mockTranscriber) Transcribe(_ context.Context, _ string, _ []byte, _ string) (string, error) {
+	return m.response, nil
 }
 
 // ---- helper functions ----
@@ -643,7 +650,7 @@ func newTestDoc(pngPath string) model.Document {
 	return model.Document{
 		ID:          uuid.NewString(),
 		ContentHash: "abc123",
-		PNGPath:     &p,
+		MediaPath:   &p,
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 	}
@@ -769,7 +776,7 @@ func TestProcessJob_LLMText_LowConfidenceParkForReview(t *testing.T) {
 	png := pngPath(t)
 	doc := model.Document{
 		ID:                uuid.NewString(),
-		PNGPath:           &png,
+		MediaPath:         &png,
 		AdditionalContext: "some context",
 		CreatedAt:         time.Now(),
 		UpdatedAt:         time.Now(),

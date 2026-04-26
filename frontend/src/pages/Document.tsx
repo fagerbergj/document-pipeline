@@ -423,6 +423,18 @@ function ArtifactViewer({ doc, artifact }: { doc: DocumentDetail; artifact: Arti
   const [raw, setRaw] = useState(false)
   const url = `/api/v1/documents/${doc.id}/artifacts/${artifact.id}`
 
+  if (artifact.content_type.startsWith('audio/')) {
+    return (
+      <div>
+        <div className="flex justify-end mb-2">
+          <a href={url} download={artifact.filename}
+            className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">Download ↓</a>
+        </div>
+        <audio controls src={url} className="w-full" />
+      </div>
+    )
+  }
+
   if (artifact.content_type.startsWith('image/')) {
     return (
       <div>

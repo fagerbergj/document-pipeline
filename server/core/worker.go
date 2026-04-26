@@ -31,22 +31,23 @@ var confidenceLevels = map[model.Confidence]int{
 
 // WorkerService runs the pipeline stage loop.
 type WorkerService struct {
-	docs       port.DocumentRepo
-	jobs       port.JobRepo
-	artifacts  port.ArtifactRepo
-	events     port.StageEventRepo
-	contexts   port.ContextRepo
-	kv         port.KeyValueRepo
-	store      port.DocumentArtifactStore
-	llm        port.LLMInference
-	embed      port.EmbedStore
-	streams    port.StreamManager
-	prompts    port.PromptRenderer
-	sessionSvc session.Service
-	pipeline   model.PipelineConfig
-	vaultPath  string
-	embedModel string
-	ragTool    tool.Tool
+	docs        port.DocumentRepo
+	jobs        port.JobRepo
+	artifacts   port.ArtifactRepo
+	events      port.StageEventRepo
+	contexts    port.ContextRepo
+	kv          port.KeyValueRepo
+	store       port.DocumentArtifactStore
+	llm         port.LLMInference
+	embed       port.EmbedStore
+	transcriber port.Transcriber
+	streams     port.StreamManager
+	prompts     port.PromptRenderer
+	sessionSvc  session.Service
+	pipeline    model.PipelineConfig
+	vaultPath   string
+	embedModel  string
+	ragTool     tool.Tool
 }
 
 func NewWorkerService(
@@ -59,6 +60,7 @@ func NewWorkerService(
 	store port.DocumentArtifactStore,
 	llm port.LLMInference,
 	embed port.EmbedStore,
+	transcriber port.Transcriber,
 	streams port.StreamManager,
 	prompts port.PromptRenderer,
 	sessionSvc session.Service,
@@ -76,7 +78,8 @@ func NewWorkerService(
 	return &WorkerService{
 		docs: docs, jobs: jobs, artifacts: artifacts, events: events,
 		contexts: contexts, kv: kv, store: store, llm: llm, embed: embed,
-		streams: streams, prompts: prompts, sessionSvc: sessionSvc,
+		transcriber: transcriber,
+		streams:     streams, prompts: prompts, sessionSvc: sessionSvc,
 		pipeline: pipeline, vaultPath: vaultPath, embedModel: em, ragTool: ragTool,
 	}
 }
@@ -124,7 +127,8 @@ func (w *WorkerService) runOnce(ctx context.Context) (bool, error) {
 	for _, stage := range w.pipeline.Stages {
 		if stage.Type != model.StageTypeComputerVision &&
 			stage.Type != model.StageTypeLLMText &&
-			stage.Type != model.StageTypeEmbed {
+			stage.Type != model.StageTypeEmbed &&
+			stage.Type != model.StageTypeTranscribe {
 			continue
 		}
 
@@ -211,9 +215,11 @@ func (w *WorkerService) processJob(ctx context.Context, job model.Job, stage mod
 	case model.StageTypeComputerVision:
 		processErr = w.runOCR(ctx, doc, job, stage, ingestMeta, stageData)
 	case model.StageTypeLLMText:
-		processErr = w.runLLMText(ctx, doc, job, stage, stageData)
+		processErr = w.runLLMText(ctx, doc, job, stage, ingestMeta, stageData)
 	case model.StageTypeEmbed:
 		processErr = w.runEmbed(ctx, doc, job, stage, stageData)
+	case model.StageTypeTranscribe:
+		processErr = w.runTranscribe(ctx, doc, job, stage, ingestMeta)
 	}
 
 	if processErr != nil {
@@ -232,7 +238,7 @@ func (w *WorkerService) runOCR(
 	// Text file skip path
 	if meta != nil && isSkipFileType(stage, meta.FileType) {
 		rawText := meta.RawText
-		outputField := "ocr_raw"
+		outputField := "raw_text"
 		if len(stage.Outputs) > 0 {
 			outputField = stage.Outputs[0].Field
 		}
@@ -266,7 +272,7 @@ func (w *WorkerService) runOCR(
 		return nil
 	}
 
-	if doc.PNGPath == nil {
+	if doc.MediaPath == nil {
 		return fmt.Errorf("no PNG path on document %s", doc.ID[:8])
 	}
 
@@ -280,7 +286,7 @@ func (w *WorkerService) runOCR(
 		}
 	}
 
-	imageBytes, err := os.ReadFile(*doc.PNGPath)
+	imageBytes, err := os.ReadFile(*doc.MediaPath)
 	if err != nil {
 		return fmt.Errorf("read image: %w", err)
 	}
@@ -303,7 +309,7 @@ func (w *WorkerService) runOCR(
 	}
 	slog.Info("OCR complete", "doc_id", doc.ID[:8], "chars", len(text))
 
-	outputField := "ocr_raw"
+	outputField := "raw_text"
 	if len(stage.Outputs) > 0 {
 		outputField = stage.Outputs[0].Field
 	}
@@ -343,11 +349,112 @@ func (w *WorkerService) runOCR(
 	return nil
 }
 
+// --- Transcribe stage ---
+
+func (w *WorkerService) runTranscribe(
+	ctx context.Context, doc model.Document, job model.Job,
+	stage model.StageDefinition, meta *IngestMeta,
+) error {
+	now := time.Now().UTC()
+
+	// Skip non-audio inputs (image + text). Mirrors the OCR text-skip flow:
+	// emit a no-op skipped event so downstream stages still advance.
+	if meta == nil || !meta.FileType.IsAudio() || isSkipFileType(stage, meta.FileType) {
+		_ = w.jobs.UpdateStatus(ctx, job.ID, string(model.JobStatusDone), now)
+		_ = w.events.Append(ctx, model.StageEvent{DocumentID: doc.ID, Stage: stage.Name, EventType: model.EventSkipped, Timestamp: now})
+		_ = w.advancePipeline(ctx, job, now)
+		slog.Info("doc skipped transcribe (not audio)", "doc_id", doc.ID[:8], "stage", stage.Name)
+		return nil
+	}
+
+	if doc.MediaPath == nil {
+		return fmt.Errorf("no media path on document %s", doc.ID[:8])
+	}
+	if w.transcriber == nil {
+		return fmt.Errorf("transcribe stage configured but no transcriber wired")
+	}
+
+	audioBytes, err := os.ReadFile(*doc.MediaPath)
+	if err != nil {
+		return fmt.Errorf("read audio: %w", err)
+	}
+
+	w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventStatus, Data: `{"text":"Transcribing…"}`})
+
+	text, err := w.transcriber.Transcribe(ctx, stage.Model, audioBytes, filepathBase(*doc.MediaPath))
+	if err != nil {
+		return fmt.Errorf("transcribe: %w", err)
+	}
+
+	if wasStopped(ctx, w.jobs, job.ID) {
+		return nil
+	}
+
+	text = strings.TrimSpace(text)
+	if text == "" {
+		text = "(no speech recognised)"
+	}
+	slog.Info("transcribe complete", "doc_id", doc.ID[:8], "chars", len(text))
+
+	outputField := "raw_text"
+	if len(stage.Outputs) > 0 {
+		outputField = stage.Outputs[0].Field
+	}
+	// Write to BOTH the configured raw output and `clarified_text` so the
+	// downstream pipeline (which expects clarify to populate clarified_text)
+	// works transparently when clarify is skipped for audio.
+	inputs := []fieldDraft{txtField("source", "(audio)")}
+	outputs := []fieldDraft{
+		mdField(outputField, text),
+		mdField("clarified_text", text),
+	}
+
+	freshDoc, _ := w.docs.Get(ctx, doc.ID)
+	title := ""
+	if freshDoc.Title != nil && *freshDoc.Title != "" {
+		title = *freshDoc.Title
+	} else if doc.Title != nil {
+		title = *doc.Title
+	} else if meta != nil {
+		title = titleFromText(meta.AttachmentFilename, text)
+	} else {
+		title = titleFromText("", text)
+	}
+
+	now = time.Now().UTC()
+	run, err := w.persistRun(ctx, job, inputs, outputs, model.ConfidenceHigh, nil)
+	if err != nil {
+		return err
+	}
+	if err := w.jobs.UpdateRuns(ctx, job.ID, appendRun(job.Runs, run), now); err != nil {
+		return err
+	}
+	if title != "" && (freshDoc.Title == nil || *freshDoc.Title == "") {
+		freshDoc.Title = &title
+		freshDoc.UpdatedAt = now
+		_ = w.docs.Update(ctx, freshDoc)
+	}
+	_ = w.jobs.UpdateStatus(ctx, job.ID, string(model.JobStatusDone), now)
+	_ = w.events.Append(ctx, model.StageEvent{DocumentID: doc.ID, Stage: stage.Name, EventType: model.EventCompleted, Timestamp: now})
+	_ = w.advancePipeline(ctx, job, now)
+	slog.Info("transcribe done", "doc_id", doc.ID[:8], "stage", stage.Name)
+	return nil
+}
+
+func filepathBase(p string) string {
+	for i := len(p) - 1; i >= 0; i-- {
+		if p[i] == '/' || p[i] == '\\' {
+			return p[i+1:]
+		}
+	}
+	return p
+}
+
 // --- LLM text stage ---
 
 func (w *WorkerService) runLLMText(
 	ctx context.Context, doc model.Document, job model.Job,
-	stage model.StageDefinition, stageData map[string]map[string]any,
+	stage model.StageDefinition, meta *IngestMeta, stageData map[string]map[string]any,
 ) error {
 	now := time.Now().UTC()
 
@@ -358,6 +465,17 @@ func (w *WorkerService) runLLMText(
 	}
 
 	inputText, inputField := findInput(stageData, stage.Input)
+
+	// input_size_lt_kb: skip the stage when its input is shorter than the
+	// configured threshold (used by `summarize` for already-short documents).
+	if isSkipBySize(stage, inputText) {
+		now = time.Now().UTC()
+		_ = w.jobs.UpdateStatus(ctx, job.ID, string(model.JobStatusDone), now)
+		_ = w.events.Append(ctx, model.StageEvent{DocumentID: doc.ID, Stage: stage.Name, EventType: model.EventSkipped, Timestamp: now})
+		_ = w.advancePipeline(ctx, job, now)
+		slog.Info("doc skipped (input below size threshold)", "doc_id", doc.ID[:8], "stage", stage.Name, "bytes", len(inputText))
+		return nil
+	}
 
 	promptText := ""
 	if stage.Prompt != "" {
@@ -376,8 +494,8 @@ func (w *WorkerService) runLLMText(
 	}
 
 	var imageBytes []byte
-	if stage.Vision && doc.PNGPath != nil {
-		b, err := os.ReadFile(*doc.PNGPath)
+	if stage.Vision && doc.MediaPath != nil {
+		b, err := os.ReadFile(*doc.MediaPath)
 		if err != nil {
 			slog.Warn("could not read image for vision stage", "err", err)
 		} else {
@@ -517,8 +635,8 @@ func (w *WorkerService) runEmbed(
 
 	// Load image bytes once (used for chunk 0 only).
 	var imgBytes []byte
-	if job.Options.Embed != nil && job.Options.Embed.EmbedImage && doc.PNGPath != nil {
-		b, err := os.ReadFile(*doc.PNGPath)
+	if job.Options.Embed != nil && job.Options.Embed.EmbedImage && doc.MediaPath != nil {
+		b, err := os.ReadFile(*doc.MediaPath)
 		if err != nil {
 			slog.Warn("could not read image for embed", "err", err)
 		} else {
@@ -805,6 +923,33 @@ func checkContinueIf(stage model.StageDefinition, confidence model.Confidence) b
 		}
 	}
 	return false
+}
+
+// isSkipBySize returns true when stage.SkipIf["input_size_lt_kb"] is set and
+// the input text is smaller than the configured threshold (in KB).
+func isSkipBySize(stage model.StageDefinition, inputText string) bool {
+	if stage.SkipIf == nil {
+		return false
+	}
+	v, ok := stage.SkipIf["input_size_lt_kb"]
+	if !ok {
+		return false
+	}
+	var kb int
+	switch t := v.(type) {
+	case int:
+		kb = t
+	case int64:
+		kb = int(t)
+	case float64:
+		kb = int(t)
+	default:
+		return false
+	}
+	if kb <= 0 {
+		return false
+	}
+	return len(inputText) < kb*1024
 }
 
 func isSkipFileType(stage model.StageDefinition, fileType model.FileType) bool {

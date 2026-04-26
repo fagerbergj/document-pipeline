@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/fagerbergj/document-pipeline/server/core/model"
 	"github.com/fagerbergj/document-pipeline/server/core/port"
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 )
 
 var supportedFileTypes = map[string]model.FileType{
@@ -23,6 +25,12 @@ var supportedFileTypes = map[string]model.FileType{
 	"jpeg": model.FileTypeJPEG,
 	"txt":  model.FileTypeTXT,
 	"md":   model.FileTypeMD,
+	"webm": model.FileTypeWEBM,
+	"wav":  model.FileTypeWAV,
+	"mp3":  model.FileTypeMP3,
+	"m4a":  model.FileTypeM4A,
+	"ogg":  model.FileTypeOGG,
+	"flac": model.FileTypeFLAC,
 }
 
 func (h *handler) listDocuments(w http.ResponseWriter, r *http.Request) {
@@ -146,12 +154,6 @@ func (h *handler) uploadDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fileBytes, err := io.ReadAll(file)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "read file")
-		return
-	}
-
 	title := strings.TrimSpace(r.FormValue("title"))
 	additionalContext := strings.TrimSpace(r.FormValue("additional_context"))
 	series := strings.TrimSpace(r.FormValue("series"))
@@ -163,19 +165,119 @@ func (h *handler) uploadDocument(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	req := core.IngestRequest{
-		FileBytes:         fileBytes,
+	// Stream the multipart file to <vault>/tmp via io.Copy and route through
+	// IngestStreamed so we never buffer the whole upload in memory.
+	tmpDir := filepath.Join(h.vaultPath, "tmp")
+	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
+		writeError(w, http.StatusInternalServerError, "tmp dir")
+		return
+	}
+	tmpPath := filepath.Join(tmpDir, uuid.NewString()+".bin")
+	tmpFile, err := os.Create(tmpPath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "create tmp file")
+		return
+	}
+	if _, err := io.Copy(tmpFile, file); err != nil {
+		tmpFile.Close()
+		_ = os.Remove(tmpPath)
+		writeError(w, http.StatusBadRequest, "upload failed: "+err.Error())
+		return
+	}
+	if err := tmpFile.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		writeError(w, http.StatusInternalServerError, "close tmp file")
+		return
+	}
+
+	req := core.IngestStreamedRequest{
+		TempFilePath:      tmpPath,
 		Filename:          filename,
 		FileType:          ft,
 		Title:             title,
 		AdditionalContext: additionalContext,
 		LinkedContexts:    linkedContexts,
 		Series:            series,
+		Meta: core.IngestMeta{
+			AttachmentFilename: filename,
+			FileType:           ft,
+		},
 	}
 
-	job, ok, err := h.ingest.Ingest(r.Context(), req)
+	job, ok, err := h.ingest.IngestStreamed(r.Context(), req)
 	if err != nil {
 		slog.Error("uploadDocument ingest", "err", err)
+		_ = os.Remove(tmpPath)
+		writeError(w, http.StatusInternalServerError, "ingest failed")
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusConflict, "Duplicate file — document already exists")
+		return
+	}
+
+	doc, _ := h.docs.Get(r.Context(), job.DocumentID)
+	writeJSON(w, http.StatusCreated, toJobDetail(job, titleOf(doc)))
+}
+
+func (h *handler) streamDocument(w http.ResponseWriter, r *http.Request) {
+	qp := r.URL.Query()
+	filename := strings.TrimSpace(qp.Get("filename"))
+	if filename == "" {
+		writeError(w, http.StatusBadRequest, "?filename= required")
+		return
+	}
+	ext := ""
+	if idx := strings.LastIndex(filename, "."); idx >= 0 {
+		ext = strings.ToLower(filename[idx+1:])
+	}
+	ft, ok := supportedFileTypes[ext]
+	if !ok {
+		writeError(w, http.StatusBadRequest, "unsupported file type '."+ext+"'")
+		return
+	}
+
+	tmpDir := filepath.Join(h.vaultPath, "tmp")
+	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
+		writeError(w, http.StatusInternalServerError, "tmp dir")
+		return
+	}
+	tmpPath := filepath.Join(tmpDir, uuid.NewString()+".bin")
+	tmpFile, err := os.Create(tmpPath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "create tmp file")
+		return
+	}
+
+	written, err := io.Copy(tmpFile, r.Body)
+	tmpFile.Close()
+	if err != nil {
+		_ = os.Remove(tmpPath)
+		writeError(w, http.StatusBadRequest, "upload aborted: "+err.Error())
+		return
+	}
+	if written == 0 {
+		_ = os.Remove(tmpPath)
+		writeError(w, http.StatusBadRequest, "empty upload")
+		return
+	}
+
+	req := core.IngestStreamedRequest{
+		TempFilePath:      tmpPath,
+		Filename:          filename,
+		FileType:          ft,
+		Title:             strings.TrimSpace(qp.Get("title")),
+		AdditionalContext: strings.TrimSpace(qp.Get("additional_context")),
+		Series:            strings.TrimSpace(qp.Get("series")),
+		Meta: core.IngestMeta{
+			AttachmentFilename: filename,
+			FileType:           ft,
+		},
+	}
+	job, ok, err := h.ingest.IngestStreamed(r.Context(), req)
+	if err != nil {
+		slog.Error("streamDocument ingest", "err", err)
+		_ = os.Remove(tmpPath)
 		writeError(w, http.StatusInternalServerError, "ingest failed")
 		return
 	}

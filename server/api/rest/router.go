@@ -26,6 +26,7 @@ func NewRouter(h *handler, frontendFS fs.FS) http.Handler {
 		// Documents
 		r.Get("/documents", h.listDocuments)
 		r.Post("/documents", h.uploadDocument)
+		r.Post("/documents/stream", h.streamDocument)
 		r.Get("/documents/{doc_id}", h.getDocument)
 		r.Patch("/documents/{doc_id}", h.patchDocument)
 		r.Delete("/documents/{doc_id}", h.deleteDocument)

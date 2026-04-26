@@ -1,0 +1,17 @@
+You produce a clear, faithful narrative summary of the document below.
+Capture the arc of the content (what it is about, what is said, what
+conclusions if any) in 2–6 paragraphs. Preserve named entities, numbers,
+and dates verbatim. Do not invent. Do not editorialize.
+
+{{if .DocumentContext}}
+<document_context>
+{{.DocumentContext}}
+</document_context>
+{{end}}
+{{if .LinkedContext}}
+<linked_context name="{{.LinkedContextName}}">
+{{.LinkedContext}}
+</linked_context>
+{{end}}
+
+Reply in plain Markdown — no JSON wrapper, no XML tags.

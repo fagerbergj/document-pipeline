@@ -7,6 +7,7 @@ import StatusBadge from '../components/StatusBadge'
 import LoadingSpinner from '../components/LoadingSpinner'
 import DocKebabMenu from '../components/DocKebabMenu'
 import UploadModal from '../components/UploadModal'
+import RecordModal from '../components/RecordModal'
 import SearchBar, { buildLuceneQuery } from '../components/SearchBar'
 
 type SortKey = 'pipeline' | 'title_asc' | 'title_desc' | 'created_asc' | 'created_desc'
@@ -116,10 +117,12 @@ export default function Dashboard() {
 
   const updatedTime = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : ''
   const [showUpload, setShowUpload] = useState(false)
+  const [showRecord, setShowRecord] = useState(false)
 
   return (
     <div className="h-full">
       {showUpload && <UploadModal onClose={() => setShowUpload(false)} />}
+      {showRecord && <RecordModal onClose={() => setShowRecord(false)} />}
       {/* Header bar */}
       <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
         <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -128,6 +131,12 @@ export default function Dashboard() {
             <SearchBar stages={pipelineStages} />
           </div>
           <div className="flex items-center gap-3 shrink-0">
+            <button
+              onClick={() => setShowRecord(true)}
+              className="px-3 py-1.5 text-sm font-medium border border-red-300 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+            >
+              ● Record
+            </button>
             <button
               onClick={() => setShowUpload(true)}
               className="px-3 py-1.5 text-sm font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-700 transition-colors"
