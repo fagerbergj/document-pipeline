@@ -141,22 +141,6 @@ func migrationName(path string) string {
 	return strings.TrimSuffix(name, ".up.sql")
 }
 
-// rebind converts SQLite-style ? placeholders to Postgres $1, $2, … positional
-// parameters. Call this on every query string before passing it to the driver.
-func rebind(query string) string {
-	var b strings.Builder
-	n := 0
-	for _, c := range query {
-		if c == '?' {
-			n++
-			fmt.Fprintf(&b, "$%d", n)
-		} else {
-			b.WriteRune(c)
-		}
-	}
-	return b.String()
-}
-
 // searchPathFromDSN extracts the search_path query parameter from a Postgres DSN.
 func searchPathFromDSN(dsn string) string {
 	u, err := url.Parse(dsn)

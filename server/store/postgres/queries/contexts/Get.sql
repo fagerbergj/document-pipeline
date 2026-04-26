@@ -1,1 +1,1 @@
-SELECT * FROM contexts WHERE id=?;
+SELECT * FROM contexts WHERE id=$1;

@@ -1,1 +1,1 @@
-UPDATE jobs SET options=?, updated_at=? WHERE id=?;
+UPDATE jobs SET options=$1, updated_at=$2 WHERE id=$3;

@@ -1,1 +1,1 @@
-SELECT value FROM key_value WHERE key=?;
+SELECT value FROM key_value WHERE key=$1;

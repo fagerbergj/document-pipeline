@@ -1,1 +1,1 @@
--- SQLite does not support DROP COLUMN; migration is a no-op.
+ALTER TABLE documents DROP COLUMN series;

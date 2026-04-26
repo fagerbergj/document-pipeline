@@ -79,16 +79,19 @@ func (r *DocumentRepo) ListPaginated(ctx context.Context, filter port.DocumentFi
 
 	conditions := []string{}
 	params := []any{}
+	idx := 1
 
 	if len(filter.IDs) > 0 {
-		conditions = append(conditions, "d.id IN "+inClause(len(filter.IDs)))
+		conditions = append(conditions, "d.id IN "+inClause(idx, len(filter.IDs)))
 		for _, id := range filter.IDs {
 			params = append(params, id)
 		}
+		idx += len(filter.IDs)
 	}
 	if page.PageToken != nil {
-		conditions = append(conditions, sc.cursorWhere)
+		conditions = append(conditions, sc.cursorWhere(idx))
 		params = append(params, page.PageToken.SortKey, page.PageToken.LastID)
+		idx += 2
 	}
 
 	where := ""
@@ -102,7 +105,7 @@ func (r *DocumentRepo) ListPaginated(ctx context.Context, filter port.DocumentFi
 	}
 	params = append(params, limit+1)
 
-	stmt := rebind(fmt.Sprintf("SELECT d.* FROM documents d %s ORDER BY %s LIMIT ?", where, sc.order))
+	stmt := fmt.Sprintf("SELECT d.* FROM documents d %s ORDER BY %s LIMIT $%d", where, sc.order, idx)
 	rows, err := r.db.QueryContext(ctx, stmt, params...)
 	if err != nil {
 		return model.PageResult[model.Document]{}, err

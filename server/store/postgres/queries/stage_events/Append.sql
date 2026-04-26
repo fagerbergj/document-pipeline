@@ -1,1 +1,1 @@
-INSERT INTO stage_events (document_id, timestamp, stage, event_type) VALUES (?, ?, ?, ?);
+INSERT INTO stage_events (document_id, timestamp, stage, event_type) VALUES ($1, $2, $3, $4);

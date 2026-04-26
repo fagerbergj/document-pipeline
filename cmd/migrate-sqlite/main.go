@@ -102,6 +102,19 @@ func run(ctx context.Context, src, dst *sql.DB) error {
 		}
 		slog.Info("migrated table", "table", t.name, "rows", n)
 	}
+
+	// Tables with SERIAL primary keys had explicit ids inserted above, so the
+	// associated sequence is still at 1. Bump it past MAX(id) to avoid pkey
+	// collisions on subsequent inserts.
+	for _, name := range []string{"stage_events", "index_queue"} {
+		if _, err := dst.ExecContext(ctx, fmt.Sprintf(
+			`SELECT setval(pg_get_serial_sequence('%s', 'id'),
+			              COALESCE((SELECT MAX(id) FROM %s), 0) + 1, false)`,
+			name, name,
+		)); err != nil {
+			return fmt.Errorf("reset sequence for %s: %w", name, err)
+		}
+	}
 	return nil
 }
 
