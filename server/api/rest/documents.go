@@ -418,17 +418,27 @@ func (h *handler) getArtifact(w http.ResponseWriter, r *http.Request) {
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 func (h *handler) buildDocDetail(r *http.Request, doc model.Document) (schema.DocumentDetail, error) {
-	artifacts, err := h.artifacts.ListForDocument(r.Context(), doc.ID)
+	all, err := h.artifacts.ListForDocument(r.Context(), doc.ID)
 	if err != nil {
 		slog.Error("buildDocDetail artifacts", "err", err)
 		return schema.DocumentDetail{}, err
+	}
+	// Only surface source artifacts (uploaded files) at the document level.
+	// Derived run outputs (created_job_id != nil) are accessed per-stage
+	// through the run's Field.ArtifactID — surfacing them here too would
+	// make the artifact list balloon over time.
+	source := make([]model.Artifact, 0, len(all))
+	for _, a := range all {
+		if a.CreatedJobID == nil {
+			source = append(source, a)
+		}
 	}
 	jobs, err := h.jobs.ListForDocument(r.Context(), doc.ID)
 	if err != nil {
 		slog.Error("buildDocDetail jobs", "err", err)
 		return schema.DocumentDetail{}, err
 	}
-	return toDocDetail(doc, pickCurrentJob(jobs), artifacts), nil
+	return toDocDetail(doc, pickCurrentJob(jobs), source), nil
 }
 
 func pickCurrentJob(jobs []model.Job) *model.Job { return core.PickCurrentJob(jobs) }
