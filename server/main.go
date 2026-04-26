@@ -28,6 +28,7 @@ import (
 	"github.com/fagerbergj/document-pipeline/server/store/prompts"
 	"github.com/fagerbergj/document-pipeline/server/store/qdrant"
 	"github.com/fagerbergj/document-pipeline/server/store/stream"
+	"github.com/fagerbergj/document-pipeline/server/store/whisper"
 	"github.com/fagerbergj/document-pipeline/server/web"
 	"golang.org/x/sync/errgroup"
 )
@@ -39,6 +40,7 @@ func main() {
 	pipelineCfg := flag.String("pipeline", envOr("PIPELINE_CONFIG", "config/pipeline.yaml"), "Pipeline YAML config path")
 	addr := flag.String("addr", envOr("LISTEN_ADDR", ":8000"), "HTTP listen address")
 	ollamaURL := flag.String("ollama", envOr("OLLAMA_URL", "http://localhost:11434"), "Ollama base URL")
+	whisperURL := flag.String("whisper", envOr("WHISPER_URL", "http://faster-whisper:8000"), "Whisper base URL")
 	qdrantURL := flag.String("qdrant", envOr("QDRANT_URL", ""), "Qdrant base URL (empty = skip)")
 	qdrantCollection := flag.String("qdrant-collection", envOr("QDRANT_COLLECTION", "documents"), "Qdrant collection name")
 	qdrantKey := flag.String("qdrant-key", envOr("QDRANT_API_KEY", ""), "Qdrant API key")
@@ -84,6 +86,7 @@ func main() {
 
 	// --- adapters ---
 	llm := ollama.New(*ollamaURL)
+	transcriber := whisper.New(*whisperURL)
 	fs := filesystem.New()
 	sm := stream.New()
 	renderer := &prompts.FilePromptRenderer{}
@@ -126,7 +129,7 @@ func main() {
 
 	// --- services ---
 	ingest := core.NewIngestService(docs, jobs, artifacts, events, kv, fs, pipeline, *vault)
-	worker := core.NewWorkerService(docs, jobs, artifacts, events, contexts, kv, fs, llm, embedStore, sm, renderer, sessionSvc, pipeline, *vault)
+	worker := core.NewWorkerService(docs, jobs, artifacts, events, contexts, kv, fs, llm, embedStore, transcriber, sm, renderer, sessionSvc, pipeline, *vault)
 	if searchStore != nil {
 		indexerSvc = core.NewIndexerService(db.DB(), docs, jobs, artifacts, fs, searchStore, *vault)
 	}
@@ -165,6 +168,12 @@ func main() {
 			return nil
 		})
 	}
+
+	janitor := core.NewJanitorService(*vault)
+	eg.Go(func() error {
+		janitor.Run(egCtx)
+		return nil
+	})
 
 	eg.Go(func() error {
 		log.Info("HTTP server starting", "addr", *addr)

@@ -26,7 +26,7 @@ func (r *DocumentRepo) Insert(ctx context.Context, doc model.Document) error {
 		doc.ID, doc.ContentHash,
 		doc.CreatedAt.UTC().Format(time.RFC3339Nano),
 		doc.UpdatedAt.UTC().Format(time.RFC3339Nano),
-		doc.Title, doc.DateMonth, doc.PNGPath, doc.DuplicateOf,
+		doc.Title, doc.DateMonth, doc.MediaPath, doc.DuplicateOf,
 		doc.AdditionalContext, string(linkedJSON), doc.Series,
 	)
 	return err
@@ -60,7 +60,7 @@ func (r *DocumentRepo) Update(ctx context.Context, doc model.Document) error {
 	}
 	_, err = r.db.ExecContext(ctx, q["documents.Update"],
 		doc.UpdatedAt.UTC().Format(time.RFC3339Nano),
-		doc.Title, doc.DateMonth, doc.PNGPath, doc.DuplicateOf,
+		doc.Title, doc.DateMonth, doc.MediaPath, doc.DuplicateOf,
 		doc.AdditionalContext, string(linkedJSON), doc.Series, doc.ID,
 	)
 	return err
@@ -153,7 +153,7 @@ func scanDocument(row rowScanner) (model.Document, error) {
 	err := row.Scan(
 		&d.ID, &d.ContentHash,
 		&createdAt, &updatedAt,
-		&d.Title, &d.DateMonth, &d.PNGPath, &d.DuplicateOf,
+		&d.Title, &d.DateMonth, &d.MediaPath, &d.DuplicateOf,
 		&d.AdditionalContext, &linkedJSON, &d.Series,
 	)
 	if err != nil {

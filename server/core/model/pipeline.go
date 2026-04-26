@@ -35,4 +35,5 @@ const (
 	StageTypeComputerVision = "computer_vision"
 	StageTypeLLMText        = "llm_text"
 	StageTypeEmbed          = "embed"
+	StageTypeTranscribe     = "transcribe"
 )

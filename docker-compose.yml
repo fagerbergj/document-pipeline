@@ -13,9 +13,12 @@ services:
       - PIPELINE_CONFIG=/config/pipeline.yaml
       - LISTEN_ADDR=:8000
       - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
+      - WHISPER_URL=${WHISPER_URL:-http://faster-whisper:8000}
+      - WHISPER_MODEL=${WHISPER_MODEL:-Systran/faster-whisper-large-v3}
       - OCR_MODEL=${OCR_MODEL:-qwen3-vl:30b}
       - CLARIFY_MODEL=${CLARIFY_MODEL:-gemma4:31b}
       - CLASSIFY_MODEL=${CLASSIFY_MODEL:-gemma4-26b:latest}
+      - SUMMARIZE_MODEL=${SUMMARIZE_MODEL:-gemma4:31b}
       - EMBED_MODEL=${EMBED_MODEL:-}
       - QDRANT_URL=${QDRANT_URL:-}
       - QDRANT_COLLECTION=${QDRANT_COLLECTION:-documents}
@@ -26,4 +29,12 @@ services:
     volumes:
       - ./data:/data
       - /mnt/personal01/documents:/vault
+    networks:
+      - default
+      - api_gateway
     restart: unless-stopped
+
+networks:
+  api_gateway:
+    external: true
+    name: api_gateway

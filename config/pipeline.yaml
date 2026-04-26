@@ -1,23 +1,35 @@
 stages:
+  - name: transcribe
+    type: transcribe
+    skip_if:
+      file_type: [png, jpg, jpeg, txt, md]
+    max_concurrent: 1
+    model: ${WHISPER_MODEL}
+    outputs:
+      - field: raw_text
+        type: text
+
   - name: ocr
     type: computer_vision
     skip_if:
-      file_type: [txt, md]
+      file_type: [txt, md, webm, wav, mp3, m4a, ogg, flac]
     max_concurrent: 1
     model: ${OCR_MODEL}
     prompt: prompts/ocr.txt
     require_context: true
     outputs:
-      - field: ocr_raw
+      - field: raw_text
         type: text
 
   - name: clarify
     type: llm_text
     vision: true
+    skip_if:
+      file_type: [webm, wav, mp3, m4a, ogg, flac]
     max_concurrent: 1
     model: ${CLARIFY_MODEL}
     prompt: prompts/clarify.txt
-    input: ocr_raw
+    input: raw_text
     output: clarified_text
     start_if:
       context_provided: true
@@ -38,12 +50,22 @@ stages:
     start_if:
       context_provided: true
 
+  - name: summarize
+    type: llm_text
+    skip_if:
+      input_size_lt_kb: 3
+    max_concurrent: 1
+    model: ${SUMMARIZE_MODEL}
+    prompt: prompts/summarize.txt
+    input: clarified_text
+    output: narrative_summary
+
   - name: embed
     type: embed
     max_concurrent: 1
     model: ${EMBED_MODEL}
     input: clarified_text
-    metadata_fields: [title, tags, summary, date_month, series]
+    metadata_fields: [title, tags, summary, narrative_summary, date_month, series]
     chunk_size: 800
     chunk_overlap: 150
     destinations:

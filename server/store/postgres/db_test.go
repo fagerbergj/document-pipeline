@@ -23,8 +23,8 @@ func TestMigrations_UpDown(t *testing.T) {
 	if err := db.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM _migrations").Scan(&count); err != nil {
 		t.Fatalf("count migrations: %v", err)
 	}
-	if count != 12 {
-		t.Errorf("expected 12 migration records, got %d", count)
+	if count != 13 {
+		t.Errorf("expected 13 migration records, got %d", count)
 	}
 
 	if err := db.rollback(ctx); err != nil {
@@ -52,7 +52,7 @@ func TestMigrations_Idempotent(t *testing.T) {
 	if err := db2.db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM _migrations").Scan(&count); err != nil {
 		t.Fatalf("count: %v", err)
 	}
-	if count != 12 {
-		t.Errorf("expected 12 migration records, got %d", count)
+	if count != 13 {
+		t.Errorf("expected 13 migration records, got %d", count)
 	}
 }

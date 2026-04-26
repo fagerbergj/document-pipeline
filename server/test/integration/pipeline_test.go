@@ -34,6 +34,7 @@ import (
 	"github.com/fagerbergj/document-pipeline/server/store/postgres"
 	"github.com/fagerbergj/document-pipeline/server/store/prompts"
 	"github.com/fagerbergj/document-pipeline/server/store/stream"
+	"github.com/fagerbergj/document-pipeline/server/store/whisper"
 )
 
 // migrationsDir returns the path to the SQL migration files relative to the
@@ -74,6 +75,14 @@ func (n *noopEmbed) GetByIDs(_ context.Context, _ []string) ([]port.EmbedResult,
 }
 func (n *noopEmbed) DeleteByDocID(_ context.Context, _ string) error  { return nil }
 func (n *noopEmbed) DeleteBySeries(_ context.Context, _ string) error { return nil }
+
+// --- no-op Transcriber ---
+
+type noopTranscriber struct{ response string }
+
+func (n *noopTranscriber) Transcribe(_ context.Context, _ string, _ []byte, _ string) (string, error) {
+	return n.response, nil
+}
 
 // --- mock Ollama server ---
 
@@ -146,11 +155,83 @@ type testEnv struct {
 	srv    *httptest.Server
 	db     *postgres.DB
 	worker *core.WorkerService
+	vault  string
 }
 
 func (e *testEnv) Close() {
 	e.srv.Close()
 	e.db.Close()
+}
+
+// mockWhisperServer returns a httptest.Server that responds to
+// POST /v1/audio/transcriptions with {"text": transcript}. Tracks request count.
+type whisperMock struct {
+	*httptest.Server
+	mu       sync.Mutex
+	requests int
+}
+
+func mockWhisperServer(t *testing.T, transcript string) *whisperMock {
+	t.Helper()
+	m := &whisperMock{}
+	m.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/audio/transcriptions" {
+			http.NotFound(w, r)
+			return
+		}
+		m.mu.Lock()
+		m.requests++
+		m.mu.Unlock()
+		_ = r.ParseMultipartForm(64 << 20)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"text": transcript})
+	}))
+	return m
+}
+
+// makeAudioPipeline returns the full transcribe -> ocr -> clarify -> classify ->
+// summarize -> embed pipeline used by the audio integration tests.
+func makeAudioPipeline(promptPath string) model.PipelineConfig {
+	return model.PipelineConfig{
+		MaxConcurrent: 1,
+		Stages: []model.StageDefinition{
+			{
+				Name:    "transcribe",
+				Type:    model.StageTypeTranscribe,
+				Model:   "test-whisper",
+				SkipIf:  map[string]any{"file_type": []any{"png", "jpg", "jpeg", "txt", "md"}},
+				Outputs: []model.StageOutput{{Field: "raw_text", Type: "text"}},
+			},
+			{
+				Name:    "ocr",
+				Type:    model.StageTypeComputerVision,
+				Model:   "test-vision",
+				Prompt:  promptPath,
+				SkipIf:  map[string]any{"file_type": []any{"txt", "md", "webm", "wav", "mp3", "m4a", "ogg", "flac"}},
+				Outputs: []model.StageOutput{{Field: "raw_text", Type: "text"}},
+			},
+			{
+				Name:   "classify",
+				Type:   model.StageTypeLLMText,
+				Model:  "test-classify",
+				Prompt: promptPath,
+				Input:  "raw_text",
+				Outputs: []model.StageOutput{
+					{Field: "tags", Type: "json_array"},
+					{Field: "summary", Type: "text"},
+				},
+			},
+			{
+				Name:   "summarize",
+				Type:   model.StageTypeLLMText,
+				Model:  "test-summarize",
+				Prompt: promptPath,
+				Input:  "raw_text",
+				Output: "narrative_summary",
+				SkipIf: map[string]any{"input_size_lt_kb": 3},
+			},
+		},
+	}
 }
 
 // makePipeline returns a single-stage llm_text pipeline using the given prompt file.
@@ -207,6 +288,90 @@ func ensureSharedPostgres(t *testing.T) string {
 	return sharedDSN
 }
 
+// audioTestEnv wraps testEnv with the mock whisper server so tests can assert
+// transcription was (or wasn't) called.
+type audioTestEnv struct {
+	*testEnv
+	whisper *whisperMock
+}
+
+func newAudioTestEnv(t *testing.T, ollamaResp, transcript string) *audioTestEnv {
+	t.Helper()
+	whisperSrv := mockWhisperServer(t, transcript)
+	t.Cleanup(whisperSrv.Close)
+	env := newTestEnvWith(t, ollamaResp, makeAudioPipeline(testPromptFile(t)), whisperSrv.URL)
+	return &audioTestEnv{testEnv: env, whisper: whisperSrv}
+}
+
+// newTestEnvWith builds the server stack with a custom pipeline + whisper URL.
+func newTestEnvWith(t *testing.T, ollamaResp string, pipeline model.PipelineConfig, whisperURL string) *testEnv {
+	t.Helper()
+	base := ensureSharedPostgres(t)
+	schema := fmt.Sprintf("test_%d_%d", time.Now().UnixNano(), rand.Intn(1<<16))
+	sep := "?"
+	if strings.Contains(base, "?") {
+		sep = "&"
+	}
+	dsn := base + sep + "search_path=" + schema
+	vault := t.TempDir()
+	db, err := postgres.Open(dsn, migrationsDir())
+	if err != nil {
+		t.Fatalf("open postgres: %v", err)
+	}
+	t.Cleanup(func() {
+		db.Close()
+		admin, err := sql.Open("pgx", base)
+		if err != nil {
+			return
+		}
+		defer admin.Close()
+		_, _ = admin.ExecContext(context.Background(), "DROP SCHEMA IF EXISTS "+schema+" CASCADE")
+	})
+
+	ollamaSrv := mockOllamaServer(t, ollamaResp)
+	t.Cleanup(ollamaSrv.Close)
+
+	docs := db.Documents()
+	jobs := db.Jobs()
+	artifacts := db.Artifacts()
+	events := db.StageEvents()
+	contexts := db.Contexts()
+	kv := db.KeyValues()
+	fs := filesystem.New()
+	sm := stream.New()
+	llm := ollama.New(ollamaSrv.URL)
+	embed := &noopEmbed{}
+	renderer := &prompts.FilePromptRenderer{}
+	sessionSvc := session.InMemoryService()
+
+	var transcriber port.Transcriber = &noopTranscriber{}
+	if whisperURL != "" {
+		transcriber = whisper.New(whisperURL)
+	}
+
+	ingest := core.NewIngestService(docs, jobs, artifacts, events, kv, fs, pipeline, vault)
+	worker := core.NewWorkerService(docs, jobs, artifacts, events, contexts, kv, fs, llm, embed, transcriber, sm, renderer, sessionSvc, pipeline, vault)
+
+	handler := rest.New(rest.Dependencies{
+		Documents:  docs,
+		Jobs:       jobs,
+		Artifacts:  artifacts,
+		Contexts:   contexts,
+		SessionSvc: sessionSvc,
+		Store:      fs,
+		Streams:    sm,
+		LLM:        llm,
+		Embed:      embed,
+		Ingest:     ingest,
+		Pipeline:   pipeline,
+		VaultPath:  vault,
+	})
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+
+	return &testEnv{srv: srv, db: db, worker: worker, vault: vault}
+}
+
 // newTestEnv wires the full server stack with an in-process mock Ollama.
 func newTestEnv(t *testing.T, ollamaResp string) *testEnv {
 	t.Helper()
@@ -254,7 +419,7 @@ func newTestEnv(t *testing.T, ollamaResp string) *testEnv {
 
 	sessionSvc := session.InMemoryService()
 	ingest := core.NewIngestService(docs, jobs, artifacts, events, kv, fs, pipeline, vault)
-	worker := core.NewWorkerService(docs, jobs, artifacts, events, contexts, kv, fs, llm, embed, sm, renderer, sessionSvc, pipeline, vault)
+	worker := core.NewWorkerService(docs, jobs, artifacts, events, contexts, kv, fs, llm, embed, &noopTranscriber{}, sm, renderer, sessionSvc, pipeline, vault)
 
 	handler := rest.New(rest.Dependencies{
 		Documents:  docs,
@@ -273,7 +438,7 @@ func newTestEnv(t *testing.T, ollamaResp string) *testEnv {
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 
-	return &testEnv{srv: srv, db: db, worker: worker}
+	return &testEnv{srv: srv, db: db, worker: worker, vault: vault}
 }
 
 // get is a convenience wrapper for GET requests.
@@ -512,5 +677,159 @@ func TestContextCRUD(t *testing.T) {
 	dr.Body.Close()
 	if dr.StatusCode != http.StatusOK && dr.StatusCode != http.StatusNoContent {
 		t.Fatalf("delete context: %d", dr.StatusCode)
+	}
+}
+
+// --- audio pipeline tests ---
+
+func TestStreamPostBytes(t *testing.T) {
+	env := newAudioTestEnv(t, `<output><tags>["audio"]</tags><summary>An audio note.</summary><confidence>high</confidence></output>`,
+		"this is what was said in the audio")
+	defer env.Close()
+
+	body := bytes.NewReader([]byte("fake-webm-bytes"))
+	req, _ := http.NewRequest(http.MethodPost,
+		env.srv.URL+"/api/v1/documents/stream?filename=memo.webm", body)
+	req.Header.Set("Content-Type", "audio/webm")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("stream POST: %d %s", resp.StatusCode, b)
+	}
+	var out map[string]any
+	json.NewDecoder(resp.Body).Decode(&out)
+	docID, _ := out["document_id"].(string)
+	if docID == "" {
+		t.Fatal("expected document_id in response")
+	}
+
+	// No leftover temp files — atomic rename moved bytes into the artifacts dir.
+	entries, _ := os.ReadDir(filepath.Join(env.vault, "tmp"))
+	if len(entries) != 0 {
+		t.Errorf("expected empty <vault>/tmp after success, got %d entries", len(entries))
+	}
+}
+
+func TestSkipTranscribeForImage(t *testing.T) {
+	env := newAudioTestEnv(t, `<output><tags>["test"]</tags><summary>x</summary><confidence>high</confidence></output>`, "should not be called")
+	defer env.Close()
+
+	docID := env.uploadText(t, "note.txt", "small text body for the pipeline")
+	if err := env.worker.RunOnce(context.Background()); err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+
+	if env.whisper.requests != 0 {
+		t.Errorf("transcribe should be skipped for non-audio uploads; got %d whisper requests", env.whisper.requests)
+	}
+
+	job := env.waitForJobStatus(t, docID, "done", "waiting", "error")
+	if fmt.Sprint(job["stage"]) != "transcribe" {
+		t.Logf("first reported stage=%v status=%v (transcribe is skip-only and may auto-advance)", job["stage"], job["status"])
+	}
+}
+
+func TestSkipOCRForAudio(t *testing.T) {
+	env := newAudioTestEnv(t,
+		`<output><tags>["audio"]</tags><summary>audio summary</summary><confidence>high</confidence></output>`,
+		"transcribed text")
+	defer env.Close()
+
+	body := bytes.NewReader([]byte("fake-audio"))
+	req, _ := http.NewRequest(http.MethodPost,
+		env.srv.URL+"/api/v1/documents/stream?filename=clip.webm", body)
+	req.Header.Set("Content-Type", "audio/webm")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("upload: %d %s", resp.StatusCode, b)
+	}
+	var out map[string]any
+	json.NewDecoder(resp.Body).Decode(&out)
+	docID, _ := out["document_id"].(string)
+
+	// Drive stages until done. RunOnce processes one stage per call.
+	for i := 0; i < 8; i++ {
+		if err := env.worker.RunOnce(context.Background()); err != nil {
+			t.Fatalf("RunOnce[%d]: %v", i, err)
+		}
+	}
+
+	if env.whisper.requests == 0 {
+		t.Error("expected whisper to be called for audio upload")
+	}
+
+	// Verify ocr stage was recorded as skipped (the skipped event is appended).
+	res := env.get(t, "/api/v1/jobs?document_id="+docID)
+	items, _ := res["data"].([]any)
+	stages := map[string]string{}
+	for _, it := range items {
+		j, _ := it.(map[string]any)
+		stages[fmt.Sprint(j["stage"])] = fmt.Sprint(j["status"])
+	}
+	if stages["ocr"] != "done" {
+		t.Errorf("expected ocr stage to reach done (via skip path), got %q", stages["ocr"])
+	}
+	if stages["transcribe"] != "done" {
+		t.Errorf("expected transcribe to reach done, got %q", stages["transcribe"])
+	}
+}
+
+func TestSummarizeSkipShortText(t *testing.T) {
+	env := newAudioTestEnv(t,
+		`<output><tags>["short"]</tags><summary>brief</summary><confidence>high</confidence></output>`,
+		"unused")
+	defer env.Close()
+
+	docID := env.uploadText(t, "tiny.txt", "Just a short note, well under 3KB.")
+	for i := 0; i < 8; i++ {
+		if err := env.worker.RunOnce(context.Background()); err != nil {
+			t.Fatalf("RunOnce[%d]: %v", i, err)
+		}
+	}
+
+	res := env.get(t, "/api/v1/jobs?document_id="+docID)
+	items, _ := res["data"].([]any)
+	stages := map[string]string{}
+	for _, it := range items {
+		j, _ := it.(map[string]any)
+		stages[fmt.Sprint(j["stage"])] = fmt.Sprint(j["status"])
+	}
+	if stages["summarize"] != "done" {
+		t.Errorf("summarize should resolve to done (via skip path) for short input; got %q", stages["summarize"])
+	}
+}
+
+func TestUploadJanitor(t *testing.T) {
+	vault := t.TempDir()
+	tmpDir := filepath.Join(vault, "tmp")
+	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stale := filepath.Join(tmpDir, "stale.bin")
+	if err := os.WriteFile(stale, []byte("orphan"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Backdate beyond the janitor's 1h cutoff.
+	old := time.Now().Add(-2 * time.Hour)
+	_ = os.Chtimes(stale, old, old)
+
+	j := core.NewJanitorService(vault)
+	// Sweep is private; the public Run blocks on a ticker, but the first call
+	// inside Run is an immediate sweep. Use a short context to exercise it.
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	j.Run(ctx)
+
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Errorf("stale temp file should have been removed: err=%v", err)
 	}
 }

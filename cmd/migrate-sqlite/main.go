@@ -58,9 +58,10 @@ func run(ctx context.Context, src, dst *sql.DB) error {
 	// FK-safe insertion order.
 	tables := []table{
 		{
-			name:     "documents",
-			columns:  []string{"id", "content_hash", "created_at", "updated_at", "title", "date_month", "png_path", "duplicate_of", "additional_context", "linked_contexts", "series"},
-			conflict: "id",
+			name:       "documents",
+			columns:    []string{"id", "content_hash", "created_at", "updated_at", "title", "date_month", "media_path", "duplicate_of", "additional_context", "linked_contexts", "series"},
+			srcColumns: []string{"id", "content_hash", "created_at", "updated_at", "title", "date_month", "png_path", "duplicate_of", "additional_context", "linked_contexts", "series"},
+			conflict:   "id",
 		},
 		{
 			name:     "jobs",
@@ -105,14 +106,23 @@ func run(ctx context.Context, src, dst *sql.DB) error {
 }
 
 type table struct {
-	name     string
-	columns  []string
-	conflict string
+	name string
+	// columns is the destination column list (also used to build the source
+	// SELECT when srcColumns is empty).
+	columns []string
+	// srcColumns, when non-empty, names the columns to SELECT from the source
+	// DB. Used when a column was renamed between SQLite and the new Postgres
+	// schema (e.g. png_path → media_path).
+	srcColumns []string
+	conflict   string
 }
 
 func migrateTable(ctx context.Context, src, dst *sql.DB, t table) (int, error) {
-	cols := joinCols(t.columns)
-	rows, err := src.QueryContext(ctx, "SELECT "+cols+" FROM "+t.name)
+	srcCols := t.srcColumns
+	if len(srcCols) == 0 {
+		srcCols = t.columns
+	}
+	rows, err := src.QueryContext(ctx, "SELECT "+joinCols(srcCols)+" FROM "+t.name)
 	if err != nil {
 		// Table may not exist in older SQLite DBs (e.g. index_queue added later).
 		slog.Warn("skipping table (not found in source)", "table", t.name, "err", err)
@@ -126,7 +136,7 @@ func migrateTable(ctx context.Context, src, dst *sql.DB, t table) (int, error) {
 	}
 	insertSQL := fmt.Sprintf(
 		"INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) DO NOTHING",
-		t.name, cols, joinStrings(placeholders, ", "), t.conflict,
+		t.name, joinCols(t.columns), joinStrings(placeholders, ", "), t.conflict,
 	)
 
 	n := 0
