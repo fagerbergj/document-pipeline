@@ -108,34 +108,40 @@ func (r *JobRepo) ListPaginated(ctx context.Context, filter port.JobFilter, page
 
 	conditions := []string{}
 	params := []any{}
+	idx := 1
 
 	if len(filter.IDs) > 0 {
-		conditions = append(conditions, "id IN "+inClause(len(filter.IDs)))
+		conditions = append(conditions, "id IN "+inClause(idx, len(filter.IDs)))
 		for _, v := range filter.IDs {
 			params = append(params, v)
 		}
+		idx += len(filter.IDs)
 	}
 	if len(filter.DocumentIDs) > 0 {
-		conditions = append(conditions, "document_id IN "+inClause(len(filter.DocumentIDs)))
+		conditions = append(conditions, "document_id IN "+inClause(idx, len(filter.DocumentIDs)))
 		for _, v := range filter.DocumentIDs {
 			params = append(params, v)
 		}
+		idx += len(filter.DocumentIDs)
 	}
 	if len(filter.Stages) > 0 {
-		conditions = append(conditions, "stage IN "+inClause(len(filter.Stages)))
+		conditions = append(conditions, "stage IN "+inClause(idx, len(filter.Stages)))
 		for _, v := range filter.Stages {
 			params = append(params, v)
 		}
+		idx += len(filter.Stages)
 	}
 	if len(filter.Statuses) > 0 {
-		conditions = append(conditions, "status IN "+inClause(len(filter.Statuses)))
+		conditions = append(conditions, "status IN "+inClause(idx, len(filter.Statuses)))
 		for _, v := range filter.Statuses {
 			params = append(params, v)
 		}
+		idx += len(filter.Statuses)
 	}
 	if page.PageToken != nil {
-		conditions = append(conditions, sc.cursorWhere)
+		conditions = append(conditions, sc.cursorWhere(idx))
 		params = append(params, page.PageToken.SortKey, page.PageToken.LastID)
+		idx += 2
 	}
 
 	where := ""
@@ -149,7 +155,7 @@ func (r *JobRepo) ListPaginated(ctx context.Context, filter port.JobFilter, page
 	}
 	params = append(params, limit+1)
 
-	stmt := rebind(fmt.Sprintf("SELECT * FROM jobs %s ORDER BY %s LIMIT ?", where, sc.order))
+	stmt := fmt.Sprintf("SELECT * FROM jobs %s ORDER BY %s LIMIT $%d", where, sc.order, idx)
 	rows, err := r.db.QueryContext(ctx, stmt, params...)
 	if err != nil {
 		return model.PageResult[model.Job]{}, err
@@ -203,9 +209,8 @@ func (r *JobRepo) CascadeReplay(ctx context.Context, documentID, fromStage strin
 	for _, s := range downstream {
 		params = append(params, s)
 	}
-	_, err := r.db.ExecContext(ctx,
-		rebind("UPDATE jobs SET status='pending', updated_at=? WHERE document_id=? AND stage IN "+inClause(len(downstream))),
-		params...)
+	stmt := "UPDATE jobs SET status='pending', updated_at=$1 WHERE document_id=$2 AND stage IN " + inClause(3, len(downstream))
+	_, err := r.db.ExecContext(ctx, stmt, params...)
 	return err
 }
 

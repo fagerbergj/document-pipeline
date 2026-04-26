@@ -1,1 +1,1 @@
-SELECT * FROM jobs WHERE id=?;
+SELECT * FROM jobs WHERE id=$1;

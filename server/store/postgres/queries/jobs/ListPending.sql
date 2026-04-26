@@ -1,1 +1,1 @@
-SELECT * FROM jobs WHERE stage=? AND status='pending' ORDER BY created_at ASC;
+SELECT * FROM jobs WHERE stage=$1 AND status='pending' ORDER BY created_at ASC;

@@ -1,1 +1,1 @@
-DELETE FROM contexts WHERE id=?;
+DELETE FROM contexts WHERE id=$1;

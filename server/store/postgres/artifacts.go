@@ -63,12 +63,12 @@ func (r *ArtifactRepo) ListPaginated(ctx context.Context, _ port.ArtifactFilter,
 		err  error
 	)
 	if page.PageToken != nil {
-		rows, err = r.db.QueryContext(ctx, rebind(
-			"SELECT * FROM artifacts WHERE (created_at, id) > (?, ?) ORDER BY created_at, id LIMIT ?"),
+		rows, err = r.db.QueryContext(ctx,
+			"SELECT * FROM artifacts WHERE (created_at, id) > ($1, $2) ORDER BY created_at, id LIMIT $3",
 			page.PageToken.SortKey, page.PageToken.LastID, limit+1)
 	} else {
-		rows, err = r.db.QueryContext(ctx, rebind(
-			"SELECT * FROM artifacts ORDER BY created_at, id LIMIT ?"), limit+1)
+		rows, err = r.db.QueryContext(ctx,
+			"SELECT * FROM artifacts ORDER BY created_at, id LIMIT $1", limit+1)
 	}
 	if err != nil {
 		return model.PageResult[model.Artifact]{}, err
@@ -100,7 +100,7 @@ func (r *ArtifactRepo) ListPaginated(ctx context.Context, _ port.ArtifactFilter,
 }
 
 func (r *ArtifactRepo) Delete(ctx context.Context, id string) error {
-	_, err := r.db.ExecContext(ctx, rebind("DELETE FROM artifacts WHERE id = ?"), id)
+	_, err := r.db.ExecContext(ctx, "DELETE FROM artifacts WHERE id = $1", id)
 	return err
 }
 

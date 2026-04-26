@@ -49,17 +49,20 @@ func (r *ContextRepo) Update(ctx context.Context, id string, name, text *string)
 	// Build a partial UPDATE for whichever fields are non-nil.
 	sets := []string{}
 	params := []any{}
+	idx := 1
 	if name != nil {
-		sets = append(sets, "name=?")
+		sets = append(sets, fmt.Sprintf("name=$%d", idx))
 		params = append(params, *name)
+		idx++
 	}
 	if text != nil {
-		sets = append(sets, "text=?")
+		sets = append(sets, fmt.Sprintf("text=$%d", idx))
 		params = append(params, *text)
+		idx++
 	}
 	if len(sets) > 0 {
 		params = append(params, id)
-		stmt := rebind("UPDATE contexts SET " + strings.Join(sets, ", ") + " WHERE id=?")
+		stmt := fmt.Sprintf("UPDATE contexts SET %s WHERE id=$%d", strings.Join(sets, ", "), idx)
 		if _, err := r.db.ExecContext(ctx, stmt, params...); err != nil {
 			return model.Context{}, err
 		}

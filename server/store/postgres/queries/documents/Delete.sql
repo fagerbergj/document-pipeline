@@ -1,1 +1,1 @@
-DELETE FROM documents WHERE id=?;
+DELETE FROM documents WHERE id=$1;
