@@ -240,8 +240,8 @@ func TestJobRepo_UpdateRuns(t *testing.T) {
 
 	runs := []model.Run{{
 		ID:         "r1",
-		Inputs:     []model.Field{{Field: "in", Text: "hello"}},
-		Outputs:    []model.Field{{Field: "out", Text: "world"}},
+		Inputs:     []model.Field{{Field: "in", ArtifactID: "art-in", Size: 5, Preview: "hello"}},
+		Outputs:    []model.Field{{Field: "out", ArtifactID: "art-out", Size: 5, Preview: "world"}},
 		Confidence: model.ConfidenceHigh,
 		Questions:  []model.Question{},
 		CreatedAt:  ts(),
