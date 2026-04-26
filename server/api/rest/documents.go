@@ -423,22 +423,32 @@ func (h *handler) buildDocDetail(r *http.Request, doc model.Document) (schema.Do
 		slog.Error("buildDocDetail artifacts", "err", err)
 		return schema.DocumentDetail{}, err
 	}
-	// Only surface source artifacts (uploaded files) at the document level.
-	// Derived run outputs (created_job_id != nil) are accessed per-stage
-	// through the run's Field.ArtifactID — surfacing them here too would
-	// make the artifact list balloon over time.
-	source := make([]model.Artifact, 0, len(all))
+	// Surface source uploads always, plus the latest derived artifact per
+	// filename (e.g. only the most recent `clarified_text.md`, even if
+	// clarify ran several times). Older runs of the same field stay
+	// reachable through their job's Field.ArtifactID and the per-stage
+	// accordion — they just don't clutter the document-level list.
+	displayed := make([]model.Artifact, 0, len(all))
+	latestDerived := map[string]model.Artifact{} // filename -> winner
 	for _, a := range all {
 		if a.CreatedJobID == nil {
-			source = append(source, a)
+			displayed = append(displayed, a)
+			continue
 		}
+		prev, exists := latestDerived[a.Filename]
+		if !exists || a.CreatedAt.After(prev.CreatedAt) {
+			latestDerived[a.Filename] = a
+		}
+	}
+	for _, a := range latestDerived {
+		displayed = append(displayed, a)
 	}
 	jobs, err := h.jobs.ListForDocument(r.Context(), doc.ID)
 	if err != nil {
 		slog.Error("buildDocDetail jobs", "err", err)
 		return schema.DocumentDetail{}, err
 	}
-	return toDocDetail(doc, pickCurrentJob(jobs), source), nil
+	return toDocDetail(doc, pickCurrentJob(jobs), displayed), nil
 }
 
 func pickCurrentJob(jobs []model.Job) *model.Job { return core.PickCurrentJob(jobs) }
