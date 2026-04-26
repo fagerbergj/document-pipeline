@@ -128,7 +128,7 @@ func main() {
 	ingest := core.NewIngestService(docs, jobs, artifacts, events, kv, fs, pipeline, *vault)
 	worker := core.NewWorkerService(docs, jobs, artifacts, events, contexts, kv, fs, llm, embedStore, sm, renderer, sessionSvc, pipeline, *vault)
 	if searchStore != nil {
-		indexerSvc = core.NewIndexerService(db.DB(), docs, jobs, searchStore)
+		indexerSvc = core.NewIndexerService(db.DB(), docs, jobs, artifacts, fs, searchStore, *vault)
 	}
 
 	handler := rest.New(rest.Dependencies{

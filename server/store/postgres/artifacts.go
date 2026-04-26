@@ -17,7 +17,7 @@ var _ port.ArtifactRepo = (*ArtifactRepo)(nil)
 
 func (r *ArtifactRepo) Insert(ctx context.Context, a model.Artifact) error {
 	_, err := r.db.ExecContext(ctx, q["artifacts.Insert"],
-		a.ID, a.DocumentID, a.Filename, a.ContentType, a.CreatedJobID,
+		a.ID, a.DocumentID, a.Filename, a.ContentType, a.CreatedJobID, a.Path,
 		a.CreatedAt.UTC().Format(time.RFC3339Nano),
 		a.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	)
@@ -59,7 +59,7 @@ func scanArtifact(row rowScanner) (model.Artifact, error) {
 	)
 	err := row.Scan(
 		&a.ID, &a.DocumentID, &a.Filename, &a.ContentType,
-		&a.CreatedJobID, &createdAt, &updatedAt,
+		&a.CreatedJobID, &createdAt, &updatedAt, &a.Path,
 	)
 	if err != nil {
 		return model.Artifact{}, err

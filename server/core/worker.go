@@ -236,8 +236,8 @@ func (w *WorkerService) runOCR(
 		if len(stage.Outputs) > 0 {
 			outputField = stage.Outputs[0].Field
 		}
-		inputs := []model.Field{{Field: "raw_text", Text: rawText}}
-		outputs := []model.Field{{Field: outputField, Text: rawText}}
+		inputs := []fieldDraft{mdField("raw_text", rawText)}
+		outputs := []fieldDraft{mdField(outputField, rawText)}
 
 		title := ""
 		if doc.Title != nil {
@@ -247,7 +247,10 @@ func (w *WorkerService) runOCR(
 			title = titleFromText(meta.AttachmentFilename, rawText)
 		}
 
-		run := makeRun(inputs, outputs, model.ConfidenceHigh, nil)
+		run, err := w.persistRun(ctx, job, inputs, outputs, model.ConfidenceHigh, nil)
+		if err != nil {
+			return err
+		}
 		if err := w.jobs.UpdateRuns(ctx, job.ID, appendRun(job.Runs, run), now); err != nil {
 			return err
 		}
@@ -304,8 +307,8 @@ func (w *WorkerService) runOCR(
 	if len(stage.Outputs) > 0 {
 		outputField = stage.Outputs[0].Field
 	}
-	inputs := []model.Field{{Text: "(image)"}}
-	outputs := []model.Field{{Field: outputField, Text: text}}
+	inputs := []fieldDraft{txtField("source", "(image)")}
+	outputs := []fieldDraft{mdField(outputField, text)}
 
 	// Re-fetch doc in case title was set while OCR was running
 	freshDoc, _ := w.docs.Get(ctx, doc.ID)
@@ -321,7 +324,10 @@ func (w *WorkerService) runOCR(
 	}
 
 	now = time.Now().UTC()
-	run := makeRun(inputs, outputs, model.ConfidenceHigh, nil)
+	run, err := w.persistRun(ctx, job, inputs, outputs, model.ConfidenceHigh, nil)
+	if err != nil {
+		return err
+	}
 	if err := w.jobs.UpdateRuns(ctx, job.ID, appendRun(job.Runs, run), now); err != nil {
 		return err
 	}
@@ -332,7 +338,6 @@ func (w *WorkerService) runOCR(
 	}
 	_ = w.jobs.UpdateStatus(ctx, job.ID, string(model.JobStatusDone), now)
 	_ = w.events.Append(ctx, model.StageEvent{DocumentID: doc.ID, Stage: stage.Name, EventType: model.EventCompleted, Timestamp: now})
-	_ = w.saveArtifacts(ctx, stage, outputs, job, now)
 	_ = w.advancePipeline(ctx, job, now)
 	slog.Info("OCR done", "doc_id", doc.ID[:8], "stage", stage.Name)
 	return nil
@@ -413,7 +418,11 @@ func (w *WorkerService) runLLMText(
 	}
 
 	now = time.Now().UTC()
-	run := makeRun(inputs, outputs, confidence, questions)
+	run, err := w.persistRun(ctx, job, inputs, outputs, confidence, questions)
+	if err != nil {
+		w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventDone})
+		return err
+	}
 	if err := w.jobs.UpdateRuns(ctx, job.ID, appendRun(job.Runs, run), now); err != nil {
 		w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventDone})
 		return err
@@ -428,7 +437,6 @@ func (w *WorkerService) runLLMText(
 
 	_ = w.jobs.UpdateStatus(ctx, job.ID, string(model.JobStatusDone), now)
 	_ = w.events.Append(ctx, model.StageEvent{DocumentID: doc.ID, Stage: stage.Name, EventType: model.EventCompleted, Timestamp: now})
-	_ = w.saveArtifacts(ctx, stage, outputs, job, now)
 	w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventDone})
 	_ = w.advancePipeline(ctx, job, now)
 	slog.Info("LLM text done", "doc_id", doc.ID[:8], "stage", stage.Name)
@@ -560,11 +568,15 @@ func (w *WorkerService) runEmbed(
 	}
 
 	now := time.Now().UTC()
-	inputs := []model.Field{}
+	var inputs []fieldDraft
 	if inputField != "" {
-		inputs = []model.Field{{Field: inputField, Text: inputText}}
+		inputs = []fieldDraft{mdField(inputField, inputText)}
 	}
-	run := makeRun(inputs, []model.Field{{Field: "chunks", Text: fmt.Sprintf("%d", len(chunks))}}, model.ConfidenceHigh, nil)
+	outputs := []fieldDraft{txtField("chunks", fmt.Sprintf("%d", len(chunks)))}
+	run, err := w.persistRun(ctx, job, inputs, outputs, model.ConfidenceHigh, nil)
+	if err != nil {
+		return err
+	}
 	if err := w.jobs.UpdateRuns(ctx, job.ID, appendRun(job.Runs, run), now); err != nil {
 		return err
 	}
@@ -643,10 +655,14 @@ func (w *WorkerService) rebuildSeriesCorpus(
 	}
 
 	now := time.Now().UTC()
-	run := makeRun(nil, []model.Field{
-		{Field: "series_docs", Text: fmt.Sprintf("%d", len(seriesDocs))},
-		{Field: "chunks", Text: fmt.Sprintf("%d", len(chunks))},
-	}, model.ConfidenceHigh, nil)
+	outputs := []fieldDraft{
+		txtField("series_docs", fmt.Sprintf("%d", len(seriesDocs))),
+		txtField("chunks", fmt.Sprintf("%d", len(chunks))),
+	}
+	run, err := w.persistRun(ctx, job, nil, outputs, model.ConfidenceHigh, nil)
+	if err != nil {
+		return err
+	}
 	if err := w.jobs.UpdateRuns(ctx, job.ID, appendRun(job.Runs, run), now); err != nil {
 		return err
 	}
@@ -680,8 +696,12 @@ func (w *WorkerService) handleJobError(ctx context.Context, doc model.Document, 
 		_ = w.jobs.UpdateStatus(ctx, job.ID, string(model.JobStatusPending), now)
 	} else {
 		slog.Error("exhausted retries", "doc_id", doc.ID[:8], "stage", stage.Name)
-		errorRun := makeRun(nil, []model.Field{{Field: "error", Text: jobErr.Error()}}, model.ConfidenceLow, nil)
-		_ = w.jobs.UpdateRuns(ctx, job.ID, appendRun(job.Runs, errorRun), now)
+		errorRun, perr := w.persistRun(ctx, job, nil, []fieldDraft{txtField("error", jobErr.Error())}, model.ConfidenceLow, nil)
+		if perr != nil {
+			slog.Warn("could not persist error run", "err", perr)
+		} else {
+			_ = w.jobs.UpdateRuns(ctx, job.ID, appendRun(job.Runs, errorRun), now)
+		}
 		_ = w.jobs.UpdateStatus(ctx, job.ID, string(model.JobStatusError), now)
 	}
 }
@@ -726,42 +746,6 @@ func (w *WorkerService) advancePipeline(ctx context.Context, job model.Job, now 
 	return w.jobs.Upsert(ctx, nextJob)
 }
 
-// --- Artifact saving ---
-
-func (w *WorkerService) saveArtifacts(ctx context.Context, stage model.StageDefinition, outputs []model.Field, job model.Job, now time.Time) error {
-	if !stage.SaveAsArtifact {
-		return nil
-	}
-	for _, item := range outputs {
-		if item.Text == "" {
-			continue
-		}
-		field := item.Field
-		if field == "" {
-			field = stage.Name
-		}
-		filename := field + ".md"
-		artifactID := uuid.NewString()
-		if err := w.store.Save(w.vaultPath, artifactID, filename, []byte(item.Text)); err != nil {
-			slog.Warn("failed to save artifact", "filename", filename, "err", err)
-			continue
-		}
-		artifact := model.Artifact{
-			ID:           artifactID,
-			DocumentID:   job.DocumentID,
-			Filename:     filename,
-			ContentType:  "text/markdown",
-			CreatedJobID: &job.ID,
-			CreatedAt:    now,
-			UpdatedAt:    now,
-		}
-		if err := w.artifacts.Insert(ctx, artifact); err != nil {
-			slog.Warn("failed to insert artifact record", "filename", filename, "err", err)
-		}
-	}
-	return nil
-}
-
 // --- Helpers ---
 
 func (w *WorkerService) loadIngestMeta(ctx context.Context, docID string) (*IngestMeta, error) {
@@ -777,7 +761,7 @@ func (w *WorkerService) loadIngestMeta(ctx context.Context, docID string) (*Inge
 }
 
 func (w *WorkerService) collectStageData(ctx context.Context, docID string) (map[string]map[string]any, error) {
-	return CollectStageData(ctx, w.jobs, docID)
+	return CollectStageData(ctx, w.jobs, w.artifacts, w.store, w.vaultPath, docID)
 }
 
 func (w *WorkerService) loadLinkedContext(ctx context.Context, doc model.Document) (string, string) {
@@ -856,22 +840,6 @@ func findInput(stageData map[string]map[string]any, inputField string) (text, fi
 // had answered questions, a user turn (the answers) so the model treats them as
 // a continued conversation rather than repeated system-prompt text.
 
-func makeRun(inputs []model.Field, outputs []model.Field, confidence model.Confidence, questions []model.Question) model.Run {
-	now := time.Now().UTC()
-	if questions == nil {
-		questions = []model.Question{}
-	}
-	return model.Run{
-		ID:         uuid.NewString(),
-		Inputs:     inputs,
-		Outputs:    outputs,
-		Confidence: confidence,
-		Questions:  questions,
-		CreatedAt:  now,
-		UpdatedAt:  now,
-	}
-}
-
 func appendRun(runs []model.Run, run model.Run) []model.Run {
 	return append(runs, run)
 }
@@ -889,12 +857,14 @@ func wasStopped(ctx context.Context, jobs port.JobRepo, jobID string) bool {
 }
 
 // parseLLMResponse handles both the <clarified_text> XML format and the JSON format.
+// It returns in-memory drafts (text + intended file extension); the caller writes
+// them to disk via persistRun.
 func parseLLMResponse(raw, inputField, inputText string, stage model.StageDefinition) (
-	inputs []model.Field, outputs []model.Field, confidence model.Confidence, questions []model.Question,
+	inputs []fieldDraft, outputs []fieldDraft, confidence model.Confidence, questions []model.Question,
 ) {
 	confidence = model.ConfidenceMedium
 	if inputField != "" {
-		inputs = []model.Field{{Field: inputField, Text: inputText}}
+		inputs = []fieldDraft{mdField(inputField, inputText)}
 	}
 
 	if strings.Contains(raw, "<clarified_text>") {
@@ -920,7 +890,7 @@ func parseLLMResponse(raw, inputField, inputText string, stage model.StageDefini
 			outputField = stage.Outputs[0].Field
 		}
 		if outputField != "" && clarified != "" {
-			outputs = []model.Field{{Field: outputField, Text: clarified}}
+			outputs = []fieldDraft{mdField(outputField, clarified)}
 		}
 		return
 	}
@@ -940,7 +910,7 @@ func parseLLMResponse(raw, inputField, inputText string, stage model.StageDefini
 		}
 		if outputField != "" && strings.TrimSpace(raw) != "" {
 			slog.Info("LLM returned plain text; using as output", "stage", stage.Name, "field", outputField)
-			outputs = []model.Field{{Field: outputField, Text: strings.TrimSpace(raw)}}
+			outputs = []fieldDraft{mdField(outputField, strings.TrimSpace(raw))}
 		} else {
 			slog.Warn("failed to parse LLM JSON response", "err", err)
 		}
@@ -953,16 +923,18 @@ func parseLLMResponse(raw, inputField, inputText string, stage model.StageDefini
 
 	if stage.Output != "" {
 		if v, ok := parsed[stage.Output]; ok {
-			outputs = append(outputs, model.Field{Field: stage.Output, Text: fmt.Sprint(v)})
+			outputs = append(outputs, mdField(stage.Output, fmt.Sprint(v)))
 		}
 	}
 	for _, o := range stage.Outputs {
 		if v, ok := parsed[o.Field]; ok {
 			text := fmt.Sprint(v)
+			ext := "md"
 			if b, err := json.Marshal(v); err == nil && (o.Type == "json_array" || o.Type == "json") {
 				text = string(b)
+				ext = "json"
 			}
-			outputs = append(outputs, model.Field{Field: o.Field, Text: text})
+			outputs = append(outputs, fieldDraft{field: o.Field, text: text, ext: ext})
 		}
 	}
 	return

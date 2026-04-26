@@ -1013,16 +1013,27 @@ components:
 
     RunIOField:
       type: object
-      description: A single input or output field for an LLM run.
-      required: [field, text]
+      description: |
+        A single input or output field for an LLM run. The full value lives on
+        disk and is exposed as a row in the artifacts table; clients fetch it
+        via `GET /api/v1/documents/{doc_id}/artifacts/{artifact_id}`. The
+        `preview` field carries the first ~200 characters for inline rendering.
+      required: [field, artifact_id, size, preview]
       properties:
         field:
           type: string
           nullable: true
-          description: Field name (e.g. `ocr_raw`, `clarified_text`).
-        text:
+          description: Field name (e.g. `raw_text`, `clarified_text`).
+        artifact_id:
           type: string
-          description: Field value.
+          description: Artifact id holding the on-disk value.
+        size:
+          type: integer
+          format: int64
+          description: Size of the on-disk value in bytes.
+        preview:
+          type: string
+          description: First ~200 characters of the value for inline rendering.
 
     RunQuestion:
       type: object

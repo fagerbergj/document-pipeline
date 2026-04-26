@@ -19,7 +19,6 @@ stages:
     prompt: prompts/clarify.txt
     input: ocr_raw
     output: clarified_text
-    save_as_artifact: true
     start_if:
       context_provided: true
     continue_if:

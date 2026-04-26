@@ -226,6 +226,8 @@ type mockArtifactStore struct{}
 
 func (m *mockArtifactStore) Save(_, _, _ string, _ []byte) error { return nil }
 func (m *mockArtifactStore) Read(_, _, _ string) ([]byte, error) { return nil, nil }
+func (m *mockArtifactStore) SaveAt(_, _ string, _ []byte) error  { return nil }
+func (m *mockArtifactStore) ReadAt(_, _ string) ([]byte, error)  { return nil, nil }
 
 type mockStreamManager struct{}
 
@@ -611,8 +613,8 @@ func TestPatchRun(t *testing.T) {
 		Runs: []model.Run{
 			{
 				ID:         "run-1",
-				Inputs:     []model.Field{{Field: "ocr_raw", Text: "hello"}},
-				Outputs:    []model.Field{{Field: "clarified_text", Text: "hello world"}},
+				Inputs:     []model.Field{{Field: "ocr_raw", ArtifactID: "art-in", Size: 5, Preview: "hello"}},
+				Outputs:    []model.Field{{Field: "clarified_text", ArtifactID: "art-out", Size: 11, Preview: "hello world"}},
 				Confidence: model.ConfidenceLow,
 				Questions: []model.Question{
 					{Segment: "hello", Question: "What is this?", Answer: ""},
