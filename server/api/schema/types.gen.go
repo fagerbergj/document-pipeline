@@ -597,21 +597,22 @@ type Run struct {
 // RunConfidence LLM-reported confidence in the output.
 type RunConfidence string
 
-// RunIOField A single input or output field for an LLM run. The full value
-// lives on disk; clients fetch it via
-// GET /api/v1/documents/{doc_id}/artifacts/{artifact_id}.
+// RunIOField A single input or output field for an LLM run. The full value lives on
+// disk and is exposed as a row in the artifacts table; clients fetch it
+// via `GET /api/v1/documents/{doc_id}/artifacts/{artifact_id}`. The
+// `preview` field carries the first ~200 characters for inline rendering.
 type RunIOField struct {
-	// Field Field name (e.g. `raw_text`, `clarified_text`).
-	Field *string `json:"field"`
-
 	// ArtifactId Artifact id holding the on-disk value.
 	ArtifactId string `json:"artifact_id"`
 
-	// Size Size of the on-disk value in bytes.
-	Size int64 `json:"size"`
+	// Field Field name (e.g. `raw_text`, `clarified_text`).
+	Field *string `json:"field"`
 
 	// Preview First ~200 characters of the value for inline rendering.
 	Preview string `json:"preview"`
+
+	// Size Size of the on-disk value in bytes.
+	Size int64 `json:"size"`
 }
 
 // RunQuestion A clarification question raised by the LLM, with optional answer.

@@ -244,10 +244,11 @@ export type PatchDocumentBody = {
 };
 
 /**
- * A single input or output field for an LLM run. The full value lives on disk
- * and is exposed as a row in the artifacts table; clients fetch it via
- * `GET /api/v1/documents/{doc_id}/artifacts/{artifact_id}`. The `preview`
- * field carries the first ~200 characters for inline rendering.
+ * A single input or output field for an LLM run. The full value lives on
+ * disk and is exposed as a row in the artifacts table; clients fetch it
+ * via `GET /api/v1/documents/{doc_id}/artifacts/{artifact_id}`. The
+ * `preview` field carries the first ~200 characters for inline rendering.
+ *
  */
 export type RunIoField = {
     /**
@@ -807,13 +808,9 @@ export type ListDocumentsData = {
          */
         sort?: 'pipeline' | 'title_asc' | 'title_desc' | 'created_asc' | 'created_desc';
         /**
-         * Comma-separated list of pipeline stage names to filter by.
+         * Lucene query string. Fields — `title`, `series`, `summary`, `tags`, `content`, `date_month`, `stage`, `status`.
          */
-        stages?: string;
-        /**
-         * Comma-separated list of job statuses to filter by.
-         */
-        statuses?: string;
+        q?: string;
     };
     url: '/api/v1/documents';
 };
