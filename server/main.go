@@ -169,7 +169,7 @@ func main() {
 		})
 	}
 
-	janitor := core.NewJanitorService(*vault)
+	janitor := core.NewJanitorService(*vault, jobs, artifacts, fs)
 	eg.Go(func() error {
 		janitor.Run(egCtx)
 		return nil

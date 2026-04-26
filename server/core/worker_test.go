@@ -210,6 +210,21 @@ func (m *mockArtifactRepo) ListForDocument(ctx context.Context, documentID strin
 	}
 	return out, nil
 }
+func (m *mockArtifactRepo) ListPaginated(_ context.Context, _ port.ArtifactFilter, _ model.PageRequest) (model.PageResult[model.Artifact], error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]model.Artifact, 0, len(m.items))
+	for _, a := range m.items {
+		out = append(out, a)
+	}
+	return model.PageResult[model.Artifact]{Data: out}, nil
+}
+func (m *mockArtifactRepo) Delete(_ context.Context, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.items, id)
+	return nil
+}
 
 type mockContextRepo struct{}
 

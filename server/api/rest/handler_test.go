@@ -179,6 +179,17 @@ func (m *mockArtifactRepo) ListForDocument(_ context.Context, docID string) ([]m
 	}
 	return out, nil
 }
+func (m *mockArtifactRepo) ListPaginated(_ context.Context, _ port.ArtifactFilter, _ model.PageRequest) (model.PageResult[model.Artifact], error) {
+	out := make([]model.Artifact, 0, len(m.artifacts))
+	for _, a := range m.artifacts {
+		out = append(out, a)
+	}
+	return model.PageResult[model.Artifact]{Data: out}, nil
+}
+func (m *mockArtifactRepo) Delete(_ context.Context, id string) error {
+	delete(m.artifacts, id)
+	return nil
+}
 
 type mockContextRepo struct {
 	entries map[string]model.Context

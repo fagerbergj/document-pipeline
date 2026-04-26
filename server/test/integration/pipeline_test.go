@@ -822,7 +822,7 @@ func TestUploadJanitor(t *testing.T) {
 	old := time.Now().Add(-2 * time.Hour)
 	_ = os.Chtimes(stale, old, old)
 
-	j := core.NewJanitorService(vault)
+	j := core.NewJanitorService(vault, nil, nil, nil)
 	// Sweep is private; the public Run blocks on a ticker, but the first call
 	// inside Run is an immediate sweep. Use a short context to exercise it.
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
@@ -832,4 +832,78 @@ func TestUploadJanitor(t *testing.T) {
 	if _, err := os.Stat(stale); !os.IsNotExist(err) {
 		t.Errorf("stale temp file should have been removed: err=%v", err)
 	}
+}
+
+func TestJanitor_PrunesSupersededArtifacts(t *testing.T) {
+	env := newAudioTestEnv(t,
+		`<output><tags>["test"]</tags><summary>x</summary><confidence>high</confidence></output>`,
+		"transcribed text")
+	defer env.Close()
+
+	// Upload an audio doc and run the pipeline twice — the second run
+	// supersedes the first run's artifacts.
+	body := bytes.NewReader([]byte("fake-audio"))
+	req, _ := http.NewRequest(http.MethodPost,
+		env.srv.URL+"/api/v1/documents/stream?filename=clip.webm", body)
+	req.Header.Set("Content-Type", "audio/webm")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var out map[string]any
+	json.NewDecoder(resp.Body).Decode(&out)
+	docID, _ := out["document_id"].(string)
+
+	for i := 0; i < 8; i++ {
+		if err := env.worker.RunOnce(context.Background()); err != nil {
+			t.Fatalf("RunOnce[%d]: %v", i, err)
+		}
+	}
+
+	// Backdate every artifact for this doc so the janitor's grace period elapses.
+	if _, err := env.db.DB().ExecContext(context.Background(),
+		"UPDATE artifacts SET created_at = $1 WHERE document_id = $2",
+		time.Now().Add(-30*24*time.Hour).UTC().Format(time.RFC3339Nano), docID); err != nil {
+		t.Fatalf("backdate: %v", err)
+	}
+
+	// Force-replay clarify: cascades replays downstream stages, which create
+	// new runs and new artifact rows. The previous runs' artifacts are now
+	// superseded.
+	jobs, err := env.db.Jobs().ListForDocument(context.Background(), docID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stages := []string{"transcribe", "ocr", "clarify", "classify", "summarize"}
+	for _, j := range jobs {
+		_ = env.db.Jobs().UpdateStatus(context.Background(), j.ID, "pending", time.Now().UTC())
+	}
+	_ = stages
+	for i := 0; i < 8; i++ {
+		_ = env.worker.RunOnce(context.Background())
+	}
+
+	beforeCount := countArtifacts(t, env, docID)
+
+	// Run the orphan sweep directly. nil filesystem store skip is handled
+	// by canSweepOrphans so wire it here.
+	jan := core.NewJanitorService(env.vault, env.db.Jobs(), env.db.Artifacts(), filesystem.New())
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	jan.Run(ctx) // immediate sweep on entry, then ticker — ctx cancels quickly
+
+	afterCount := countArtifacts(t, env, docID)
+	if afterCount >= beforeCount {
+		t.Errorf("expected superseded artifacts to be pruned: before=%d after=%d", beforeCount, afterCount)
+	}
+}
+
+func countArtifacts(t *testing.T, env *audioTestEnv, docID string) int {
+	t.Helper()
+	arts, err := env.db.Artifacts().ListForDocument(context.Background(), docID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(arts)
 }
