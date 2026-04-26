@@ -23,7 +23,6 @@ type StageDefinition struct {
 	ContinueIf     []map[string]any
 	SkipIf         map[string]any
 	Vision         bool
-	SaveAsArtifact bool
 	MaxConcurrent  *int // nil means use PipelineConfig.MaxConcurrent
 }
 

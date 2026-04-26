@@ -177,14 +177,38 @@ func (m *mockEventRepo) CountFailures(ctx context.Context, documentID, stage str
 	return m.failures[documentID+":"+stage], nil
 }
 
-type mockArtifactRepo struct{}
+type mockArtifactRepo struct {
+	mu    sync.Mutex
+	items map[string]model.Artifact
+}
 
-func (m *mockArtifactRepo) Insert(ctx context.Context, a model.Artifact) error { return nil }
+func (m *mockArtifactRepo) Insert(ctx context.Context, a model.Artifact) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.items == nil {
+		m.items = map[string]model.Artifact{}
+	}
+	m.items[a.ID] = a
+	return nil
+}
 func (m *mockArtifactRepo) Get(ctx context.Context, documentID, artifactID string) (model.Artifact, error) {
-	return model.Artifact{}, nil
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if a, ok := m.items[artifactID]; ok && a.DocumentID == documentID {
+		return a, nil
+	}
+	return model.Artifact{}, fmt.Errorf("artifact not found: %s", artifactID)
 }
 func (m *mockArtifactRepo) ListForDocument(ctx context.Context, documentID string) ([]model.Artifact, error) {
-	return nil, nil
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []model.Artifact
+	for _, a := range m.items {
+		if a.DocumentID == documentID {
+			out = append(out, a)
+		}
+	}
+	return out, nil
 }
 
 type mockContextRepo struct{}
@@ -226,6 +250,14 @@ func (m *mockArtifactStore) Save(vaultPath, artifactID, filename string, data []
 }
 func (m *mockArtifactStore) Read(vaultPath, artifactID, filename string) ([]byte, error) {
 	return os.ReadFile(filepath.Join(vaultPath, "artifacts", artifactID, filename))
+}
+func (m *mockArtifactStore) SaveAt(vaultPath, relPath string, data []byte) error {
+	full := filepath.Join(vaultPath, relPath)
+	_ = os.MkdirAll(filepath.Dir(full), 0755)
+	return os.WriteFile(full, data, 0644)
+}
+func (m *mockArtifactStore) ReadAt(vaultPath, relPath string) ([]byte, error) {
+	return os.ReadFile(filepath.Join(vaultPath, relPath))
 }
 
 type mockLLM struct {
@@ -303,6 +335,62 @@ func (m *mockPromptRenderer) Render(path string, data any) (string, error) {
 }
 
 // ---- helpers ----
+
+// seedFieldOutputs writes test fields to the worker's vault + artifact repo
+// and returns the resulting model.Fields, suitable for attaching to a fake
+// prior-stage Run that the tests use to drive `findInput` lookups.
+func seedFieldOutputs(t *testing.T, w *WorkerService, docID, jobID string, fields ...[2]string) []model.Field {
+	t.Helper()
+	store := w.store.(*mockArtifactStore)
+	repo := w.artifacts.(*mockArtifactRepo)
+	runID := uuid.NewString()
+	now := time.Now().UTC()
+	var out []model.Field
+	for _, f := range fields {
+		name, text := f[0], f[1]
+		relPath := runOutputPath(jobID, runID, name, "md")
+		if err := store.SaveAt(w.vaultPath, relPath, []byte(text)); err != nil {
+			t.Fatal(err)
+		}
+		artID := uuid.NewString()
+		path := relPath
+		if err := repo.Insert(context.Background(), model.Artifact{
+			ID:          artID,
+			DocumentID:  docID,
+			Filename:    name + ".md",
+			ContentType: "text/markdown",
+			Path:        &path,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, model.Field{
+			Field:      name,
+			ArtifactID: artID,
+			Size:       int64(len(text)),
+			Preview:    previewOf(text),
+		})
+	}
+	return out
+}
+
+// readOutputText resolves a Run output's text by reading the backing artifact.
+func readOutputText(t *testing.T, w *WorkerService, docID string, f model.Field) string {
+	t.Helper()
+	if f.ArtifactID == "" {
+		return ""
+	}
+	art, err := w.artifacts.Get(context.Background(), docID, f.ArtifactID)
+	if err != nil {
+		t.Fatalf("get artifact: %v", err)
+	}
+	text, err := readArtifactText(w.store, w.vaultPath, art)
+	if err != nil {
+		t.Fatalf("read artifact text: %v", err)
+	}
+	return text
+}
 
 func pngPath(t *testing.T) string {
 	t.Helper()
@@ -480,7 +568,7 @@ func TestParseLLMResponse_JSONWithCodeFences(t *testing.T) {
 	if confidence != model.ConfidenceMedium {
 		t.Errorf("confidence: got %q", confidence)
 	}
-	if len(outputs) != 1 || outputs[0].Text != "test" {
+	if len(outputs) != 1 || outputs[0].text != "test" {
 		t.Errorf("outputs: %+v", outputs)
 	}
 }
@@ -498,7 +586,7 @@ Hello world
 	if confidence != model.ConfidenceMedium {
 		t.Errorf("confidence: got %q", confidence)
 	}
-	if len(outputs) != 1 || outputs[0].Text != "Hello world" {
+	if len(outputs) != 1 || outputs[0].text != "Hello world" {
 		t.Errorf("outputs: %+v", outputs)
 	}
 	if len(questions) != 0 {
@@ -533,7 +621,7 @@ func TestParseLLMResponse_ClarifiedTextStripsHTMLComments(t *testing.T) {
 	stage := model.StageDefinition{Output: "clarified_text"}
 	_, outputs, _, _ := parseLLMResponse(raw, "", "", stage)
 
-	if len(outputs) != 1 || outputs[0].Text != "Real content" {
+	if len(outputs) != 1 || outputs[0].text != "Real content" {
 		t.Errorf("HTML comment not stripped: %+v", outputs)
 	}
 }
@@ -543,7 +631,7 @@ func TestParseLLMResponse_InputPassthrough(t *testing.T) {
 	stage := model.StageDefinition{Output: "summary"}
 	inputs, _, _, _ := parseLLMResponse(raw, "ocr_raw", "the input text", stage)
 
-	if len(inputs) != 1 || inputs[0].Field != "ocr_raw" || inputs[0].Text != "the input text" {
+	if len(inputs) != 1 || inputs[0].field != "ocr_raw" || inputs[0].text != "the input text" {
 		t.Errorf("inputs not passed through: %+v", inputs)
 	}
 }
@@ -600,7 +688,7 @@ func TestProcessJob_OCR_Success(t *testing.T) {
 	if len(updatedJob.Runs) != 1 {
 		t.Fatalf("expected 1 run, got %d", len(updatedJob.Runs))
 	}
-	if len(updatedJob.Runs[0].Outputs) == 0 || updatedJob.Runs[0].Outputs[0].Text == "" {
+	if len(updatedJob.Runs[0].Outputs) == 0 || readOutputText(t, w, doc.ID, updatedJob.Runs[0].Outputs[0]) == "" {
 		t.Error("expected OCR output text")
 	}
 
@@ -643,7 +731,7 @@ func TestProcessJob_OCR_TextFileSkip(t *testing.T) {
 		t.Errorf("job status: got %q, want done", updatedJob.Status)
 	}
 	// Verify OCR (vision model) was not called — run output should be the raw text
-	if len(updatedJob.Runs) != 1 || updatedJob.Runs[0].Outputs[0].Text != "plain text content" {
+	if len(updatedJob.Runs) != 1 || readOutputText(t, w, doc.ID, updatedJob.Runs[0].Outputs[0]) != "plain text content" {
 		t.Errorf("expected passthrough of raw text, got runs: %+v", updatedJob.Runs)
 	}
 }
@@ -688,16 +776,8 @@ func TestProcessJob_LLMText_LowConfidenceParkForReview(t *testing.T) {
 	}
 	job := newTestJob(doc.ID, "clarify")
 
-	// Simulate prior OCR stage data
-	jobs := newMockJobRepo(job, model.Job{
-		ID:         uuid.NewString(),
-		DocumentID: doc.ID,
-		Stage:      "ocr",
-		Status:     model.JobStatusDone,
-		Runs: []model.Run{{
-			Outputs: []model.Field{{Field: "ocr_raw", Text: "some ocr text"}},
-		}},
-	})
+	priorOCRJobID := uuid.NewString()
+	jobs := newMockJobRepo(job)
 
 	llmResp := `<clarified_text>Clarified output</clarified_text>
 <confidence>low</confidence>
@@ -723,6 +803,16 @@ func TestProcessJob_LLMText_LowConfidenceParkForReview(t *testing.T) {
 		pipeline,
 	)
 
+	// Seed a prior OCR run via the worker's store so CollectStageData can read it.
+	priorOutputs := seedFieldOutputs(t, w, doc.ID, priorOCRJobID, [2]string{"ocr_raw", "some ocr text"})
+	_ = jobs.Upsert(context.Background(), model.Job{
+		ID:         priorOCRJobID,
+		DocumentID: doc.ID,
+		Stage:      "ocr",
+		Status:     model.JobStatusDone,
+		Runs:       []model.Run{{ID: uuid.NewString(), Outputs: priorOutputs}},
+	})
+
 	w.processJob(context.Background(), job, stage)
 
 	updatedJob, _ := jobs.GetByID(context.Background(), job.ID)
@@ -742,16 +832,8 @@ func TestProcessJob_Embed_Success(t *testing.T) {
 	}
 	job := newTestJob(doc.ID, "embed")
 
-	// Simulate prior clarify stage data
-	jobs := newMockJobRepo(job, model.Job{
-		ID:         uuid.NewString(),
-		DocumentID: doc.ID,
-		Stage:      "clarify",
-		Status:     model.JobStatusDone,
-		Runs: []model.Run{{
-			Outputs: []model.Field{{Field: "clarified_text", Text: "embedded content"}},
-		}},
-	})
+	priorClarifyJobID := uuid.NewString()
+	jobs := newMockJobRepo(job)
 
 	embed := &mockEmbedStore{}
 	stage := model.StageDefinition{
@@ -771,6 +853,15 @@ func TestProcessJob_Embed_Success(t *testing.T) {
 		&mockPromptRenderer{},
 		pipeline,
 	)
+
+	priorOutputs := seedFieldOutputs(t, w, doc.ID, priorClarifyJobID, [2]string{"clarified_text", "embedded content"})
+	_ = jobs.Upsert(context.Background(), model.Job{
+		ID:         priorClarifyJobID,
+		DocumentID: doc.ID,
+		Stage:      "clarify",
+		Status:     model.JobStatusDone,
+		Runs:       []model.Run{{ID: uuid.NewString(), Outputs: priorOutputs}},
+	})
 
 	w.processJob(context.Background(), job, stage)
 

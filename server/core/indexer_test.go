@@ -18,6 +18,7 @@ import (
 	"github.com/fagerbergj/document-pipeline/server/core"
 	"github.com/fagerbergj/document-pipeline/server/core/model"
 	"github.com/fagerbergj/document-pipeline/server/core/port"
+	"github.com/fagerbergj/document-pipeline/server/store/filesystem"
 	"github.com/fagerbergj/document-pipeline/server/store/postgres"
 )
 
@@ -140,7 +141,7 @@ func TestIndexerService_BackfillIfEmpty(t *testing.T) {
 	seedDocument(t, db, "doc-2")
 
 	idx := &mockIndexer{count: 0}
-	svc := core.NewIndexerService(db.DB(), db.Documents(), db.Jobs(), idx)
+	svc := core.NewIndexerService(db.DB(), db.Documents(), db.Jobs(), db.Artifacts(), filesystem.New(), idx, t.TempDir())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -172,7 +173,7 @@ func TestIndexerService_BackfillSkippedWhenNonEmpty(t *testing.T) {
 	seedDocument(t, db, "doc-1")
 
 	idx := &mockIndexer{count: 5}
-	svc := core.NewIndexerService(db.DB(), db.Documents(), db.Jobs(), idx)
+	svc := core.NewIndexerService(db.DB(), db.Documents(), db.Jobs(), db.Artifacts(), filesystem.New(), idx, t.TempDir())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -199,7 +200,7 @@ func TestIndexerService_ProcessQueue_Delete(t *testing.T) {
 	}
 
 	idx := &mockIndexer{count: 1}
-	svc := core.NewIndexerService(db.DB(), db.Documents(), db.Jobs(), idx)
+	svc := core.NewIndexerService(db.DB(), db.Documents(), db.Jobs(), db.Artifacts(), filesystem.New(), idx, t.TempDir())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -239,7 +240,7 @@ func TestIndexerService_Deduplication(t *testing.T) {
 	}
 
 	idx := &mockIndexer{count: 1}
-	svc := core.NewIndexerService(db.DB(), db.Documents(), db.Jobs(), idx)
+	svc := core.NewIndexerService(db.DB(), db.Documents(), db.Jobs(), db.Artifacts(), filesystem.New(), idx, t.TempDir())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
