@@ -190,6 +190,33 @@ func (r *JobRepo) ResetRunning(ctx context.Context) (int, error) {
 	return int(n), nil
 }
 
+// CascadeBlock moves any pending jobs downstream of fromStage to "waiting".
+// Called when the stage permanently fails so downstream stages don't run on
+// stale or empty inputs. The user can replay once the upstream issue is fixed.
+func (r *JobRepo) CascadeBlock(ctx context.Context, documentID, fromStage string, stageOrder []string, updatedAt time.Time) error {
+	idx := -1
+	for i, name := range stageOrder {
+		if name == fromStage {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return nil
+	}
+	downstream := stageOrder[idx+1:]
+	if len(downstream) == 0 {
+		return nil
+	}
+	params := []any{updatedAt.UTC().Format(time.RFC3339Nano), documentID}
+	for _, s := range downstream {
+		params = append(params, s)
+	}
+	stmt := "UPDATE jobs SET status='waiting', updated_at=$1 WHERE document_id=$2 AND status='pending' AND stage IN " + inClause(3, len(downstream))
+	_, err := r.db.ExecContext(ctx, stmt, params...)
+	return err
+}
+
 func (r *JobRepo) CascadeReplay(ctx context.Context, documentID, fromStage string, stageOrder []string, updatedAt time.Time) error {
 	idx := -1
 	for i, name := range stageOrder {

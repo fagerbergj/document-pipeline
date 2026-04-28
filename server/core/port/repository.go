@@ -36,6 +36,7 @@ type JobRepo interface {
 	ListPaginated(ctx context.Context, filter JobFilter, page model.PageRequest) (model.PageResult[model.Job], error)
 	ResetRunning(ctx context.Context) (int, error)
 	CascadeReplay(ctx context.Context, documentID, fromStage string, stageOrder []string, updatedAt time.Time) error
+	CascadeBlock(ctx context.Context, documentID, fromStage string, stageOrder []string, updatedAt time.Time) error
 }
 
 type JobFilter struct {

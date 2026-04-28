@@ -151,6 +151,9 @@ func (m *mockJobRepo) ResetRunning(_ context.Context) (int, error) { return 0, n
 func (m *mockJobRepo) CascadeReplay(_ context.Context, _, _ string, _ []string, _ time.Time) error {
 	return nil
 }
+func (m *mockJobRepo) CascadeBlock(_ context.Context, _, _ string, _ []string, _ time.Time) error {
+	return nil
+}
 
 type mockArtifactRepo struct {
 	artifacts map[string]model.Artifact

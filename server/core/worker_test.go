@@ -150,6 +150,9 @@ func (m *mockJobRepo) ResetRunning(ctx context.Context) (int, error) { return 0,
 func (m *mockJobRepo) CascadeReplay(ctx context.Context, documentID, fromStage string, stageOrder []string, updatedAt time.Time) error {
 	return nil
 }
+func (m *mockJobRepo) CascadeBlock(ctx context.Context, documentID, fromStage string, stageOrder []string, updatedAt time.Time) error {
+	return nil
+}
 
 type mockEventRepo struct {
 	mu       sync.Mutex

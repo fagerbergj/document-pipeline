@@ -831,6 +831,19 @@ func (w *WorkerService) handleJobError(ctx context.Context, doc model.Document, 
 			_ = w.jobs.UpdateRuns(ctx, job.ID, appendRun(job.Runs, errorRun), now)
 		}
 		_ = w.jobs.UpdateStatus(ctx, job.ID, string(model.JobStatusError), now)
+
+		// Block any downstream pending jobs so they don't run on the stale or
+		// empty input this stage failed to produce. Happens when the user
+		// replays an earlier stage (which cascades downstream to pending) and
+		// then that earlier stage fails — without this, every later stage would
+		// run with whatever (possibly empty) artifacts are lying around.
+		stageNames := make([]string, len(w.pipeline.Stages))
+		for i, s := range w.pipeline.Stages {
+			stageNames[i] = s.Name
+		}
+		if err := w.jobs.CascadeBlock(ctx, doc.ID, stage.Name, stageNames, now); err != nil {
+			slog.Warn("failed to block downstream jobs after permanent failure", "doc_id", doc.ID[:8], "stage", stage.Name, "err", err)
+		}
 	}
 }
 
