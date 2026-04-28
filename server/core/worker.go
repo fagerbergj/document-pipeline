@@ -237,40 +237,48 @@ func (w *WorkerService) runOCR(
 ) error {
 	now := time.Now().UTC()
 
-	// Text file skip path
+	// Skip path: this stage doesn't apply to the file type (e.g. OCR on audio,
+	// or OCR on a plain-text upload). Two sub-paths:
+	//   - text upload: persist the pre-extracted text as raw_text so downstream
+	//     stages have an input.
+	//   - other (audio): no-op skip — transcribe already produced raw_text.
+	//     Persisting an empty run here would overwrite transcribe's good output
+	//     in the stage data map (findInput iterates random order).
 	if meta != nil && isSkipFileType(stage, meta.FileType) {
 		rawText := meta.RawText
-		outputField := "raw_text"
-		if len(stage.Outputs) > 0 {
-			outputField = stage.Outputs[0].Field
-		}
-		inputs := []fieldDraft{mdField("raw_text", rawText)}
-		outputs := []fieldDraft{mdField(outputField, rawText)}
+		if rawText != "" {
+			outputField := "raw_text"
+			if len(stage.Outputs) > 0 {
+				outputField = stage.Outputs[0].Field
+			}
+			inputs := []fieldDraft{mdField("raw_text", rawText)}
+			outputs := []fieldDraft{mdField(outputField, rawText)}
 
-		title := ""
-		if doc.Title != nil {
-			title = *doc.Title
-		}
-		if title == "" && meta != nil {
-			title = titleFromText(meta.AttachmentFilename, rawText)
-		}
+			title := ""
+			if doc.Title != nil {
+				title = *doc.Title
+			}
+			if title == "" {
+				title = titleFromText(meta.AttachmentFilename, rawText)
+			}
 
-		run, err := w.persistRun(ctx, job, inputs, outputs, model.ConfidenceHigh, nil)
-		if err != nil {
-			return err
-		}
-		if err := w.jobs.UpdateRuns(ctx, job.ID, appendRun(job.Runs, run), now); err != nil {
-			return err
-		}
-		if title != "" && (doc.Title == nil || *doc.Title == "") {
-			doc.Title = &title
-			doc.UpdatedAt = now
-			_ = w.docs.Update(ctx, doc)
+			run, err := w.persistRun(ctx, job, inputs, outputs, model.ConfidenceHigh, nil)
+			if err != nil {
+				return err
+			}
+			if err := w.jobs.UpdateRuns(ctx, job.ID, appendRun(job.Runs, run), now); err != nil {
+				return err
+			}
+			if title != "" && (doc.Title == nil || *doc.Title == "") {
+				doc.Title = &title
+				doc.UpdatedAt = now
+				_ = w.docs.Update(ctx, doc)
+			}
 		}
 		_ = w.jobs.UpdateStatus(ctx, job.ID, string(model.JobStatusDone), now)
 		_ = w.events.Append(ctx, model.StageEvent{DocumentID: doc.ID, Stage: stage.Name, EventType: model.EventSkipped, Timestamp: now})
 		_ = w.advancePipeline(ctx, job, now)
-		slog.Info("doc skipped OCR (text upload)", "doc_id", doc.ID[:8], "stage", stage.Name)
+		slog.Info("doc skipped OCR", "doc_id", doc.ID[:8], "stage", stage.Name, "file_type", meta.FileType, "wrote_raw_text", rawText != "")
 		return nil
 	}
 

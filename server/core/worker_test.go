@@ -761,6 +761,64 @@ func TestProcessJob_OCR_TextFileSkip(t *testing.T) {
 	}
 }
 
+// Regression: when OCR skips an audio file, it must NOT persist a run with
+// empty raw_text — that would shadow transcribe's good output in stageData
+// (findInput iterates the stage map in random order). For audio file types,
+// transcribe already populated raw_text upstream; OCR's skip should be a
+// no-op skip without a run. For text files, RawText is non-empty and OCR's
+// skip still persists it (existing behaviour, covered by TestProcessJob_OCR_TextFileSkip).
+func TestProcessJob_OCR_AudioFileSkipDoesNotPersistEmptyRun(t *testing.T) {
+	doc := model.Document{
+		ID:        uuid.NewString(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	job := newTestJob(doc.ID, "ocr")
+
+	kv := newMockKVRepo()
+	// Audio file — transcribe ran upstream and produced raw_text.
+	// The ingest meta has FileType=webm and RawText="".
+	meta, _ := json.Marshal(IngestMeta{RawText: "", FileType: model.FileTypeWEBM})
+	_ = kv.Set(context.Background(), kvIngestMetaPrefix+doc.ID, string(meta))
+
+	docs := newMockDocRepo(doc)
+	jobs := newMockJobRepo(job)
+	events := newMockEventRepo()
+
+	stage := model.StageDefinition{
+		Name:    "ocr",
+		Type:    model.StageTypeComputerVision,
+		SkipIf:  map[string]any{"file_type": []any{"txt", "md", "webm", "wav"}},
+		Outputs: []model.StageOutput{{Field: "raw_text", Type: "text"}},
+	}
+	pipeline := model.PipelineConfig{MaxConcurrent: 1, Stages: []model.StageDefinition{stage}}
+	w := newWorker(t, docs, jobs, events, &mockLLM{}, &mockEmbedStore{}, kv, &mockPromptRenderer{}, pipeline)
+
+	w.processJob(context.Background(), job, stage)
+
+	updatedJob, _ := jobs.GetByID(context.Background(), job.ID)
+	if updatedJob.Status != model.JobStatusDone {
+		t.Errorf("job status: got %q, want done", updatedJob.Status)
+	}
+	if len(updatedJob.Runs) != 0 {
+		t.Errorf("expected no run to be persisted for audio skip, got %d runs", len(updatedJob.Runs))
+	}
+
+	// And the skipped event still fires so downstream pipeline advancement happens.
+	foundSkipped := false
+	events.mu.Lock()
+	for _, e := range events.events {
+		if e.DocumentID == doc.ID && e.Stage == "ocr" && e.EventType == model.EventSkipped {
+			foundSkipped = true
+			break
+		}
+	}
+	events.mu.Unlock()
+	if !foundSkipped {
+		t.Errorf("expected EventSkipped to be appended for ocr stage")
+	}
+}
+
 func TestProcessJob_LLMText_WaitsForContext(t *testing.T) {
 	doc := model.Document{
 		ID:        uuid.NewString(),
