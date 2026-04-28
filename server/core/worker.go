@@ -466,6 +466,17 @@ func (w *WorkerService) runLLMText(
 		return nil
 	}
 
+	// File-type skip: e.g. clarify is configured to skip audio uploads since
+	// transcribe already populates clarified_text. Without this check the stage
+	// runs with vision:true and feeds raw audio bytes as an image to the LLM.
+	if meta != nil && isSkipFileType(stage, meta.FileType) {
+		_ = w.jobs.UpdateStatus(ctx, job.ID, string(model.JobStatusDone), now)
+		_ = w.events.Append(ctx, model.StageEvent{DocumentID: doc.ID, Stage: stage.Name, EventType: model.EventSkipped, Timestamp: now})
+		_ = w.advancePipeline(ctx, job, now)
+		slog.Info("doc skipped LLM stage (file_type)", "doc_id", doc.ID[:8], "stage", stage.Name, "file_type", meta.FileType)
+		return nil
+	}
+
 	inputText, inputField := findInput(stageData, stage.Input)
 
 	// input_size_lt_kb: skip the stage when its input is shorter than the
