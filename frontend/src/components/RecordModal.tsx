@@ -18,6 +18,7 @@ export default function RecordModal({ onClose }: Props) {
   const [additionalContext, setAdditionalContext] = useState('')
   const [linkedIds, setLinkedIds] = useState<string[]>([])
   const [contexts, setContexts] = useState<{ id: string; name: string }[]>([])
+  const [seriesOptions, setSeriesOptions] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
 
   const recorderRef = useRef<MediaRecorder | null>(null)
@@ -27,6 +28,13 @@ export default function RecordModal({ onClose }: Props) {
 
   useEffect(() => {
     api.contexts().then(p => setContexts((p.data ?? []).map(e => ({ id: e.id, name: e.name })))).catch(() => {})
+    api.documents({ page_size: 100 }).then(p => {
+      const names = new Set<string>()
+      for (const d of p.data ?? []) {
+        if (d.series) names.add(d.series)
+      }
+      setSeriesOptions([...names].sort())
+    }).catch(() => {})
     return () => cleanup()
   }, [])
 
@@ -174,10 +182,14 @@ export default function RecordModal({ onClose }: Props) {
           <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Series (optional)</label>
           <input
             value={series}
+            list="record-series-suggestions"
             onChange={e => setSeries(e.target.value)}
             placeholder="e.g. Colliding Worlds"
             className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400"
           />
+          <datalist id="record-series-suggestions">
+            {seriesOptions.map(s => <option key={s} value={s} />)}
+          </datalist>
         </div>
 
         <div className="mb-4">

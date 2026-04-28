@@ -430,7 +430,7 @@ function ArtifactViewer({ doc, artifact }: { doc: DocumentDetail; artifact: Arti
           <a href={url} download={artifact.filename}
             className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">Download ↓</a>
         </div>
-        <audio controls src={url} className="w-full" />
+        <AudioPlayer url={url} />
       </div>
     )
   }
@@ -461,6 +461,31 @@ function ArtifactViewer({ doc, artifact }: { doc: DocumentDetail; artifact: Arti
       </a>
     </div>
   )
+}
+
+// MediaRecorder produces webm files with an unknown duration in the header,
+// so the browser's <audio controls> shows "-:--" until the user seeks. Force
+// duration discovery by seeking to a huge currentTime once metadata loads —
+// the browser computes the real duration as a side effect, then we seek back.
+function AudioPlayer({ url }: { url: string }) {
+  const ref = useRef<HTMLAudioElement>(null)
+  useEffect(() => {
+    const audio = ref.current
+    if (!audio) return
+    const onLoaded = () => {
+      if (!isFinite(audio.duration)) {
+        const onUpdate = () => {
+          audio.removeEventListener('timeupdate', onUpdate)
+          audio.currentTime = 0
+        }
+        audio.addEventListener('timeupdate', onUpdate)
+        audio.currentTime = 1e101
+      }
+    }
+    audio.addEventListener('loadedmetadata', onLoaded)
+    return () => audio.removeEventListener('loadedmetadata', onLoaded)
+  }, [url])
+  return <audio ref={ref} controls src={url} preload="metadata" className="w-full" />
 }
 
 function TextArtifact({ url, filename, raw, onToggleRaw }: {

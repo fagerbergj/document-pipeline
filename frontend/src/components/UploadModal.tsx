@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { useNavigate, Link } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import { api } from '../api'
 
@@ -13,12 +13,29 @@ export default function UploadModal({ onClose }: Props) {
   const [file, setFile] = useState<File | null>(null)
   const [title, setTitle] = useState('')
   const [series, setSeries] = useState('')
+  const [additionalContext, setAdditionalContext] = useState('')
+  const [linkedIds, setLinkedIds] = useState<string[]>([])
+  const [contexts, setContexts] = useState<{ id: string; name: string }[]>([])
+  const [seriesOptions, setSeriesOptions] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    api.contexts().then(p => setContexts((p.data ?? []).map(e => ({ id: e.id, name: e.name })))).catch(() => {})
+    api.documents({ page_size: 100 }).then(p => {
+      const names = new Set<string>()
+      for (const d of p.data ?? []) {
+        if (d.series) names.add(d.series)
+      }
+      setSeriesOptions([...names].sort())
+    }).catch(() => {})
+  }, [])
 
   const uploadMut = useMutation({
     mutationFn: () => api.uploadDocument(file!, {
-      ...(title ? { title } : {}),
-      ...(series ? { series } : {}),
+      ...(title.trim() ? { title: title.trim() } : {}),
+      ...(series.trim() ? { series: series.trim() } : {}),
+      ...(additionalContext.trim() ? { additional_context: additionalContext.trim() } : {}),
+      ...(linkedIds.length > 0 ? { linked_contexts: linkedIds } : {}),
     }),
     onSuccess: (job) => {
       onClose()
@@ -38,10 +55,14 @@ export default function UploadModal({ onClose }: Props) {
     }
   }
 
+  function toggleLinked(id: string) {
+    setLinkedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
       <div
-        className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl dark:shadow-black/40 w-full max-w-md mx-4 p-6"
+        className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl dark:shadow-black/40 w-full max-w-md mx-4 p-6 max-h-[90vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-5">
@@ -76,7 +97,6 @@ export default function UploadModal({ onClose }: Props) {
           )}
         </div>
 
-        {/* Title */}
         <div className="mb-4">
           <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Title (optional)</label>
           <input
@@ -87,15 +107,53 @@ export default function UploadModal({ onClose }: Props) {
           />
         </div>
 
-        {/* Series */}
         <div className="mb-4">
           <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Series (optional)</label>
           <input
             value={series}
+            list="series-suggestions"
             onChange={e => setSeries(e.target.value)}
             placeholder="e.g. Colliding Worlds"
             className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400"
           />
+          <datalist id="series-suggestions">
+            {seriesOptions.map(s => <option key={s} value={s} />)}
+          </datalist>
+        </div>
+
+        <div className="mb-4">
+          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Additional context (optional)</label>
+          <textarea
+            value={additionalContext}
+            onChange={e => setAdditionalContext(e.target.value)}
+            rows={3}
+            placeholder="Notes about the document the pipeline should consider"
+            className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400"
+          />
+        </div>
+
+        <div className="mb-4">
+          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Linked contexts (optional)</label>
+          {contexts.length === 0 ? (
+            <div className="text-xs text-gray-400 dark:text-gray-500">
+              No saved contexts —{' '}
+              <Link to="/contexts" className="text-blue-500 hover:underline">create one in Context Library</Link>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {contexts.map(c => (
+                <label key={c.id} className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={linkedIds.includes(c.id)}
+                    onChange={() => toggleLinked(c.id)}
+                    className="rounded border-gray-300 dark:border-gray-600"
+                  />
+                  <span className="text-sm text-gray-700 dark:text-gray-200">{c.name}</span>
+                </label>
+              ))}
+            </div>
+          )}
         </div>
 
         {error && (
