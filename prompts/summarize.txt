@@ -3,6 +3,14 @@ Capture the arc of the content (what it is about, what is said, what
 conclusions if any) in 2–6 paragraphs. Preserve named entities, numbers,
 and dates verbatim. Do not invent. Do not editorialize.
 
+If the document is a transcribed conversation (you'll see `[Name]` or
+`[SPEAKER_XX]` labels marking speaker turns), attribute key points to the
+speaker who made them — e.g. "Pat raised concerns about latency; Jason
+proposed batching as a fix." Track agreements, disagreements, decisions,
+and any unresolved questions across speakers. If labels are unresolved
+`[SPEAKER_XX]`, refer to them as "the first speaker", "the second speaker",
+etc., in the order they first appear.
+
 {{if .DocumentContext}}
 <document_context>
 {{.DocumentContext}}
