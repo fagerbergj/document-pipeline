@@ -24,6 +24,12 @@ export default function RecordModal({ onClose }: Props) {
   const controllerRef = useRef<ReadableStreamDefaultController<Uint8Array> | null>(null)
   const responsePromiseRef = useRef<Promise<Response> | null>(null)
   const tickRef = useRef<number | null>(null)
+  // Tracks in-flight ondataavailable handlers. The MediaRecorder spec dispatches
+  // the final 'dataavailable' and 'stop' events as separate queued tasks and
+  // does not await async listeners, so without this we'd close the body stream
+  // before the trailing chunk gets enqueued — producing a truncated webm that
+  // browsers play back but ffmpeg/whisper rejects as having no audio track.
+  const pendingChunksRef = useRef<Promise<void>[]>([])
 
   useEffect(() => () => cleanup(), [])
 
@@ -56,11 +62,14 @@ export default function RecordModal({ onClose }: Props) {
       start(c) { controllerRef.current = c },
     })
 
-    recorder.ondataavailable = async (e) => {
-      if (e.data.size > 0 && controllerRef.current) {
-        const buf = await e.data.arrayBuffer()
-        controllerRef.current.enqueue(new Uint8Array(buf))
-      }
+    recorder.ondataavailable = (e) => {
+      if (e.data.size === 0) return
+      const p = e.data.arrayBuffer().then(buf => {
+        try {
+          controllerRef.current?.enqueue(new Uint8Array(buf))
+        } catch {}
+      })
+      pendingChunksRef.current.push(p)
     }
     recorder.onerror = (e) => {
       setError('Recorder error: ' + String(e))
@@ -100,6 +109,11 @@ export default function RecordModal({ onClose }: Props) {
     }
     streamRef.current?.getTracks().forEach(t => t.stop())
     streamRef.current = null
+
+    // Wait for any in-flight chunk arrayBuffer() reads to enqueue before
+    // closing the body — otherwise the trailing webm chunk is dropped.
+    await Promise.all(pendingChunksRef.current)
+    pendingChunksRef.current = []
 
     try { controllerRef.current?.close() } catch {}
     controllerRef.current = null
