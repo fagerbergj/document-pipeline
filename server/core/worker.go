@@ -162,7 +162,9 @@ func (w *WorkerService) runOnce(ctx context.Context) (bool, error) {
 		}
 		_ = eg.Wait()
 
-		if stage.Model != "" {
+		// Only Ollama-backed stages need an unload; the transcribe stage uses
+		// faster-whisper and Ollama 404s on its model name.
+		if stage.Model != "" && stage.Type != model.StageTypeTranscribe {
 			if err := w.llm.Unload(ctx, stage.Model); err != nil {
 				slog.Warn("failed to unload model", "model", stage.Model, "err", err)
 			}
