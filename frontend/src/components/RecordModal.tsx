@@ -8,10 +8,6 @@ interface Props {
 
 type Status = 'idle' | 'recording' | 'finalizing' | 'error'
 
-// MediaRecorder emits a webm chunk every TIMESLICE_MS so the upload streams
-// progressively rather than buffering the whole recording in browser memory.
-const TIMESLICE_MS = 2000
-
 export default function RecordModal({ onClose }: Props) {
   const navigate = useNavigate()
   const [status, setStatus] = useState<Status>('idle')
@@ -21,15 +17,8 @@ export default function RecordModal({ onClose }: Props) {
 
   const recorderRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
-  const controllerRef = useRef<ReadableStreamDefaultController<Uint8Array> | null>(null)
-  const responsePromiseRef = useRef<Promise<Response> | null>(null)
+  const chunksRef = useRef<Blob[]>([])
   const tickRef = useRef<number | null>(null)
-  // Tracks in-flight ondataavailable handlers. The MediaRecorder spec dispatches
-  // the final 'dataavailable' and 'stop' events as separate queued tasks and
-  // does not await async listeners, so without this we'd close the body stream
-  // before the trailing chunk gets enqueued — producing a truncated webm that
-  // browsers play back but ffmpeg/whisper rejects as having no audio track.
-  const pendingChunksRef = useRef<Promise<void>[]>([])
 
   useEffect(() => () => cleanup(), [])
 
@@ -57,39 +46,17 @@ export default function RecordModal({ onClose }: Props) {
 
     const recorder = new MediaRecorder(mediaStream, { mimeType: 'audio/webm;codecs=opus' })
     recorderRef.current = recorder
-
-    const body = new ReadableStream<Uint8Array>({
-      start(c) { controllerRef.current = c },
-    })
+    chunksRef.current = []
 
     recorder.ondataavailable = (e) => {
-      if (e.data.size === 0) return
-      const p = e.data.arrayBuffer().then(buf => {
-        try {
-          controllerRef.current?.enqueue(new Uint8Array(buf))
-        } catch {}
-      })
-      pendingChunksRef.current.push(p)
+      if (e.data.size > 0) chunksRef.current.push(e.data)
     }
     recorder.onerror = (e) => {
       setError('Recorder error: ' + String(e))
       setStatus('error')
     }
 
-    const filename = `recording-${new Date().toISOString().replace(/[:.]/g, '-')}.webm`
-    // duplex: 'half' is required by Chrome to send a streaming request body.
-    responsePromiseRef.current = fetch(
-      `/api/v1/documents/stream?filename=${encodeURIComponent(filename)}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'audio/webm' },
-        body,
-        // @ts-expect-error duplex isn't in DOM TS lib yet
-        duplex: 'half',
-      },
-    )
-
-    recorder.start(TIMESLICE_MS)
+    recorder.start()
     setStatus('recording')
     setElapsed(0)
     tickRef.current = window.setInterval(() => setElapsed(e => e + 1), 1000)
@@ -101,7 +68,7 @@ export default function RecordModal({ onClose }: Props) {
 
     const recorder = recorderRef.current
     if (recorder && recorder.state !== 'inactive') {
-      // Wait for the final dataavailable event before closing the body stream.
+      // Wait for the final dataavailable + stop sequence so chunksRef is complete.
       await new Promise<void>((resolve) => {
         recorder.addEventListener('stop', () => resolve(), { once: true })
         recorder.stop()
@@ -110,16 +77,19 @@ export default function RecordModal({ onClose }: Props) {
     streamRef.current?.getTracks().forEach(t => t.stop())
     streamRef.current = null
 
-    // Wait for any in-flight chunk arrayBuffer() reads to enqueue before
-    // closing the body — otherwise the trailing webm chunk is dropped.
-    await Promise.all(pendingChunksRef.current)
-    pendingChunksRef.current = []
-
-    try { controllerRef.current?.close() } catch {}
-    controllerRef.current = null
-
     try {
-      const resp = await responsePromiseRef.current!
+      const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
+      if (blob.size === 0) throw new Error('No audio captured')
+
+      const filename = `recording-${new Date().toISOString().replace(/[:.]/g, '-')}.webm`
+      const resp = await fetch(
+        `/api/v1/documents/stream?filename=${encodeURIComponent(filename)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'audio/webm' },
+          body: blob,
+        },
+      )
       if (!resp.ok) {
         const body = await resp.text().catch(() => '')
         throw new Error(body || `HTTP ${resp.status}`)
@@ -195,10 +165,6 @@ export default function RecordModal({ onClose }: Props) {
             {error}
           </div>
         )}
-
-        <div className="text-xs text-gray-400 dark:text-gray-500 mt-4">
-          Audio streams to the server as you record — long sessions don't fill device storage.
-        </div>
       </div>
     </div>
   )
