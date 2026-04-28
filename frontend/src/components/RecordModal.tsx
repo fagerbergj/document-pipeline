@@ -44,7 +44,14 @@ export default function RecordModal({ onClose }: Props) {
     setError(null)
     let mediaStream: MediaStream
     try {
-      mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      mediaStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          channelCount: 1,
+        },
+      })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Microphone permission denied')
       setStatus('error')
