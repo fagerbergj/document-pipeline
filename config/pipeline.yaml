@@ -24,8 +24,6 @@ stages:
   - name: clarify
     type: llm_text
     vision: true
-    skip_if:
-      file_type: [webm, wav, mp3, m4a, ogg, flac]
     max_concurrent: 1
     model: ${CLARIFY_MODEL}
     prompt: prompts/clarify.txt

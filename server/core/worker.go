@@ -402,14 +402,8 @@ func (w *WorkerService) runTranscribe(
 	if len(stage.Outputs) > 0 {
 		outputField = stage.Outputs[0].Field
 	}
-	// Write to BOTH the configured raw output and `clarified_text` so the
-	// downstream pipeline (which expects clarify to populate clarified_text)
-	// works transparently when clarify is skipped for audio.
 	inputs := []fieldDraft{txtField("source", "(audio)")}
-	outputs := []fieldDraft{
-		mdField(outputField, text),
-		mdField("clarified_text", text),
-	}
+	outputs := []fieldDraft{mdField(outputField, text)}
 
 	freshDoc, _ := w.docs.Get(ctx, doc.ID)
 	title := ""
@@ -506,8 +500,11 @@ func (w *WorkerService) runLLMText(
 		}
 	}
 
+	// Only attach the source artifact as a vision input when it's actually an
+	// image. Audio docs reach clarify too (transcripts benefit from cleanup),
+	// but their .webm bytes would crash the LLM as image/png.
 	var imageBytes []byte
-	if stage.Vision && doc.MediaPath != nil {
+	if stage.Vision && doc.MediaPath != nil && meta != nil && meta.FileType.IsImage() {
 		b, err := os.ReadFile(*doc.MediaPath)
 		if err != nil {
 			slog.Warn("could not read image for vision stage", "err", err)
