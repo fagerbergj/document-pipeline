@@ -486,6 +486,22 @@ func (e *testEnv) uploadText(t *testing.T, filename, content string) string {
 	return docID
 }
 
+// uploadBytes ingests an arbitrary file by name+bytes via the multipart upload
+// endpoint and returns the HTTP response (caller checks status / parses body).
+func (e *testEnv) uploadBytes(t *testing.T, filename string, data []byte) *http.Response {
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, _ := mw.CreateFormFile("file", filename)
+	fw.Write(data)
+	mw.Close()
+	resp, err := http.Post(e.srv.URL+"/api/v1/documents", mw.FormDataContentType(), &buf)
+	if err != nil {
+		t.Fatalf("upload: %v", err)
+	}
+	return resp
+}
+
 // waitForJobStatus polls until any job for docID reaches one of the given
 // statuses, or the deadline is exceeded.
 func (e *testEnv) waitForJobStatus(t *testing.T, docID string, want ...string) map[string]any {
@@ -687,18 +703,11 @@ func TestStreamPostBytes(t *testing.T) {
 		"this is what was said in the audio")
 	defer env.Close()
 
-	body := bytes.NewReader([]byte("fake-webm-bytes"))
-	req, _ := http.NewRequest(http.MethodPost,
-		env.srv.URL+"/api/v1/documents/stream?filename=memo.webm", body)
-	req.Header.Set("Content-Type", "audio/webm")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
+	resp := env.uploadBytes(t, "memo.webm", []byte("fake-webm-bytes"))
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
 		b, _ := io.ReadAll(resp.Body)
-		t.Fatalf("stream POST: %d %s", resp.StatusCode, b)
+		t.Fatalf("upload: %d %s", resp.StatusCode, b)
 	}
 	var out map[string]any
 	json.NewDecoder(resp.Body).Decode(&out)
@@ -739,14 +748,7 @@ func TestSkipOCRForAudio(t *testing.T) {
 		"transcribed text")
 	defer env.Close()
 
-	body := bytes.NewReader([]byte("fake-audio"))
-	req, _ := http.NewRequest(http.MethodPost,
-		env.srv.URL+"/api/v1/documents/stream?filename=clip.webm", body)
-	req.Header.Set("Content-Type", "audio/webm")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
+	resp := env.uploadBytes(t, "clip.webm", []byte("fake-audio"))
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
 		b, _ := io.ReadAll(resp.Body)
@@ -842,14 +844,7 @@ func TestJanitor_PrunesSupersededArtifacts(t *testing.T) {
 
 	// Upload an audio doc and run the pipeline twice — the second run
 	// supersedes the first run's artifacts.
-	body := bytes.NewReader([]byte("fake-audio"))
-	req, _ := http.NewRequest(http.MethodPost,
-		env.srv.URL+"/api/v1/documents/stream?filename=clip.webm", body)
-	req.Header.Set("Content-Type", "audio/webm")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
+	resp := env.uploadBytes(t, "clip.webm", []byte("fake-audio"))
 	defer resp.Body.Close()
 	var out map[string]any
 	json.NewDecoder(resp.Body).Decode(&out)

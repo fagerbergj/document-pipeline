@@ -157,10 +157,9 @@ func (s *IngestService) Ingest(ctx context.Context, req IngestRequest) (model.Jo
 }
 
 // IngestStreamed handles uploads where the bytes have already been saved to a
-// temp file (used by the streaming POST /documents/stream endpoint and by the
-// multipart endpoint, which spills uploads >32MB to disk via mime/multipart).
-// Hashes during a single io.Copy pass into the final artifact location, then
-// finalizes via the shared helper.
+// temp file (the multipart endpoint spills uploads >32MB to disk via
+// mime/multipart). Hashes during a single io.Copy pass into the final artifact
+// location, then finalizes via the shared helper.
 func (s *IngestService) IngestStreamed(ctx context.Context, req IngestStreamedRequest) (model.Job, bool, error) {
 	src, err := os.Open(req.TempFilePath)
 	if err != nil {

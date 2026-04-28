@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { api } from '../api'
 
 interface Props {
@@ -13,6 +14,10 @@ export default function RecordModal({ onClose }: Props) {
   const [status, setStatus] = useState<Status>('idle')
   const [elapsed, setElapsed] = useState(0)
   const [title, setTitle] = useState('')
+  const [series, setSeries] = useState('')
+  const [additionalContext, setAdditionalContext] = useState('')
+  const [linkedIds, setLinkedIds] = useState<string[]>([])
+  const [contexts, setContexts] = useState<{ id: string; name: string }[]>([])
   const [error, setError] = useState<string | null>(null)
 
   const recorderRef = useRef<MediaRecorder | null>(null)
@@ -20,7 +25,10 @@ export default function RecordModal({ onClose }: Props) {
   const chunksRef = useRef<Blob[]>([])
   const tickRef = useRef<number | null>(null)
 
-  useEffect(() => () => cleanup(), [])
+  useEffect(() => {
+    api.contexts().then(p => setContexts((p.data ?? []).map(e => ({ id: e.id, name: e.name })))).catch(() => {})
+    return () => cleanup()
+  }, [])
 
   function cleanup() {
     if (tickRef.current) { clearInterval(tickRef.current); tickRef.current = null }
@@ -82,28 +90,23 @@ export default function RecordModal({ onClose }: Props) {
       if (blob.size === 0) throw new Error('No audio captured')
 
       const filename = `recording-${new Date().toISOString().replace(/[:.]/g, '-')}.webm`
-      const resp = await fetch(
-        `/api/v1/documents/stream?filename=${encodeURIComponent(filename)}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'audio/webm' },
-          body: blob,
-        },
-      )
-      if (!resp.ok) {
-        const body = await resp.text().catch(() => '')
-        throw new Error(body || `HTTP ${resp.status}`)
-      }
-      const job = await resp.json() as { document_id: string }
-      if (title.trim()) {
-        try { await api.updateDocument(job.document_id, { title: title.trim() }) } catch {}
-      }
+      const file = new File([blob], filename, { type: 'audio/webm' })
+      const opts: { title?: string; series?: string; additional_context?: string; linked_contexts?: string[] } = {}
+      if (title.trim()) opts.title = title.trim()
+      if (series.trim()) opts.series = series.trim()
+      if (additionalContext.trim()) opts.additional_context = additionalContext.trim()
+      if (linkedIds.length > 0) opts.linked_contexts = linkedIds
+      const job = await api.uploadDocument(file, opts)
       onClose()
       navigate(`/documents/${job.document_id}`)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
       setStatus('error')
     }
+  }
+
+  function toggleLinked(id: string) {
+    setLinkedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
   }
 
   function fmt(s: number) {
@@ -115,7 +118,7 @@ export default function RecordModal({ onClose }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
       <div
-        className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl dark:shadow-black/40 w-full max-w-md mx-4 p-6"
+        className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl dark:shadow-black/40 w-full max-w-md mx-4 p-6 max-h-[90vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-5">
@@ -158,6 +161,51 @@ export default function RecordModal({ onClose }: Props) {
             placeholder="Leave blank to auto-detect"
             className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400"
           />
+        </div>
+
+        <div className="mb-4">
+          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Series (optional)</label>
+          <input
+            value={series}
+            onChange={e => setSeries(e.target.value)}
+            placeholder="e.g. Colliding Worlds"
+            className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400"
+          />
+        </div>
+
+        <div className="mb-4">
+          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Additional context (optional)</label>
+          <textarea
+            value={additionalContext}
+            onChange={e => setAdditionalContext(e.target.value)}
+            rows={3}
+            placeholder="Notes about the recording the pipeline should consider"
+            className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400"
+          />
+        </div>
+
+        <div className="mb-4">
+          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Linked contexts (optional)</label>
+          {contexts.length === 0 ? (
+            <div className="text-xs text-gray-400 dark:text-gray-500">
+              No saved contexts —{' '}
+              <Link to="/contexts" className="text-blue-500 hover:underline">create one in Context Library</Link>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {contexts.map(c => (
+                <label key={c.id} className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={linkedIds.includes(c.id)}
+                    onChange={() => toggleLinked(c.id)}
+                    className="rounded border-gray-300 dark:border-gray-600"
+                  />
+                  <span className="text-sm text-gray-700 dark:text-gray-200">{c.name}</span>
+                </label>
+              ))}
+            </div>
+          )}
         </div>
 
         {error && (
