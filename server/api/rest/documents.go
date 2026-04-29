@@ -288,6 +288,21 @@ func (h *handler) patchDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// If context fields changed, nudge any waiting jobs for this doc back to
+	// pending. Stages with start_if=context_provided park themselves in waiting
+	// when there's no context yet, and the worker only picks up pending — so
+	// without this, adding context after the fact never wakes anything up.
+	if body.AdditionalContext != nil || body.LinkedContexts != nil {
+		jobsForDoc, err := h.jobs.ListForDocument(r.Context(), id)
+		if err == nil {
+			for _, j := range jobsForDoc {
+				if j.Status == model.JobStatusWaiting {
+					_ = h.jobs.UpdateStatus(r.Context(), j.ID, string(model.JobStatusPending), now)
+				}
+			}
+		}
+	}
+
 	doc, err = h.docs.Get(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal error")
