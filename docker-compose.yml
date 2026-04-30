@@ -28,7 +28,7 @@ services:
       - OPEN_WEBUI_KNOWLEDGE_ID=${OPEN_WEBUI_KNOWLEDGE_ID:-}
     volumes:
       - ./data:/data
-      - /mnt/personal01/documents:/vault
+      - /mnt/personal/documents:/vault
     networks:
       - default
       - api_gateway
