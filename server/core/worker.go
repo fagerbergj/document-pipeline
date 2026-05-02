@@ -74,7 +74,7 @@ func NewWorkerService(
 			break
 		}
 	}
-	ragTool, _ := adktools.NewRagSearchTool(embed, llm.GenerateEmbed, em, 0)
+	ragTool, _ := adktools.NewRagSearchTool(embed, llm.GenerateEmbed, em, 0, 0)
 	return &WorkerService{
 		docs: docs, jobs: jobs, artifacts: artifacts, events: events,
 		contexts: contexts, kv: kv, store: store, llm: llm, embed: embed,
