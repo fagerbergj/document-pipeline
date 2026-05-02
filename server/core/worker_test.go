@@ -319,7 +319,7 @@ func (m *mockEmbedStore) Upsert(ctx context.Context, id string, textVector, imag
 	m.upsertCount++
 	return nil
 }
-func (m *mockEmbedStore) Search(ctx context.Context, vector []float32, topK int) ([]port.EmbedResult, error) {
+func (m *mockEmbedStore) Search(_ context.Context, _ string, vector []float32, topK int) ([]port.EmbedResult, error) {
 	return nil, nil
 }
 func (m *mockEmbedStore) DeleteByDocID(ctx context.Context, docID string) error {

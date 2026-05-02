@@ -15,7 +15,9 @@ import (
 const (
 	vectorNameText  = "text"
 	vectorNameImage = "image"
+	sparseNameText  = "text_sparse"
 	distanceCosine  = "Cosine"
+	hybridPrefetchK = 30 // candidates per branch before RRF fusion
 )
 
 // Client talks to a Qdrant instance over HTTP.
@@ -100,7 +102,9 @@ func (c *Client) usesNamedVectors(ctx context.Context) bool {
 }
 
 // ensureCollection creates the collection if it does not exist.
-// Returns whether the collection uses named vectors.
+// Returns whether the collection uses named vectors. New collections are
+// always created with named vectors (text + optional image) plus a named
+// sparse vector ("text_sparse") with IDF modifier so hybrid search works.
 func (c *Client) ensureCollection(ctx context.Context, textLen int, imageLen int) (named bool, err error) {
 	resp, err := c.do(ctx, http.MethodGet, "/collections/"+c.collection, nil)
 	if err != nil {
@@ -114,18 +118,21 @@ func (c *Client) ensureCollection(ctx context.Context, textLen int, imageLen int
 		return false, fmt.Errorf("qdrant: GET collection %d", resp.StatusCode)
 	}
 
-	// Create collection
-	var vectorsCfg any
-	if imageLen > 0 {
-		vectorsCfg = map[string]any{
-			vectorNameText:  map[string]any{"size": textLen, "distance": distanceCosine},
-			vectorNameImage: map[string]any{"size": imageLen, "distance": distanceCosine},
-		}
-		named = true
-	} else {
-		vectorsCfg = map[string]any{"size": textLen, "distance": distanceCosine}
+	// Create collection — always named to leave room for image + sparse.
+	dense := map[string]any{
+		vectorNameText: map[string]any{"size": textLen, "distance": distanceCosine},
 	}
-	cr, err := c.do(ctx, http.MethodPut, "/collections/"+c.collection, map[string]any{"vectors": vectorsCfg})
+	if imageLen > 0 {
+		dense[vectorNameImage] = map[string]any{"size": imageLen, "distance": distanceCosine}
+	}
+	sparse := map[string]any{
+		sparseNameText: map[string]any{"modifier": "idf"},
+	}
+	named = true
+	cr, err := c.do(ctx, http.MethodPut, "/collections/"+c.collection, map[string]any{
+		"vectors":        dense,
+		"sparse_vectors": sparse,
+	})
 	if err != nil {
 		return false, err
 	}
@@ -134,8 +141,36 @@ func (c *Client) ensureCollection(ctx context.Context, textLen int, imageLen int
 		return false, fmt.Errorf("qdrant: create collection %d: %s", cr.StatusCode, body)
 	}
 	cr.Body.Close()
-	slog.Info("created qdrant collection", "collection", c.collection)
+	slog.Info("created qdrant collection", "collection", c.collection, "with_sparse", true)
 	return named, nil
+}
+
+// hasSparseVectors reports whether the collection's config includes the
+// "text_sparse" sparse vector. Older collections created before hybrid support
+// won't have it; in that case the client falls back to dense-only search.
+func (c *Client) hasSparseVectors(ctx context.Context) bool {
+	resp, err := c.do(ctx, http.MethodGet, "/collections/"+c.collection, nil)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		if resp != nil {
+			resp.Body.Close()
+		}
+		return false
+	}
+	defer resp.Body.Close()
+	var out struct {
+		Result struct {
+			Config struct {
+				Params struct {
+					SparseVectors map[string]json.RawMessage `json:"sparse_vectors"`
+				} `json:"params"`
+			} `json:"config"`
+		} `json:"result"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return false
+	}
+	_, ok := out.Result.Config.Params.SparseVectors[sparseNameText]
+	return ok
 }
 
 // idFromUUID converts a UUID string to a stable uint63 for Qdrant point IDs.

@@ -115,7 +115,7 @@ func TestSearch_CollectionMissing(t *testing.T) {
 	defer srv.Close()
 
 	c := qdrant.New(srv.URL, "docs", "")
-	results, err := c.Search(context.Background(), []float32{0.1, 0.2}, 5)
+	results, err := c.Search(context.Background(), "", []float32{0.1, 0.2}, 5)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func TestSearch_ReturnsResults(t *testing.T) {
 	defer srv.Close()
 
 	c := qdrant.New(srv.URL, "docs", "")
-	results, err := c.Search(context.Background(), []float32{0.1, 0.2}, 5)
+	results, err := c.Search(context.Background(), "", []float32{0.1, 0.2}, 5)
 	if err != nil {
 		t.Fatal(err)
 	}

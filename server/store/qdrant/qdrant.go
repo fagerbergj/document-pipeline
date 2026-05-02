@@ -12,7 +12,9 @@ import (
 
 // Upsert inserts or updates a point in the Qdrant collection.
 // If imageVector is non-empty and the collection uses named vectors, it is stored
-// as the "image" named vector alongside the "text" vector.
+// as the "image" named vector alongside the "text" vector. The chunk text in
+// payload[PayloadText] is also tokenized into a BM25 sparse vector when the
+// collection supports sparse vectors, enabling hybrid search.
 func (c *Client) Upsert(ctx context.Context, id string, textVector []float32, imageVector []float32, payload map[string]any) error {
 	imageLen := 0
 	if len(imageVector) > 0 {
@@ -25,11 +27,20 @@ func (c *Client) Upsert(ctx context.Context, id string, textVector []float32, im
 
 	var pointVector any
 	if named {
-		v := map[string][]float32{vectorNameText: textVector}
+		v := map[string]any{vectorNameText: textVector}
 		if len(imageVector) > 0 {
 			v[vectorNameImage] = imageVector
 		} else {
 			slog.Debug("named-vector collection; upserting text vector only", "collection", c.collection)
+		}
+		// Build sparse vector from chunk text when the collection supports it.
+		if c.hasSparseVectors(ctx) {
+			if text, _ := payload[port.PayloadText].(string); text != "" {
+				sv := BM25Vector(text)
+				if len(sv.Indices) > 0 {
+					v[sparseNameText] = sv
+				}
+			}
 		}
 		pointVector = v
 	} else {
@@ -86,8 +97,12 @@ func (c *Client) deleteByPayload(ctx context.Context, key, value string) error {
 	return nil
 }
 
-// Search returns the top-k nearest neighbours for vector in the collection's "text" space.
-func (c *Client) Search(ctx context.Context, vector []float32, topK int) ([]port.EmbedResult, error) {
+// Search returns the top-k matches for the query. When the collection has
+// sparse vectors configured, it performs hybrid retrieval (dense vector + BM25
+// sparse) fused via Reciprocal Rank Fusion. Otherwise it falls back to plain
+// dense search. queryText is used to build the sparse half of the hybrid query;
+// pass "" to skip sparse and force dense-only.
+func (c *Client) Search(ctx context.Context, queryText string, vector []float32, topK int) ([]port.EmbedResult, error) {
 	// If collection doesn't exist, return empty.
 	resp, err := c.do(ctx, http.MethodGet, "/collections/"+c.collection, nil)
 	if err != nil {
@@ -99,42 +114,79 @@ func (c *Client) Search(ctx context.Context, vector []float32, topK int) ([]port
 	}
 
 	named := c.usesNamedVectors(ctx)
-	var searchVector any
-	if named {
-		searchVector = map[string]any{"name": vectorNameText, "vector": vector}
+	hybrid := named && queryText != "" && c.hasSparseVectors(ctx)
+
+	var (
+		path string
+		body map[string]any
+	)
+	if hybrid {
+		sv := BM25Vector(queryText)
+		path = "/collections/" + c.collection + "/points/query"
+		body = map[string]any{
+			"prefetch": []map[string]any{
+				{"query": vector, "using": vectorNameText, "limit": hybridPrefetchK},
+				{"query": map[string]any{"indices": sv.Indices, "values": sv.Values}, "using": sparseNameText, "limit": hybridPrefetchK},
+			},
+			"query":        map[string]any{"fusion": "rrf"},
+			"limit":        topK,
+			"with_payload": true,
+		}
 	} else {
-		searchVector = vector
+		path = "/collections/" + c.collection + "/points/search"
+		var searchVector any
+		if named {
+			searchVector = map[string]any{"name": vectorNameText, "vector": vector}
+		} else {
+			searchVector = vector
+		}
+		body = map[string]any{
+			"vector":       searchVector,
+			"limit":        topK,
+			"with_payload": true,
+		}
 	}
 
-	body := map[string]any{
-		"vector":       searchVector,
-		"limit":        topK,
-		"with_payload": true,
-	}
-	sresp, err := c.do(ctx, http.MethodPost, "/collections/"+c.collection+"/points/search", body)
+	sresp, err := c.do(ctx, http.MethodPost, path, body)
 	if err != nil {
 		return nil, err
 	}
 	defer sresp.Body.Close()
 	if sresp.StatusCode >= 300 {
-		slog.Error("qdrant search error", "status", sresp.StatusCode, "body", readBody(sresp.Body))
+		slog.Error("qdrant search error", "status", sresp.StatusCode, "body", readBody(sresp.Body), "hybrid", hybrid)
 		return nil, nil
 	}
 
-	var out struct {
-		Result []struct {
-			ID      uint64          `json:"id"`
-			Score   float64         `json:"score"`
-			Payload map[string]any  `json:"payload"`
-			Version json.RawMessage `json:"version"`
-		} `json:"result"`
+	// /points/search returns "result": [hit, ...]
+	// /points/query returns "result": {"points": [hit, ...]}
+	type hit struct {
+		ID      uint64         `json:"id"`
+		Score   float64        `json:"score"`
+		Payload map[string]any `json:"payload"`
 	}
-	if err := json.NewDecoder(sresp.Body).Decode(&out); err != nil {
+	var raw struct {
+		Result json.RawMessage `json:"result"`
+	}
+	if err := json.NewDecoder(sresp.Body).Decode(&raw); err != nil {
 		return nil, fmt.Errorf("qdrant: decode search response: %w", err)
 	}
+	var hits []hit
+	if hybrid {
+		var w struct {
+			Points []hit `json:"points"`
+		}
+		if err := json.Unmarshal(raw.Result, &w); err != nil {
+			return nil, fmt.Errorf("qdrant: decode query response: %w", err)
+		}
+		hits = w.Points
+	} else {
+		if err := json.Unmarshal(raw.Result, &hits); err != nil {
+			return nil, fmt.Errorf("qdrant: decode search response: %w", err)
+		}
+	}
 
-	results := make([]port.EmbedResult, 0, len(out.Result))
-	for _, h := range out.Result {
+	results := make([]port.EmbedResult, 0, len(hits))
+	for _, h := range hits {
 		results = append(results, port.EmbedResult{
 			ID:      fmt.Sprintf("%d", h.ID),
 			Score:   h.Score,

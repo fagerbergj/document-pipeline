@@ -274,7 +274,7 @@ type mockEmbedStore struct{}
 func (m *mockEmbedStore) Upsert(_ context.Context, _ string, _, _ []float32, _ map[string]any) error {
 	return nil
 }
-func (m *mockEmbedStore) Search(_ context.Context, _ []float32, _ int) ([]port.EmbedResult, error) {
+func (m *mockEmbedStore) Search(_ context.Context, _ string, _ []float32, _ int) ([]port.EmbedResult, error) {
 	return nil, nil
 }
 func (m *mockEmbedStore) DeleteByDocID(_ context.Context, _ string) error { return nil }
