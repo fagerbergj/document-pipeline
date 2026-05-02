@@ -26,7 +26,7 @@ func (s *NoopStore) Upsert(_ context.Context, _ string, _ []float32, _ []float32
 	return nil
 }
 
-func (s *NoopStore) Search(_ context.Context, _ []float32, _ int) ([]port.EmbedResult, error) {
+func (s *NoopStore) Search(_ context.Context, _ string, _ []float32, _ int) ([]port.EmbedResult, error) {
 	s.warnOnce.Do(func() {
 		slog.Warn("embed store disabled — Search returning no sources (set QDRANT_URL to enable)")
 	})

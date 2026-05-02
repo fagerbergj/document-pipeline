@@ -21,7 +21,7 @@ func (f *fakeQdrant) Upsert(_ context.Context, id string, _ []float32, _ []float
 	f.upserted = append(f.upserted, id)
 	return f.err
 }
-func (f *fakeQdrant) Search(_ context.Context, _ []float32, _ int) ([]port.EmbedResult, error) {
+func (f *fakeQdrant) Search(_ context.Context, _ string, _ []float32, _ int) ([]port.EmbedResult, error) {
 	return []port.EmbedResult{{ID: "r1", Score: 0.9}}, f.err
 }
 func (f *fakeQdrant) DeleteByDocID(_ context.Context, docID string) error {
@@ -97,7 +97,7 @@ func TestCoordinator_Search(t *testing.T) {
 	q := &fakeQdrant{}
 	c := embed.NewQdrantOnly(q)
 
-	results, err := c.Search(context.Background(), []float32{0.1}, 5)
+	results, err := c.Search(context.Background(), "", []float32{0.1}, 5)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -54,7 +54,7 @@ func NewRagSearchTool(store port.EmbedStore, embedFn EmbedFn, embedModel string,
 			return RagSearchResult{}, fmt.Errorf("rag_search embed: %w", err)
 		}
 
-		hits, err := store.Search(tctx, vec, maxSources)
+		hits, err := store.Search(tctx, args.Query, vec, maxSources)
 		if err != nil {
 			slog.Error("rag_search store query failed", "query", args.Query, "vec_dim", len(vec), "err", err)
 			return RagSearchResult{}, fmt.Errorf("rag_search query: %w", err)

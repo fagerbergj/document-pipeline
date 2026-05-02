@@ -67,7 +67,7 @@ type noopEmbed struct{}
 func (n *noopEmbed) Upsert(_ context.Context, _ string, _ []float32, _ []float32, _ map[string]any) error {
 	return nil
 }
-func (n *noopEmbed) Search(_ context.Context, _ []float32, _ int) ([]port.EmbedResult, error) {
+func (n *noopEmbed) Search(_ context.Context, _ string, _ []float32, _ int) ([]port.EmbedResult, error) {
 	return nil, nil
 }
 func (n *noopEmbed) GetByIDs(_ context.Context, _ []string) ([]port.EmbedResult, error) {
