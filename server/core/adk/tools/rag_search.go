@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"google.golang.org/adk/tool"
@@ -36,20 +37,28 @@ type EmbedFn func(ctx context.Context, model, text string) ([]float32, error)
 
 // NewRagSearchTool returns an ADK tool that searches the vector store.
 // embedFn and embedModel are used to embed the query before searching.
-func NewRagSearchTool(store port.EmbedStore, embedFn EmbedFn, embedModel string) (tool.Tool, error) {
+// maxSources caps the number of hits returned per call; values <= 0 fall back to 5.
+func NewRagSearchTool(store port.EmbedStore, embedFn EmbedFn, embedModel string, maxSources int) (tool.Tool, error) {
+	if maxSources <= 0 {
+		maxSources = 5
+	}
 	return functiontool.New(functiontool.Config{
 		Name:        "rag_search",
 		Description: "Search the personal knowledge base for notes and documents relevant to a query. Use this when you need context about a topic, person, abbreviation, or event mentioned in the text.",
 	}, func(tctx tool.Context, args RagSearchArgs) (RagSearchResult, error) {
+		slog.Info("rag_search", "query", args.Query, "embed_model", embedModel, "k", maxSources)
 		vec, err := embedFn(tctx, embedModel, args.Query)
 		if err != nil {
+			slog.Error("rag_search embed failed", "query", args.Query, "embed_model", embedModel, "err", err)
 			return RagSearchResult{}, fmt.Errorf("rag_search embed: %w", err)
 		}
 
-		hits, err := store.Search(tctx, vec, 5)
+		hits, err := store.Search(tctx, vec, maxSources)
 		if err != nil {
+			slog.Error("rag_search store query failed", "query", args.Query, "vec_dim", len(vec), "err", err)
 			return RagSearchResult{}, fmt.Errorf("rag_search query: %w", err)
 		}
+		slog.Info("rag_search hits", "query", args.Query, "vec_dim", len(vec), "count", len(hits))
 
 		// Fetch prev/next neighbors so each result includes surrounding context.
 		neighborIDs := make([]string, 0, len(hits)*2)

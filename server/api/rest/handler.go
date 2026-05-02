@@ -6,10 +6,8 @@ import (
 	"os"
 
 	"google.golang.org/adk/session"
-	"google.golang.org/adk/tool"
 
 	"github.com/fagerbergj/document-pipeline/server/core"
-	adktools "github.com/fagerbergj/document-pipeline/server/core/adk/tools"
 	"github.com/fagerbergj/document-pipeline/server/core/model"
 	"github.com/fagerbergj/document-pipeline/server/core/port"
 )
@@ -30,7 +28,6 @@ type handler struct {
 	pipeline   model.PipelineConfig
 	vaultPath  string
 	embedModel string
-	ragTool    tool.Tool
 }
 
 // Dependencies bundles the wiring passed to New.
@@ -66,7 +63,6 @@ func resolveEmbedModel(pipeline model.PipelineConfig) string {
 // New constructs the HTTP handler and returns the fully wired router.
 func New(deps Dependencies) http.Handler {
 	em := resolveEmbedModel(deps.Pipeline)
-	ragTool, _ := adktools.NewRagSearchTool(deps.Embed, deps.LLM.GenerateEmbed, em)
 	h := &handler{
 		docs:       deps.Documents,
 		jobs:       deps.Jobs,
@@ -82,7 +78,6 @@ func New(deps Dependencies) http.Handler {
 		pipeline:   deps.Pipeline,
 		vaultPath:  deps.VaultPath,
 		embedModel: em,
-		ragTool:    ragTool,
 	}
 	return NewRouter(h, deps.FrontendFS)
 }

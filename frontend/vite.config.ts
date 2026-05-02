@@ -5,8 +5,17 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/api': 'http://localhost:8000',
-      '/webhook': 'http://localhost:8000',
+      // Long timeouts: first chat message can wait minutes while Ollama loads the model.
+      '/api': {
+        target: 'http://localhost:8000',
+        timeout: 600000,
+        proxyTimeout: 600000,
+      },
+      '/webhook': {
+        target: 'http://localhost:8000',
+        timeout: 600000,
+        proxyTimeout: 600000,
+      },
     }
   },
   build: {
