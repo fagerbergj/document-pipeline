@@ -20,24 +20,22 @@ func (c *Client) Upsert(ctx context.Context, id string, textVector []float32, im
 	if len(imageVector) > 0 {
 		imageLen = len(imageVector)
 	}
-	named, err := c.ensureCollection(ctx, len(textVector), imageLen)
-	if err != nil {
+	if _, err := c.ensureCollection(ctx, len(textVector), imageLen); err != nil {
 		return err
 	}
+	feats := c.collectionFeatures(ctx)
 
 	var pointVector any
-	if named {
+	if feats.namedVectors {
 		v := map[string]any{vectorNameText: textVector}
 		if len(imageVector) > 0 {
 			v[vectorNameImage] = imageVector
 		} else {
 			slog.Debug("named-vector collection; upserting text vector only", "collection", c.collection)
 		}
-		// Build sparse vector from chunk text when the collection supports it.
-		if c.hasSparseVectors(ctx) {
+		if feats.hasSparse {
 			if text, _ := payload[port.PayloadText].(string); text != "" {
-				sv := BM25Vector(text)
-				if len(sv.Indices) > 0 {
+				if sv := BM25Vector(text); len(sv.Indices) > 0 {
 					v[sparseNameText] = sv
 				}
 			}
@@ -103,18 +101,11 @@ func (c *Client) deleteByPayload(ctx context.Context, key, value string) error {
 // dense search. queryText is used to build the sparse half of the hybrid query;
 // pass "" to skip sparse and force dense-only.
 func (c *Client) Search(ctx context.Context, queryText string, vector []float32, topK int) ([]port.EmbedResult, error) {
-	// If collection doesn't exist, return empty.
-	resp, err := c.do(ctx, http.MethodGet, "/collections/"+c.collection, nil)
-	if err != nil {
-		return nil, err
-	}
-	resp.Body.Close()
-	if resp.StatusCode == http.StatusNotFound {
+	feats := c.collectionFeatures(ctx)
+	if !feats.exists {
 		return nil, nil
 	}
-
-	named := c.usesNamedVectors(ctx)
-	hybrid := named && queryText != "" && c.hasSparseVectors(ctx)
+	hybrid := feats.namedVectors && feats.hasSparse && queryText != ""
 
 	var (
 		path string
@@ -128,14 +119,14 @@ func (c *Client) Search(ctx context.Context, queryText string, vector []float32,
 				{"query": vector, "using": vectorNameText, "limit": hybridPrefetchK},
 				{"query": map[string]any{"indices": sv.Indices, "values": sv.Values}, "using": sparseNameText, "limit": hybridPrefetchK},
 			},
-			"query":        map[string]any{"fusion": "rrf"},
+			"query":        map[string]any{"fusion": rrfFusion},
 			"limit":        topK,
 			"with_payload": true,
 		}
 	} else {
 		path = "/collections/" + c.collection + "/points/search"
 		var searchVector any
-		if named {
+		if feats.namedVectors {
 			searchVector = map[string]any{"name": vectorNameText, "vector": vector}
 		} else {
 			searchVector = vector
