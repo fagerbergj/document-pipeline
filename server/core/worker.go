@@ -772,6 +772,7 @@ func (w *WorkerService) rebuildSeriesCorpus(
 		chunkID := fmt.Sprintf("series:%s-%04d", series, i)
 		payload := map[string]any{
 			port.PayloadSeriesName: series,
+			port.PayloadTitle:      series,
 			port.PayloadText:       chunk,
 			port.PayloadChunkIndex: i,
 		}
