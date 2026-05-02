@@ -4,8 +4,10 @@ services:
     container_name: document-pipeline
     ports:
       - "8000:8000"
-    env_file:
-      - .env
+    # Production env is sourced from ~/workspace/home-server/.env via the
+    # home-server/api/docker-compose.yml stack. This file is for standalone
+    # local dev only — env vars below all have safe defaults, override via
+    # shell env (export FOO=bar) or `docker compose run -e FOO=bar` if needed.
     environment:
       - DB_PATH=/data/pipeline.db
       - MIGRATIONS_DIR=/db/migrations
@@ -21,7 +23,7 @@ services:
       - SUMMARIZE_MODEL=${SUMMARIZE_MODEL:-gemma4:31b}
       - EMBED_MODEL=${EMBED_MODEL:-}
       - QDRANT_URL=${QDRANT_URL:-}
-      - QDRANT_COLLECTION=${QDRANT_COLLECTION:-documents}
+      - QDRANT_COLLECTION=${QDRANT_COLLECTION:-remarkable}
       - QDRANT_API_KEY=${QDRANT_API_KEY:-}
       - OPEN_WEBUI_URL=${OPEN_WEBUI_URL:-}
       - OPEN_WEBUI_API_KEY=${OPEN_WEBUI_API_KEY:-}
