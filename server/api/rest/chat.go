@@ -310,7 +310,7 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rag := ragConfigFromSession(sess)
-	ragTool, err := adktools.NewRagSearchTool(h.embed, h.llm.GenerateEmbed, h.embedModel, rag.MaxSources)
+	ragTool, err := adktools.NewRagSearchTool(h.embed, h.llm.GenerateEmbed, h.embedModel, rag.MaxSources, rag.MinimumScore)
 	if err != nil {
 		slog.Error("sendChatMessage NewRagSearchTool", "chat_id", chatID, "err", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
