@@ -1,6 +1,7 @@
 package rest
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"google.golang.org/adk/session"
@@ -307,6 +309,14 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	rag := ragConfigFromSession(sess)
+	ragTool, err := adktools.NewRagSearchTool(h.embed, h.llm.GenerateEmbed, h.embedModel, rag.MaxSources)
+	if err != nil {
+		slog.Error("sendChatMessage NewRagSearchTool", "chat_id", chatID, "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
 	sseHeaders(w)
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -328,17 +338,46 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 
 	mdl := adk.NewPortLLMModel(h.llm, queryModel)
 	userParts := []*genai.Part{{Text: content}}
-	result, runErr := adk.RunAgent(r.Context(), mdl, []tool.Tool{h.ragTool}, instruction, userParts, h.sessionSvc, chatID, func(token string) {
+
+	// Serialize all writes to the SSE stream so keepalives don't interleave with tokens.
+	var writeMu sync.Mutex
+
+	keepaliveCtx, stopKeepalive := context.WithCancel(r.Context())
+	defer stopKeepalive()
+	go func() {
+		t := time.NewTicker(15 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-keepaliveCtx.Done():
+				return
+			case <-t.C:
+				writeMu.Lock()
+				writeSSEComment(w, "keepalive")
+				flusher.Flush()
+				writeMu.Unlock()
+			}
+		}
+	}()
+
+	result, runErr := adk.RunAgent(r.Context(), mdl, []tool.Tool{ragTool}, instruction, userParts, h.sessionSvc, chatID, func(token string) {
 		b, _ := json.Marshal(map[string]string{port.EventFieldText: token})
+		writeMu.Lock()
 		writeSSEEvent(w, port.EventToken, string(b))
 		flusher.Flush()
+		writeMu.Unlock()
 	})
+	stopKeepalive()
+	writeMu.Lock()
+	defer writeMu.Unlock()
 	if runErr != nil {
+		slog.Error("sendChatMessage RunAgent", "chat_id", chatID, "err", runErr)
 		b, _ := json.Marshal(map[string]string{port.EventFieldError: runErr.Error()})
 		writeSSEEvent(w, port.EventError, string(b))
 		flusher.Flush()
 		return
 	}
+	slog.Info("sendChatMessage agent done", "chat_id", chatID, "tool_responses", len(result.ToolResponses), "final_text_len", len(result.Text))
 
 	// Auto-set title from first message.
 	if existingTitle == "" {
