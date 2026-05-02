@@ -38,7 +38,8 @@ type EmbedFn func(ctx context.Context, model, text string) ([]float32, error)
 // NewRagSearchTool returns an ADK tool that searches the vector store.
 // embedFn and embedModel are used to embed the query before searching.
 // maxSources caps the number of hits returned per call; values <= 0 fall back to 5.
-func NewRagSearchTool(store port.EmbedStore, embedFn EmbedFn, embedModel string, maxSources int) (tool.Tool, error) {
+// minScore drops hits below the threshold; values <= 0 disable the filter.
+func NewRagSearchTool(store port.EmbedStore, embedFn EmbedFn, embedModel string, maxSources int, minScore float64) (tool.Tool, error) {
 	if maxSources <= 0 {
 		maxSources = 5
 	}
@@ -46,7 +47,7 @@ func NewRagSearchTool(store port.EmbedStore, embedFn EmbedFn, embedModel string,
 		Name:        "rag_search",
 		Description: "Search the personal knowledge base for notes and documents relevant to a query. Use this when you need context about a topic, person, abbreviation, or event mentioned in the text.",
 	}, func(tctx tool.Context, args RagSearchArgs) (RagSearchResult, error) {
-		slog.Info("rag_search", "query", args.Query, "embed_model", embedModel, "k", maxSources)
+		slog.Info("rag_search", "query", args.Query, "embed_model", embedModel, "k", maxSources, "min_score", minScore)
 		vec, err := embedFn(tctx, embedModel, args.Query)
 		if err != nil {
 			slog.Error("rag_search embed failed", "query", args.Query, "embed_model", embedModel, "err", err)
@@ -58,7 +59,29 @@ func NewRagSearchTool(store port.EmbedStore, embedFn EmbedFn, embedModel string,
 			slog.Error("rag_search store query failed", "query", args.Query, "vec_dim", len(vec), "err", err)
 			return RagSearchResult{}, fmt.Errorf("rag_search query: %w", err)
 		}
-		slog.Info("rag_search hits", "query", args.Query, "vec_dim", len(vec), "count", len(hits))
+		var topScore, bottomScore float64
+		if len(hits) > 0 {
+			topScore = hits[0].Score
+			bottomScore = hits[len(hits)-1].Score
+		}
+		kept := hits
+		if minScore > 0 {
+			kept = kept[:0]
+			for _, h := range hits {
+				if h.Score >= minScore {
+					kept = append(kept, h)
+				}
+			}
+		}
+		slog.Info("rag_search hits",
+			"query", args.Query,
+			"vec_dim", len(vec),
+			"count", len(hits),
+			"kept", len(kept),
+			"top_score", topScore,
+			"bottom_score", bottomScore,
+		)
+		hits = kept
 
 		// Fetch prev/next neighbors so each result includes surrounding context.
 		neighborIDs := make([]string, 0, len(hits)*2)
