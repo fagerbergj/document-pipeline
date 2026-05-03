@@ -307,7 +307,7 @@ func (s *IngestService) finalize(ctx context.Context, a finalizeArgs) (model.Job
 		return model.Job{}, false, fmt.Errorf("append event: %w", err)
 	}
 
-	job, err := s.createFirstJob(ctx, doc, a.Now)
+	job, err := s.createFirstJob(ctx, doc, a.Meta.FileType, a.Now)
 	if err != nil {
 		return model.Job{}, false, err
 	}
@@ -316,11 +316,14 @@ func (s *IngestService) finalize(ctx context.Context, a finalizeArgs) (model.Job
 	return job, true, nil
 }
 
-func (s *IngestService) createFirstJob(ctx context.Context, doc model.Document, now time.Time) (model.Job, error) {
+func (s *IngestService) createFirstJob(ctx context.Context, doc model.Document, fileType model.FileType, now time.Time) (model.Job, error) {
 	if len(s.pipeline.Stages) == 0 {
 		return model.Job{}, fmt.Errorf("pipeline has no stages")
 	}
-	first := s.pipeline.Stages[0]
+	first, ok := firstApplicableStage(s.pipeline.Stages, fileType)
+	if !ok {
+		first = s.pipeline.Stages[0]
+	}
 	job := model.Job{
 		ID:         uuid.NewString(),
 		DocumentID: doc.ID,
@@ -336,6 +339,19 @@ func (s *IngestService) createFirstJob(ctx context.Context, doc model.Document, 
 		return model.Job{}, fmt.Errorf("upsert job: %w", err)
 	}
 	return job, nil
+}
+
+// firstApplicableStage returns the first stage whose skip_if.file_type does not
+// match the upload's file type. Used to bypass stages that would no-op anyway
+// (e.g. transcribe + ocr for an .md upload), so the first job a user sees is
+// the one that's actually going to run.
+func firstApplicableStage(stages []model.StageDefinition, fileType model.FileType) (model.StageDefinition, bool) {
+	for _, s := range stages {
+		if !isSkipFileType(s, fileType) {
+			return s, true
+		}
+	}
+	return model.StageDefinition{}, false
 }
 
 func mimeForFileType(ft model.FileType) string {
