@@ -51,7 +51,7 @@ stages:
   - name: summarize
     type: llm_text
     skip_if:
-      input_size_lt_kb: 3
+      input_size_lt_kb: 25
     max_concurrent: 1
     model: ${SUMMARIZE_MODEL}
     prompt: prompts/summarize.txt
