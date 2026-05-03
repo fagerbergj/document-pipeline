@@ -1029,10 +1029,20 @@ func findInput(stageData map[string]map[string]any, inputField string) (text, fi
 	if inputField == "" {
 		return "", ""
 	}
+	// Skip empty values: for audio uploads _ingest.raw_text is "" while
+	// transcribe.raw_text holds the real text, and Go map iteration is random
+	// — without this we sometimes hit the empty one first and clarify gets no
+	// input.
 	for _, sd := range stageData {
-		if v, ok := sd[inputField]; ok {
-			return fmt.Sprint(v), inputField
+		v, ok := sd[inputField]
+		if !ok {
+			continue
 		}
+		s := fmt.Sprint(v)
+		if s == "" {
+			continue
+		}
+		return s, inputField
 	}
 	return "", ""
 }

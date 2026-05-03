@@ -1056,3 +1056,37 @@ func TestBuildQAFollowup_UsesLatestRunOnly(t *testing.T) {
 		t.Errorf("missing latest-run answer: %q", got)
 	}
 }
+
+func TestFindInput_PrefersNonEmpty(t *testing.T) {
+	stageData := map[string]map[string]any{
+		"_ingest":    {"raw_text": ""},
+		"transcribe": {"raw_text": "hello world"},
+	}
+	// Run many times; map iteration order varies. With the fix every run must
+	// return the non-empty value.
+	for i := 0; i < 100; i++ {
+		got, field := findInput(stageData, "raw_text")
+		if got != "hello world" || field != "raw_text" {
+			t.Fatalf("iter %d: got (%q, %q), want (\"hello world\", \"raw_text\")", i, got, field)
+		}
+	}
+}
+
+func TestFindInput_EmptyInputField(t *testing.T) {
+	stageData := map[string]map[string]any{"foo": {"bar": "baz"}}
+	got, field := findInput(stageData, "")
+	if got != "" || field != "" {
+		t.Errorf("empty inputField should return empties, got (%q, %q)", got, field)
+	}
+}
+
+func TestFindInput_AllEmpty(t *testing.T) {
+	stageData := map[string]map[string]any{
+		"_ingest": {"raw_text": ""},
+		"ocr":     {"raw_text": ""},
+	}
+	got, _ := findInput(stageData, "raw_text")
+	if got != "" {
+		t.Errorf("all empty should yield empty, got %q", got)
+	}
+}
