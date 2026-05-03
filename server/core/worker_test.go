@@ -1011,3 +1011,48 @@ func TestProcessJob_ExhaustsRetries(t *testing.T) {
 		t.Errorf("3 failures should set status to error, got %q", updatedJob.Status)
 	}
 }
+
+func TestBuildQAFollowup_NoRuns(t *testing.T) {
+	if got := buildQAFollowup(nil); got != "" {
+		t.Errorf("no runs should return empty, got %q", got)
+	}
+}
+
+func TestBuildQAFollowup_NoAnsweredQuestions(t *testing.T) {
+	runs := []model.Run{{Questions: []model.Question{{Segment: "x", Question: "what?"}}}}
+	if got := buildQAFollowup(runs); got != "" {
+		t.Errorf("unanswered questions should return empty, got %q", got)
+	}
+}
+
+func TestBuildQAFollowup_IncludesOnlyAnswered(t *testing.T) {
+	runs := []model.Run{{Questions: []model.Question{
+		{Segment: "foo", Question: "what is foo?", Answer: "bar"},
+		{Segment: "baz", Question: "and baz?", Answer: "  "}, // whitespace-only — skip
+		{Segment: "x", Question: "what?", Answer: "y"},
+	}}}
+	got := buildQAFollowup(runs)
+	if !strings.Contains(got, "Answer: bar") {
+		t.Errorf("missing answered Q1: %q", got)
+	}
+	if !strings.Contains(got, "Answer: y") {
+		t.Errorf("missing answered Q2: %q", got)
+	}
+	if strings.Contains(got, "and baz?") {
+		t.Errorf("whitespace-only answer should be skipped, got %q", got)
+	}
+}
+
+func TestBuildQAFollowup_UsesLatestRunOnly(t *testing.T) {
+	runs := []model.Run{
+		{Questions: []model.Question{{Segment: "old", Question: "old q", Answer: "old a"}}},
+		{Questions: []model.Question{{Segment: "new", Question: "new q", Answer: "new a"}}},
+	}
+	got := buildQAFollowup(runs)
+	if strings.Contains(got, "old a") {
+		t.Errorf("should not include earlier-run answers, got %q", got)
+	}
+	if !strings.Contains(got, "new a") {
+		t.Errorf("missing latest-run answer: %q", got)
+	}
+}

@@ -526,7 +526,18 @@ func (w *WorkerService) runLLMText(
 	// The rendered prompt is the system instruction; the input text is the user message.
 	// Keeping them in separate roles gives the model a clean boundary between
 	// "what to do" (system) and "what to process" (user).
-	userParts := []*genai.Part{{Text: inputText}}
+	//
+	// On a re-run after the user answered clarifying questions, send the answers
+	// as the user turn instead of the original input. The ADK session keyed by
+	// job.ID retains the prior turns, so the model sees: input \u2192 questions \u2192
+	// answers, and produces a final response. Without this, the user message
+	// stays "the original raw text" forever, and the model has no signal that
+	// its previous questions were addressed \u2014 so it asks them again.
+	userMsgText := inputText
+	if qa := buildQAFollowup(job.Runs); qa != "" {
+		userMsgText = qa
+	}
+	userParts := []*genai.Part{{Text: userMsgText}}
 	if imageBytes != nil {
 		userParts = append(userParts, &genai.Part{
 			InlineData: &genai.Blob{MIMEType: "image/png", Data: imageBytes},
@@ -1012,10 +1023,29 @@ func findInput(stageData map[string]map[string]any, inputField string) (text, fi
 	return "", ""
 }
 
-// buildRunHistory converts prior clarify runs into LLM session history.
-// Each run contributes an assistant turn (the clarified output) and, if the run
-// had answered questions, a user turn (the answers) so the model treats them as
-// a continued conversation rather than repeated system-prompt text.
+// buildQAFollowup formats a follow-up user turn from the latest run's answered
+// questions. Returns "" when there are no prior runs or none of their questions
+// have answers — the caller falls back to sending the original input text.
+//
+// The session.Service holds the prior input + questions turn under the same
+// job.ID, so this message only needs to convey the answers.
+func buildQAFollowup(runs []model.Run) string {
+	if len(runs) == 0 {
+		return ""
+	}
+	latest := runs[len(runs)-1]
+	var lines []string
+	for _, q := range latest.Questions {
+		if strings.TrimSpace(q.Answer) == "" {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("- Segment: %q\n  Question: %s\n  Answer: %s", q.Segment, q.Question, q.Answer))
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return "Here are my answers to your follow-up questions. Use them to produce a final clarified version — do not ask these again.\n\n" + strings.Join(lines, "\n")
+}
 
 func appendRun(runs []model.Run, run model.Run) []model.Run {
 	return append(runs, run)
