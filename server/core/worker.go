@@ -495,6 +495,13 @@ func (w *WorkerService) runLLMText(
 
 	inputText, inputField := findInput(stageData, stage.Input)
 
+	// Don't burn an LLM call when the upstream stage produced no text. Mark the
+	// job as error so the doc shows the failure plainly instead of churning out
+	// a "I have no input to process" output that downstream stages then propagate.
+	if stage.Input != "" && inputText == "" {
+		return fmt.Errorf("no input text for field %q (upstream stage produced none)", stage.Input)
+	}
+
 	// input_size_lt_kb: skip the stage when its input is shorter than the
 	// configured threshold (used by `summarize` for already-short documents).
 	if isSkipBySize(stage, inputText) {
