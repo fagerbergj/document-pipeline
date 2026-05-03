@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"google.golang.org/adk/session"
 	"google.golang.org/adk/session/database"
@@ -111,8 +112,24 @@ func main() {
 	var indexerSvc *core.IndexerService
 	if *opensearchURL != "" {
 		osc := storeopensearch.NewClient(*opensearchURL, *opensearchIndex)
-		if err := osc.EnsureIndex(context.Background()); err != nil {
-			log.Warn("opensearch EnsureIndex failed — search disabled", "err", err)
+		// Retry: opensearch is sibling-container in the same compose stack and has
+		// no healthcheck, so it's frequently still booting when we start. A single
+		// attempt leaves search permanently disabled until the next restart.
+		var ensureErr error
+		for attempt := 1; attempt <= 12; attempt++ {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			ensureErr = osc.EnsureIndex(ctx)
+			cancel()
+			if ensureErr == nil {
+				break
+			}
+			if attempt < 12 {
+				log.Warn("opensearch EnsureIndex failed, retrying", "attempt", attempt, "err", ensureErr)
+				time.Sleep(5 * time.Second)
+			}
+		}
+		if ensureErr != nil {
+			log.Warn("opensearch EnsureIndex failed — search disabled", "err", ensureErr)
 		} else {
 			searchStore = osc
 			log.Info("opensearch ready", "index", *opensearchIndex)
