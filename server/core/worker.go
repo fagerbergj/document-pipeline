@@ -385,6 +385,9 @@ func (w *WorkerService) runTranscribe(
 	// run, skipping whisper and any GPU/Ollama churn.
 	if meta.UserSuppliedTranscript != "" {
 		text := strings.TrimSpace(meta.UserSuppliedTranscript)
+		if text == "" {
+			text = "(no speech recognised)"
+		}
 		outputField := "raw_text"
 		if len(stage.Outputs) > 0 {
 			outputField = stage.Outputs[0].Field

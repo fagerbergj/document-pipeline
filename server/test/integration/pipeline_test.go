@@ -845,6 +845,38 @@ func TestUserSuppliedTranscript(t *testing.T) {
 	if got := fmt.Sprint(transcribeJob["status"]); got != "done" {
 		t.Errorf("transcribe status: got %q want done", got)
 	}
+
+	// Assert provenance + content: the run should record source as
+	// "(user-supplied transcript)" and raw_text should be the supplied text.
+	// The list endpoint returns summaries without runs, so fetch the detail.
+	jobID := fmt.Sprint(transcribeJob["id"])
+	detail := env.get(t, "/api/v1/jobs/"+jobID)
+	runs, _ := detail["runs"].([]any)
+	if len(runs) == 0 {
+		t.Fatal("transcribe job has no runs")
+	}
+	run, _ := runs[0].(map[string]any)
+	gotSource := previewForField(run, "inputs", "source")
+	if gotSource != "(user-supplied transcript)" {
+		t.Errorf("input source: got %q want %q", gotSource, "(user-supplied transcript)")
+	}
+	gotRawText := previewForField(run, "outputs", "raw_text")
+	if gotRawText != supplied {
+		t.Errorf("output raw_text: got %q want %q", gotRawText, supplied)
+	}
+}
+
+// previewForField pulls the `preview` value from a run's inputs/outputs list
+// matching the given field name. Returns "" if not found.
+func previewForField(run map[string]any, side, field string) string {
+	fields, _ := run[side].([]any)
+	for _, f := range fields {
+		m, _ := f.(map[string]any)
+		if fmt.Sprint(m["field"]) == field {
+			return fmt.Sprint(m["preview"])
+		}
+	}
+	return ""
 }
 
 // TestTranscriptRejectedForNonAudio: the transcript field is only valid on
