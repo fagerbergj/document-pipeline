@@ -191,7 +191,7 @@ export const api = {
     fd.append('file', file)
     if (opts?.title) fd.append('title', opts.title)
     if (opts?.additional_context) fd.append('additional_context', opts.additional_context)
-    if (opts?.linked_contexts?.length) fd.append('linked_contexts', opts.linked_contexts.join(','))
+    if (opts?.linked_contexts?.length) fd.append('linked_contexts', JSON.stringify(opts.linked_contexts))
     if (opts?.series) fd.append('series', opts.series)
     for (const a of opts?.artifacts ?? []) {
       fd.append(`artifact:${a.stage}:${a.field}`, a.file)
