@@ -454,13 +454,12 @@ func readSeedArtifacts(r *http.Request, maxBytes int64) ([]core.SeedArtifact, er
 		}
 		stage, field := parts[1], parts[2]
 		for _, h := range headers {
-			if h.Size > maxBytes {
-				return nil, fmt.Errorf("artifact %s/%s exceeds %d byte limit", stage, field, maxBytes)
-			}
 			f, err := h.Open()
 			if err != nil {
 				return nil, fmt.Errorf("open artifact %s/%s: %w", stage, field, err)
 			}
+			// LimitReader reads one byte past the cap so we can detect oversize
+			// in a single pass without a separate pre-flight on h.Size.
 			buf, err := io.ReadAll(io.LimitReader(f, maxBytes+1))
 			f.Close()
 			if err != nil {

@@ -384,9 +384,11 @@ func (w *WorkerService) runTranscribe(
 	// User-seeded transcript artifact: if the doc has an artifact tagged with
 	// this stage's name and raw_text field, consume its content as the output
 	// and skip whisper + the Ollama-unload churn.
-	if seed, ok, err := w.artifacts.GetByStageField(ctx, doc.ID, stage.Name, "raw_text"); err != nil {
+	seed, hasSeed, err := w.artifacts.GetByStageField(ctx, doc.ID, stage.Name, "raw_text")
+	if err != nil {
 		return fmt.Errorf("lookup seed artifact: %w", err)
-	} else if ok {
+	}
+	if hasSeed {
 		text, err := readArtifactText(w.store, w.vaultPath, seed)
 		if err != nil {
 			return fmt.Errorf("read seed artifact: %w", err)

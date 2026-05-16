@@ -96,6 +96,9 @@ type IngestService struct {
 	store     port.DocumentArtifactStore
 	pipeline  model.PipelineConfig
 	vaultPath string
+	// stageOutputs is a cached stage_name → set(output_field) lookup built from
+	// the pipeline config at construction. Used by validateSeedArtifacts.
+	stageOutputs map[string]map[string]bool
 }
 
 func NewIngestService(
@@ -108,7 +111,15 @@ func NewIngestService(
 	pipeline model.PipelineConfig,
 	vaultPath string,
 ) *IngestService {
-	return &IngestService{docs, jobs, artifacts, events, kv, store, pipeline, vaultPath}
+	stageOutputs := make(map[string]map[string]bool, len(pipeline.Stages))
+	for _, st := range pipeline.Stages {
+		fields := make(map[string]bool, len(st.Outputs))
+		for _, o := range st.Outputs {
+			fields[o.Field] = true
+		}
+		stageOutputs[st.Name] = fields
+	}
+	return &IngestService{docs, jobs, artifacts, events, kv, store, pipeline, vaultPath, stageOutputs}
 }
 
 // Ingest hashes the buffered bytes, checks for duplicates, saves the artifact,
@@ -395,19 +406,8 @@ func firstApplicableStage(stages []model.StageDefinition, fileType model.FileTyp
 // validateSeedArtifacts checks each seed's (stage, field) against the pipeline
 // config. Returns *ErrSeedValidation on any mismatch.
 func (s *IngestService) validateSeedArtifacts(seeds []SeedArtifact) error {
-	if len(seeds) == 0 {
-		return nil
-	}
-	stageOutputs := map[string]map[string]bool{}
-	for _, st := range s.pipeline.Stages {
-		fields := map[string]bool{}
-		for _, o := range st.Outputs {
-			fields[o.Field] = true
-		}
-		stageOutputs[st.Name] = fields
-	}
 	for _, seed := range seeds {
-		fields, ok := stageOutputs[seed.Stage]
+		fields, ok := s.stageOutputs[seed.Stage]
 		if !ok {
 			return &ErrSeedValidation{Msg: "unknown stage in seed artifact: " + seed.Stage}
 		}
