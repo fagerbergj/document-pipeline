@@ -436,7 +436,7 @@ export type PutJobStatusBody = {
 };
 
 /**
- * Fields to update on an existing run. Typically used to record user answers to clarification questions.
+ * Fields to update on an existing run. Used to record user answers to clarification questions or to overwrite a run's output content.
  */
 export type PatchRunBody = {
     /**
@@ -444,6 +444,22 @@ export type PatchRunBody = {
      */
     questions?: Array<RunQuestion>;
     suggestions?: RunSuggestions;
+    /**
+     * Output edits. Each entry locates a run output by `field` and
+     * overwrites its backing artifact's bytes with `content`. Size and
+     * preview are recomputed.
+     *
+     */
+    outputs?: Array<{
+        /**
+         * Output field name to replace (e.g. `clarified_text`).
+         */
+        field: string;
+        /**
+         * New textual content for the artifact.
+         */
+        content: string;
+    }>;
 };
 
 /**

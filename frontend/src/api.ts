@@ -155,7 +155,14 @@ export const api = {
   putJobStatus: (jobId: string, status: 'pending' | 'done' | 'error') =>
     unwrap(putJobStatusApiV1JobsJobIdStatusPut({ path: { job_id: jobId }, body: { status } })),
 
-  patchRun: (jobId: string, runId: string, patch: { questions?: { segment: string; question: string; answer?: string | null }[] | null }) =>
+  patchRun: (
+    jobId: string,
+    runId: string,
+    patch: {
+      questions?: { segment: string; question: string; answer?: string | null }[] | null
+      outputs?: { field: string; content: string }[] | null
+    },
+  ) =>
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     unwrap(patchRunApiV1JobsJobIdRunsRunIdPatch({ path: { job_id: jobId, run_id: runId }, body: patch as any })),
 

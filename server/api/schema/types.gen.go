@@ -521,8 +521,19 @@ type PatchJobBody struct {
 	Options *JobOptions `json:"options,omitempty"`
 }
 
-// PatchRunBody Fields to update on an existing run. Typically used to record user answers to clarification questions.
+// PatchRunBody Fields to update on an existing run. Used to record user answers to clarification questions or to overwrite a run's output content.
 type PatchRunBody struct {
+	// Outputs Output edits. Each entry locates a run output by `field` and
+	// overwrites its backing artifact's bytes with `content`. Size and
+	// preview are recomputed.
+	Outputs *[]struct {
+		// Content New textual content for the artifact.
+		Content string `json:"content"`
+
+		// Field Output field name to replace (e.g. `clarified_text`).
+		Field string `json:"field"`
+	} `json:"outputs,omitempty"`
+
 	// Questions Questions with updated `answer` values.
 	Questions *[]RunQuestion `json:"questions,omitempty"`
 

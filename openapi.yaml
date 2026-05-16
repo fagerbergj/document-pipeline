@@ -1236,7 +1236,7 @@ components:
 
     PatchRunBody:
       type: object
-      description: Fields to update on an existing run. Typically used to record user answers to clarification questions.
+      description: Fields to update on an existing run. Used to record user answers to clarification questions or to overwrite a run's output content.
       properties:
         questions:
           type: array
@@ -1246,6 +1246,23 @@ components:
           description: Questions with updated `answer` values.
         suggestions:
           $ref: '#/components/schemas/RunSuggestions'
+        outputs:
+          type: array
+          nullable: true
+          description: |
+            Output edits. Each entry locates a run output by `field` and
+            overwrites its backing artifact's bytes with `content`. Size and
+            preview are recomputed.
+          items:
+            type: object
+            required: [field, content]
+            properties:
+              field:
+                type: string
+                description: Output field name to replace (e.g. `clarified_text`).
+              content:
+                type: string
+                description: New textual content for the artifact.
 
     PatchJobBody:
       type: object

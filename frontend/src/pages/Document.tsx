@@ -109,7 +109,7 @@ export default function Document() {
           <h2 className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-widest">Jobs</h2>
           {job?.status === 'running' && <LiveLogSection jobId={job.id} onDone={refresh} />}
           {job?.status === 'waiting' && latestRun && (
-            <ReviewSection job={job} run={latestRun} onRefresh={refresh} />
+            <ReviewSection job={job} run={latestRun} docId={doc.id} onRefresh={refresh} />
           )}
           {job?.status === 'error' && (
             <ErrorSection job={job} onRefresh={refresh} />
@@ -589,22 +589,45 @@ function LiveLogSection({ jobId, onDone }: { jobId: string; onDone: () => void }
   )
 }
 
-function ReviewSection({ job, run, onRefresh }: {
+function ReviewSection({ job, run, docId, onRefresh }: {
   job: JobDetail
   run: Run
+  docId: string
   onRefresh: () => void
 }) {
   const [answers, setAnswers] = useState<Record<number, string>>({})
+  const [editing, setEditing] = useState(false)
+  // edits is keyed by output field name; only fields the user actually changed
+  // are sent on save.
+  const [edits, setEdits] = useState<Record<string, string>>({})
   const [mutError, setMutError] = useState<string | null>(null)
 
+  const editableOutputs = (run.outputs ?? []).filter(o => !!o.field)
+  const hasEdits = Object.keys(edits).length > 0
+
+  // saveEdits PATCHes any field-level edits to the run. Returns true when there
+  // were edits to save, false otherwise. Throws on failure so callers abort.
+  async function saveEdits() {
+    if (!hasEdits) return false
+    const outputs = Object.entries(edits).map(([field, content]) => ({ field, content }))
+    await api.patchRun(job.id, run.id, { outputs })
+    return true
+  }
+
   const approveMut = useMutation({
-    mutationFn: () => api.putJobStatus(job.id, 'done'),
-    onSuccess: () => { setMutError(null); onRefresh() },
+    mutationFn: async () => {
+      await saveEdits()
+      await api.putJobStatus(job.id, 'done')
+    },
+    onSuccess: () => { setMutError(null); setEditing(false); setEdits({}); onRefresh() },
     onError: (e: unknown) => setMutError(e instanceof Error ? e.message : String(e)),
   })
-  const rejectMut = useMutation({
-    mutationFn: () => api.putJobStatus(job.id, 'pending'),
-    onSuccess: () => { setMutError(null); onRefresh() },
+  const rerunMut = useMutation({
+    mutationFn: async () => {
+      await saveEdits()
+      await api.putJobStatus(job.id, 'pending')
+    },
+    onSuccess: () => { setMutError(null); setEditing(false); setEdits({}); onRefresh() },
     onError: (e: unknown) => setMutError(e instanceof Error ? e.message : String(e)),
   })
   const clarifyMut = useMutation({
@@ -622,7 +645,7 @@ function ReviewSection({ job, run, onRefresh }: {
     onError: (e: unknown) => setMutError(e instanceof Error ? e.message : String(e)),
   })
 
-  const busy = approveMut.isPending || rejectMut.isPending || clarifyMut.isPending
+  const busy = approveMut.isPending || rerunMut.isPending || clarifyMut.isPending
 
   const confidenceColor = run.confidence === 'high'
     ? 'bg-green-100 text-green-700'
@@ -640,13 +663,19 @@ function ReviewSection({ job, run, onRefresh }: {
         </div>
 
         {/* Outputs */}
-        {run.outputs?.length > 0 && (
-          <div className="mb-4">
-            {run.outputs.map((out, i) => (
-              <div key={i} className="mb-3">
-                {out.field && <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-1">{out.field}</div>}
-                <pre className="bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 text-gray-800 dark:text-gray-200 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap max-h-80 overflow-y-auto">{out.preview}</pre>
-              </div>
+        {editableOutputs.length > 0 && (
+          <div className="mb-4 space-y-3">
+            {editableOutputs.map(out => (
+              <EditableOutput
+                key={out.field}
+                docId={docId}
+                field={out.field!}
+                artifactId={out.artifact_id}
+                preview={out.preview ?? ''}
+                editing={editing}
+                value={edits[out.field!]}
+                onChange={(text) => setEdits(prev => ({ ...prev, [out.field!]: text }))}
+              />
             ))}
           </div>
         )}
@@ -675,10 +704,10 @@ function ReviewSection({ job, run, onRefresh }: {
         {mutError && (
           <div className="mb-3 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 border border-red-100 dark:border-red-800 rounded-lg px-3 py-2">{mutError}</div>
         )}
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button onClick={() => approveMut.mutate()} disabled={busy}
             className="px-4 py-1.5 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
-            Approve
+            {hasEdits ? 'Save & approve' : 'Approve'}
           </button>
           {run.questions?.length > 0 && (
             <button onClick={() => clarifyMut.mutate()} disabled={busy}
@@ -686,10 +715,27 @@ function ReviewSection({ job, run, onRefresh }: {
               Re-run with answers
             </button>
           )}
-          <button onClick={() => rejectMut.mutate()} disabled={busy}
+          <button onClick={() => rerunMut.mutate()} disabled={busy}
             className="px-4 py-1.5 text-sm font-medium border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50">
-            Re-run
+            {hasEdits ? 'Save & re-run' : 'Re-run'}
           </button>
+          {editableOutputs.length > 0 && (
+            editing ? (
+              <button
+                onClick={() => { setEditing(false); setEdits({}) }}
+                disabled={busy}
+                className="px-4 py-1.5 text-sm font-medium border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50">
+                Cancel edits
+              </button>
+            ) : (
+              <button
+                onClick={() => setEditing(true)}
+                disabled={busy}
+                className="px-4 py-1.5 text-sm font-medium border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50">
+                Edit
+              </button>
+            )
+          )}
         </div>
       </div>
 
@@ -722,6 +768,64 @@ function ErrorSection({ job, onRefresh }: { job: JobDetail; onRefresh: () => voi
   )
 }
 
+
+// EditableOutput renders one of a run's outputs. In view mode it fetches the
+// full artifact text and renders it (markdown for known prose fields, mono
+// preformatted otherwise). In edit mode it shows the same text in a textarea
+// and reports keystrokes up via onChange; the parent decides when to PATCH.
+function EditableOutput({ docId, field, artifactId, preview, editing, value, onChange }: {
+  docId: string
+  field: string
+  artifactId: string
+  preview: string
+  editing: boolean
+  value: string | undefined
+  onChange: (text: string) => void
+}) {
+  const isMarkdown = field === 'clarified_text' || field === 'summary' || field === 'narrative_summary'
+  const isTags = field === 'tags'
+  const [text, setText] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!artifactId) { setText(preview); return }
+    const url = `/api/v1/documents/${docId}/artifacts/${artifactId}`
+    fetch(url).then(r => r.text()).then(setText).catch(() => setText(preview))
+  }, [docId, artifactId, preview])
+
+  const fetched = text ?? preview
+  const display = value ?? fetched
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">{field.replace(/_/g, ' ')}</div>
+        {editing && value !== undefined && value !== fetched && (
+          <div className="text-xs text-amber-600 dark:text-amber-400">edited</div>
+        )}
+      </div>
+      {editing ? (
+        <textarea
+          value={display}
+          onChange={e => onChange(e.target.value)}
+          rows={Math.min(20, Math.max(6, display.split('\n').length))}
+          className="w-full text-sm font-mono bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800 dark:text-gray-100 max-h-[60vh]"
+        />
+      ) : isTags ? (
+        <div className="flex flex-wrap gap-1">
+          {(() => { try { return JSON.parse(display) as string[] } catch { return [] } })().map((t, i) => (
+            <span key={i} className="px-2 py-0.5 text-xs bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 rounded-full">{t}</span>
+          ))}
+        </div>
+      ) : isMarkdown ? (
+        <div className="prose prose-sm dark:prose-invert max-w-none text-sm text-gray-700 dark:text-gray-200 max-h-[60vh] overflow-y-auto bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-lg p-3">
+          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{display}</ReactMarkdown>
+        </div>
+      ) : (
+        <pre className="bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 text-gray-800 dark:text-gray-200 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap max-h-[60vh] overflow-y-auto">{display}</pre>
+      )}
+    </div>
+  )
+}
 
 function OutputField({ docId, field, artifactId, preview }: { docId: string; field: string; artifactId: string; preview: string }) {
   const isMarkdown = field === 'clarified_text' || field === 'summary' || field === 'narrative_summary'
