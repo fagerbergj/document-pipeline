@@ -381,40 +381,9 @@ func (w *WorkerService) runTranscribe(
 		return fmt.Errorf("no media path on document %s", doc.ID[:8])
 	}
 
-	// User-supplied transcript path: persist verbatim as a completed transcribe
-	// run, skipping whisper and any GPU/Ollama churn.
+	// User-supplied transcript bypass: skip whisper and the Ollama-unload churn.
 	if meta.UserSuppliedTranscript != "" {
-		text := strings.TrimSpace(meta.UserSuppliedTranscript)
-		if text == "" {
-			text = "(no speech recognised)"
-		}
-		outputField := "raw_text"
-		if len(stage.Outputs) > 0 {
-			outputField = stage.Outputs[0].Field
-		}
-		inputs := []fieldDraft{txtField("source", "(user-supplied transcript)")}
-		outputs := []fieldDraft{mdField(outputField, text)}
-
-		run, err := w.persistRun(ctx, job, inputs, outputs, model.ConfidenceHigh, nil)
-		if err != nil {
-			return err
-		}
-		if err := w.jobs.UpdateRuns(ctx, job.ID, appendRun(job.Runs, run), now); err != nil {
-			return err
-		}
-		freshDoc, _ := w.docs.Get(ctx, doc.ID)
-		if freshDoc.Title == nil || *freshDoc.Title == "" {
-			if t := titleFromText(meta.AttachmentFilename, text); t != "" {
-				freshDoc.Title = &t
-				freshDoc.UpdatedAt = now
-				_ = w.docs.Update(ctx, freshDoc)
-			}
-		}
-		_ = w.jobs.UpdateStatus(ctx, job.ID, string(model.JobStatusDone), now)
-		_ = w.events.Append(ctx, model.StageEvent{DocumentID: doc.ID, Stage: stage.Name, EventType: model.EventCompleted, Timestamp: now})
-		_ = w.advancePipeline(ctx, job, now)
-		slog.Info("transcribe used user-supplied transcript", "doc_id", doc.ID[:8], "stage", stage.Name, "chars", len(text))
-		return nil
+		return w.finishTranscribe(ctx, doc, job, stage, meta, "(user-supplied transcript)", meta.UserSuppliedTranscript)
 	}
 
 	if w.transcriber == nil {
@@ -451,32 +420,30 @@ func (w *WorkerService) runTranscribe(
 		return nil
 	}
 
+	return w.finishTranscribe(ctx, doc, job, stage, meta, "(audio)", text)
+}
+
+// finishTranscribe writes the transcribe run, applies the title fallback, marks
+// the job done, and advances the pipeline. Shared by the whisper and
+// user-supplied-transcript paths.
+func (w *WorkerService) finishTranscribe(
+	ctx context.Context, doc model.Document, job model.Job,
+	stage model.StageDefinition, meta *IngestMeta,
+	sourceLabel, text string,
+) error {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		text = "(no speech recognised)"
 	}
-	slog.Info("transcribe complete", "doc_id", doc.ID[:8], "chars", len(text))
 
 	outputField := "raw_text"
 	if len(stage.Outputs) > 0 {
 		outputField = stage.Outputs[0].Field
 	}
-	inputs := []fieldDraft{txtField("source", "(audio)")}
+	inputs := []fieldDraft{txtField("source", sourceLabel)}
 	outputs := []fieldDraft{mdField(outputField, text)}
 
-	freshDoc, _ := w.docs.Get(ctx, doc.ID)
-	title := ""
-	if freshDoc.Title != nil && *freshDoc.Title != "" {
-		title = *freshDoc.Title
-	} else if doc.Title != nil {
-		title = *doc.Title
-	} else if meta != nil {
-		title = titleFromText(meta.AttachmentFilename, text)
-	} else {
-		title = titleFromText("", text)
-	}
-
-	now = time.Now().UTC()
+	now := time.Now().UTC()
 	run, err := w.persistRun(ctx, job, inputs, outputs, model.ConfidenceHigh, nil)
 	if err != nil {
 		return err
@@ -484,15 +451,29 @@ func (w *WorkerService) runTranscribe(
 	if err := w.jobs.UpdateRuns(ctx, job.ID, appendRun(job.Runs, run), now); err != nil {
 		return err
 	}
-	if title != "" && (freshDoc.Title == nil || *freshDoc.Title == "") {
-		freshDoc.Title = &title
-		freshDoc.UpdatedAt = now
-		_ = w.docs.Update(ctx, freshDoc)
+
+	freshDoc, _ := w.docs.Get(ctx, doc.ID)
+	if freshDoc.Title == nil || *freshDoc.Title == "" {
+		var newTitle string
+		switch {
+		case doc.Title != nil && *doc.Title != "":
+			newTitle = *doc.Title
+		case meta != nil:
+			newTitle = titleFromText(meta.AttachmentFilename, text)
+		default:
+			newTitle = titleFromText("", text)
+		}
+		if newTitle != "" {
+			freshDoc.Title = &newTitle
+			freshDoc.UpdatedAt = now
+			_ = w.docs.Update(ctx, freshDoc)
+		}
 	}
+
 	_ = w.jobs.UpdateStatus(ctx, job.ID, string(model.JobStatusDone), now)
 	_ = w.events.Append(ctx, model.StageEvent{DocumentID: doc.ID, Stage: stage.Name, EventType: model.EventCompleted, Timestamp: now})
 	_ = w.advancePipeline(ctx, job, now)
-	slog.Info("transcribe done", "doc_id", doc.ID[:8], "stage", stage.Name)
+	slog.Info("transcribe done", "doc_id", doc.ID[:8], "stage", stage.Name, "source", sourceLabel, "chars", len(text))
 	return nil
 }
 
