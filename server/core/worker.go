@@ -380,6 +380,40 @@ func (w *WorkerService) runTranscribe(
 	if doc.MediaPath == nil {
 		return fmt.Errorf("no media path on document %s", doc.ID[:8])
 	}
+
+	// User-supplied transcript path: persist verbatim as a completed transcribe
+	// run, skipping whisper and any GPU/Ollama churn.
+	if meta.UserSuppliedTranscript != "" {
+		text := strings.TrimSpace(meta.UserSuppliedTranscript)
+		outputField := "raw_text"
+		if len(stage.Outputs) > 0 {
+			outputField = stage.Outputs[0].Field
+		}
+		inputs := []fieldDraft{txtField("source", "(user-supplied transcript)")}
+		outputs := []fieldDraft{mdField(outputField, text)}
+
+		run, err := w.persistRun(ctx, job, inputs, outputs, model.ConfidenceHigh, nil)
+		if err != nil {
+			return err
+		}
+		if err := w.jobs.UpdateRuns(ctx, job.ID, appendRun(job.Runs, run), now); err != nil {
+			return err
+		}
+		freshDoc, _ := w.docs.Get(ctx, doc.ID)
+		if freshDoc.Title == nil || *freshDoc.Title == "" {
+			if t := titleFromText(meta.AttachmentFilename, text); t != "" {
+				freshDoc.Title = &t
+				freshDoc.UpdatedAt = now
+				_ = w.docs.Update(ctx, freshDoc)
+			}
+		}
+		_ = w.jobs.UpdateStatus(ctx, job.ID, string(model.JobStatusDone), now)
+		_ = w.events.Append(ctx, model.StageEvent{DocumentID: doc.ID, Stage: stage.Name, EventType: model.EventCompleted, Timestamp: now})
+		_ = w.advancePipeline(ctx, job, now)
+		slog.Info("transcribe used user-supplied transcript", "doc_id", doc.ID[:8], "stage", stage.Name, "chars", len(text))
+		return nil
+	}
+
 	if w.transcriber == nil {
 		return fmt.Errorf("transcribe stage configured but no transcriber wired")
 	}

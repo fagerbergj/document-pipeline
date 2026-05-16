@@ -31,6 +31,7 @@ var supportedFileTypes = map[string]model.FileType{
 	"m4a":  model.FileTypeM4A,
 	"ogg":  model.FileTypeOGG,
 	"flac": model.FileTypeFLAC,
+	"mp4":  model.FileTypeMP4,
 }
 
 func (h *handler) listDocuments(w http.ResponseWriter, r *http.Request) {
@@ -158,6 +159,21 @@ func (h *handler) uploadDocument(w http.ResponseWriter, r *http.Request) {
 	additionalContext := strings.TrimSpace(r.FormValue("additional_context"))
 	series := strings.TrimSpace(r.FormValue("series"))
 
+	// Optional user-supplied transcript: when present on an audio/video upload,
+	// the transcribe stage will consume this verbatim instead of calling whisper.
+	const maxTranscriptBytes = 1 << 20 // 1 MiB
+	transcript := strings.TrimSpace(r.FormValue("transcript"))
+	if transcript != "" {
+		if !ft.IsAudio() {
+			writeError(w, http.StatusUnprocessableEntity, "transcript field only valid for audio/video uploads")
+			return
+		}
+		if len(transcript) > maxTranscriptBytes {
+			writeError(w, http.StatusUnprocessableEntity, "transcript exceeds 1MiB limit")
+			return
+		}
+	}
+
 	var linkedContexts []string
 	if lc := r.FormValue("linked_contexts"); lc != "" {
 		if err := json.Unmarshal([]byte(lc), &linkedContexts); err != nil {
@@ -199,8 +215,9 @@ func (h *handler) uploadDocument(w http.ResponseWriter, r *http.Request) {
 		LinkedContexts:    linkedContexts,
 		Series:            series,
 		Meta: core.IngestMeta{
-			AttachmentFilename: filename,
-			FileType:           ft,
+			AttachmentFilename:     filename,
+			FileType:               ft,
+			UserSuppliedTranscript: transcript,
 		},
 	}
 

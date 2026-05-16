@@ -16,6 +16,7 @@ const (
 	FileTypeM4A  FileType = "m4a"
 	FileTypeOGG  FileType = "ogg"
 	FileTypeFLAC FileType = "flac"
+	FileTypeMP4  FileType = "mp4"
 )
 
 // IsImage reports whether the file type is a still image.
@@ -26,7 +27,7 @@ func (f FileType) IsImage() bool {
 // IsAudio reports whether the file type is recorded audio.
 func (f FileType) IsAudio() bool {
 	switch f {
-	case FileTypeWEBM, FileTypeWAV, FileTypeMP3, FileTypeM4A, FileTypeOGG, FileTypeFLAC:
+	case FileTypeWEBM, FileTypeWAV, FileTypeMP3, FileTypeM4A, FileTypeOGG, FileTypeFLAC, FileTypeMP4:
 		return true
 	}
 	return false

@@ -63,6 +63,9 @@ type IngestMeta struct {
 	AttachmentFilename string         `json:"attachment_filename,omitempty"`
 	RawText            string         `json:"raw_text,omitempty"`
 	FileType           model.FileType `json:"file_type,omitempty"`
+	// UserSuppliedTranscript, when present on an audio/video upload, is used as
+	// the transcribe stage's raw_text output, bypassing whisper entirely.
+	UserSuppliedTranscript string `json:"user_supplied_transcript,omitempty"`
 }
 
 // IngestService creates documents from incoming files.
@@ -376,6 +379,8 @@ func mimeForFileType(ft model.FileType) string {
 		return "audio/ogg"
 	case model.FileTypeFLAC:
 		return "audio/flac"
+	case model.FileTypeMP4:
+		return "video/mp4"
 	}
 	return "application/octet-stream"
 }

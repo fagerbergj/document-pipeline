@@ -490,10 +490,20 @@ func (e *testEnv) uploadText(t *testing.T, filename, content string) string {
 // endpoint and returns the HTTP response (caller checks status / parses body).
 func (e *testEnv) uploadBytes(t *testing.T, filename string, data []byte) *http.Response {
 	t.Helper()
+	return e.uploadBytesWithFields(t, filename, data, nil)
+}
+
+// uploadBytesWithFields is like uploadBytes but also writes additional text
+// form fields (e.g. "transcript") alongside the file part.
+func (e *testEnv) uploadBytesWithFields(t *testing.T, filename string, data []byte, fields map[string]string) *http.Response {
+	t.Helper()
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
 	fw, _ := mw.CreateFormFile("file", filename)
 	fw.Write(data)
+	for k, v := range fields {
+		_ = mw.WriteField(k, v)
+	}
 	mw.Close()
 	resp, err := http.Post(e.srv.URL+"/api/v1/documents", mw.FormDataContentType(), &buf)
 	if err != nil {
@@ -782,6 +792,88 @@ func TestSkipOCRForAudio(t *testing.T) {
 	}
 	if stages["transcribe"] != "done" {
 		t.Errorf("expected transcribe to reach done, got %q", stages["transcribe"])
+	}
+}
+
+// TestUserSuppliedTranscript: when the upload includes a transcript field,
+// the transcribe stage must consume it verbatim and skip whisper entirely.
+func TestUserSuppliedTranscript(t *testing.T) {
+	env := newAudioTestEnv(t,
+		`<output><tags>["audio"]</tags><summary>note</summary><confidence>high</confidence></output>`,
+		"WHISPER SHOULD NOT BE CALLED")
+	defer env.Close()
+
+	supplied := "[SPEAKER_00] hello there\n[SPEAKER_01] hi back"
+	resp := env.uploadBytesWithFields(t, "memo.mp4", []byte("fake-mp4-bytes"), map[string]string{
+		"transcript": supplied,
+	})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("upload: %d %s", resp.StatusCode, b)
+	}
+	var out map[string]any
+	json.NewDecoder(resp.Body).Decode(&out)
+	docID, _ := out["document_id"].(string)
+	if docID == "" {
+		t.Fatal("expected document_id in response")
+	}
+
+	for i := 0; i < 8; i++ {
+		if err := env.worker.RunOnce(context.Background()); err != nil {
+			t.Fatalf("RunOnce[%d]: %v", i, err)
+		}
+	}
+
+	if env.whisper.requests != 0 {
+		t.Errorf("whisper must not be called when transcript is supplied; got %d requests", env.whisper.requests)
+	}
+
+	res := env.get(t, "/api/v1/jobs?document_id="+docID)
+	items, _ := res["data"].([]any)
+	var transcribeJob map[string]any
+	for _, it := range items {
+		j, _ := it.(map[string]any)
+		if fmt.Sprint(j["stage"]) == "transcribe" {
+			transcribeJob = j
+			break
+		}
+	}
+	if transcribeJob == nil {
+		t.Fatal("no transcribe job found")
+	}
+	if got := fmt.Sprint(transcribeJob["status"]); got != "done" {
+		t.Errorf("transcribe status: got %q want done", got)
+	}
+}
+
+// TestTranscriptRejectedForNonAudio: the transcript field is only valid on
+// audio/video uploads.
+func TestTranscriptRejectedForNonAudio(t *testing.T) {
+	env := newAudioTestEnv(t, `<output/>`, "unused")
+	defer env.Close()
+
+	resp := env.uploadBytesWithFields(t, "note.txt", []byte("hello"), map[string]string{
+		"transcript": "this should not be allowed",
+	})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422 for transcript on non-audio; got %d", resp.StatusCode)
+	}
+}
+
+// TestTranscriptOversize: transcripts larger than the 1 MiB cap are rejected.
+func TestTranscriptOversize(t *testing.T) {
+	env := newAudioTestEnv(t, `<output/>`, "unused")
+	defer env.Close()
+
+	big := strings.Repeat("a", (1<<20)+1)
+	resp := env.uploadBytesWithFields(t, "memo.mp3", []byte("fake-mp3"), map[string]string{
+		"transcript": big,
+	})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422 for oversize transcript; got %d", resp.StatusCode)
 	}
 }
 
