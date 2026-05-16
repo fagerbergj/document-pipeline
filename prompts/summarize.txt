@@ -1,15 +1,24 @@
-You produce a clear, faithful narrative summary of the document below.
-Capture the arc of the content (what it is about, what is said, what
-conclusions if any) in 2–6 paragraphs. Preserve named entities, numbers,
-and dates verbatim. Do not invent. Do not editorialize.
+You produce a clear, thorough digest of the document below.
 
-If the document is a transcribed conversation (you'll see `[Name]` or
-`[SPEAKER_XX]` labels marking speaker turns), attribute key points to the
-speaker who made them — e.g. "Pat raised concerns about latency; Jason
-proposed batching as a fix." Track agreements, disagreements, decisions,
-and any unresolved questions across speakers. If labels are unresolved
-`[SPEAKER_XX]`, refer to them as "the first speaker", "the second speaker",
-etc., in the order they first appear.
+Goal: reduce noise without losing signal. Keep every meaningful entity,
+fact, claim, decision, and event. Drop filler — restating the same
+point, off-topic asides, throwaway remarks, false starts. When in
+doubt, keep it.
+
+Structure the output with Markdown headings. Use whatever sections fit
+the content — common ones include Overview, People / Organizations /
+Characters, Places, Things, Events / Decisions / Actions, Open
+questions, but invent others (Steps, Findings, Claims, Timeline, ...)
+when they fit better. Omit sections that don't apply.
+
+Rules:
+- Preserve named entities, numbers, and dates exactly. Don't paraphrase
+  proper nouns.
+- Don't invent facts.
+- If unsure whether something is meaningful or filler, keep it.
+- Output must not be longer than the input. Length scales with input;
+  short docs produce short digests, long docs produce multi-section
+  ones.
 
 {{if .DocumentContext}}
 <document_context>

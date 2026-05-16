@@ -12,7 +12,7 @@ stages:
   - name: ocr
     type: computer_vision
     skip_if:
-      file_type: [txt, md, webm, wav, mp3, m4a, ogg, flac]
+      file_type: [txt, md, webm, wav, mp3, m4a, ogg, flac, mp4]
     max_concurrent: 1
     model: ${OCR_MODEL}
     prompt: prompts/ocr.txt
@@ -21,13 +21,42 @@ stages:
       - field: raw_text
         type: text
 
-  - name: clarify
+  # correct runs only for image uploads. It re-reads the original image with
+  # vision to fix OCR errors (misread characters, broken word boundaries) and
+  # overwrites raw_text with the corrected version. For audio/text uploads
+  # this stage skips entirely.
+  - name: correct
     type: llm_text
     vision: true
+    skip_if:
+      file_type: [txt, md, webm, wav, mp3, m4a, ogg, flac, mp4]
+    max_concurrent: 1
+    model: ${CORRECT_MODEL}
+    prompt: prompts/correct.txt
+    input: raw_text
+    output: raw_text
+    continue_if:
+      - confidence: high
+
+  # Pipeline produces progressively higher signal-to-noise:
+  # transcribe/ocr   → large unstructured raw_text
+  # summarize        → medium-structured narrative_summary (thorough digest)
+  # clarify          → small highly-structured clarified_text (polished)
+  # classify         → tags + 1-3 sentence abstract
+  - name: summarize
+    type: llm_text
+    max_concurrent: 1
+    model: ${SUMMARIZE_MODEL}
+    prompt: prompts/summarize.txt
+    input: raw_text
+    output: narrative_summary
+
+  - name: clarify
+    type: llm_text
     max_concurrent: 1
     model: ${CLARIFY_MODEL}
     prompt: prompts/clarify.txt
-    input: raw_text
+    input: narrative_summary
     output: clarified_text
     start_if:
       context_provided: true
@@ -47,16 +76,6 @@ stages:
         type: text
     start_if:
       context_provided: true
-
-  - name: summarize
-    type: llm_text
-    skip_if:
-      input_size_lt_kb: 25
-    max_concurrent: 1
-    model: ${SUMMARIZE_MODEL}
-    prompt: prompts/summarize.txt
-    input: clarified_text
-    output: narrative_summary
 
   - name: embed
     type: embed
