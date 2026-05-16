@@ -426,8 +426,10 @@ func (s *IngestService) validateSeedArtifacts(seeds []SeedArtifact) error {
 // via ArtifactRepo.GetByStageField and uses it in place of running the stage.
 func (s *IngestService) saveSeedArtifact(ctx context.Context, docID string, seed SeedArtifact, now time.Time) error {
 	artifactID := uuid.NewString()
-	filename := seed.Filename
-	if filename == "" {
+	// Client-supplied filename — strip any directory components to prevent path
+	// traversal when joined into the artifact dir by store.Save.
+	filename := filepath.Base(seed.Filename)
+	if filename == "" || filename == "." || filename == "/" {
 		filename = seed.Field
 	}
 	if err := s.store.Save(s.vaultPath, artifactID, filename, seed.Bytes); err != nil {

@@ -912,6 +912,39 @@ func TestSeedArtifactUnknownStage(t *testing.T) {
 	}
 }
 
+// TestSeedArtifactMalformedFieldName: artifact parts whose name doesn't match
+// the artifact:<stage>:<field> shape are rejected with 422.
+func TestSeedArtifactMalformedFieldName(t *testing.T) {
+	env := newAudioTestEnv(t, `<output/>`, "unused")
+	defer env.Close()
+
+	resp := env.uploadBytesWithFields(t, "memo.mp3", []byte("fake-mp3"), nil,
+		filePart{fieldName: "artifact:onlyonepart", filename: "x.txt", data: []byte("data")},
+	)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422 for malformed artifact field name; got %d", resp.StatusCode)
+	}
+}
+
+// TestSeedArtifactPathTraversal: a seed artifact whose Content-Disposition
+// filename contains directory components must not escape the artifact dir.
+// We just verify the upload succeeds (filename gets stripped) — if the path
+// escaped, the server would either error or write outside the vault.
+func TestSeedArtifactPathTraversal(t *testing.T) {
+	env := newAudioTestEnv(t, `<output/>`, "unused")
+	defer env.Close()
+
+	resp := env.uploadBytesWithFields(t, "memo.mp3", []byte("fake-mp3"), nil,
+		filePart{fieldName: "artifact:transcribe:raw_text", filename: "../../etc/foo.txt", data: []byte("safe content")},
+	)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 201, got %d: %s", resp.StatusCode, b)
+	}
+}
+
 // TestSeedArtifactOversize: artifact parts larger than the per-part cap are rejected.
 func TestSeedArtifactOversize(t *testing.T) {
 	env := newAudioTestEnv(t, `<output/>`, "unused")

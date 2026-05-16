@@ -11,10 +11,6 @@ info:
     execution of a single stage. The frontend polls for state changes and streams live
     LLM output via Server-Sent Events.
 
-servers:
-  - url: http://localhost:8000
-    description: Local development
-
 security:
   - authentik: []
 
