@@ -18,7 +18,6 @@ services:
       - WHISPER_URL=${WHISPER_URL:-http://faster-whisper:8000}
       - WHISPER_MODEL=${WHISPER_MODEL:-Systran/faster-whisper-large-v3}
       - OCR_MODEL=${OCR_MODEL:-qwen3-vl:30b}
-      - CORRECT_MODEL=${CORRECT_MODEL:-${OCR_MODEL:-qwen3-vl:30b}}
       - CLARIFY_MODEL=${CLARIFY_MODEL:-gemma4:31b}
       - CLASSIFY_MODEL=${CLASSIFY_MODEL:-gemma4-26b:latest}
       - SUMMARIZE_MODEL=${SUMMARIZE_MODEL:-gemma4:31b}
