@@ -157,7 +157,17 @@ paths:
     post:
       tags: [Documents]
       summary: Upload a document
-      description: Upload a .txt, .md, or image file to create a new document. Text files skip the OCR stage.
+      description: |
+        Upload a .txt, .md, image, audio, or .mp4 file to create a new document.
+        Text files skip the OCR stage.
+
+        Any additional multipart file part named `artifact:<stage>:<field>`
+        (e.g. `artifact:transcribe:raw_text`) is attached to the document as a
+        pre-existing stage output. The named stage will detect the seeded
+        artifact at execution time and use its content in place of running.
+        Common case: upload an `.mp4` together with
+        `artifact:transcribe:raw_text=@transcript.txt` to bypass whisper.
+        Each seed artifact is capped at 1 MiB.
       operationId: uploadDocument
       requestBody:
         required: true
@@ -170,6 +180,9 @@ paths:
                 file:
                   type: string
                   format: binary
+                  description: |
+                    Source file. Accepted extensions: png, jpg, jpeg, txt, md,
+                    webm, wav, mp3, m4a, ogg, flac, mp4.
                 title:
                   type: string
                   nullable: true
@@ -186,6 +199,13 @@ paths:
                   type: string
                   nullable: true
                   description: Series name for grouping related documents into a shared embedding corpus.
+              additionalProperties:
+                type: string
+                format: binary
+                description: |
+                  Properties whose name matches `artifact:<stage>:<field>` are
+                  pre-seeded stage outputs. Filename and content-type come
+                  from the multipart part headers. See endpoint description.
       responses:
         '201':
           description: Document created. Returns initial job detail.
@@ -201,6 +221,15 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
           description: Duplicate file — document already exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: |
+            Validation failure (invalid multipart form, malformed
+            `artifact:*:*` field name, unknown stage or field, or seed
+            artifact exceeds the 1 MiB cap).
           content:
             application/json:
               schema:
@@ -910,6 +939,17 @@ components:
           format: uuid
           nullable: true
           description: UUID of the job that created this artifact. Null for source artifacts created during ingest.
+        stage:
+          type: string
+          nullable: true
+          description: |
+            Pipeline stage this artifact represents an output for. Set on
+            user-seeded artifacts attached at upload time. Null on artifacts
+            created automatically by stage execution.
+        field:
+          type: string
+          nullable: true
+          description: Output field name this artifact represents (e.g. `raw_text`). Paired with `stage`.
         created_at:
           type: string
           format: date-time

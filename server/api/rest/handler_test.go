@@ -193,6 +193,17 @@ func (m *mockArtifactRepo) Delete(_ context.Context, id string) error {
 	delete(m.artifacts, id)
 	return nil
 }
+func (m *mockArtifactRepo) GetByStageField(_ context.Context, documentID, stage, field string) (model.Artifact, bool, error) {
+	for _, a := range m.artifacts {
+		if a.DocumentID != documentID || a.Stage == nil || a.Field == nil {
+			continue
+		}
+		if *a.Stage == stage && *a.Field == field {
+			return a, true, nil
+		}
+	}
+	return model.Artifact{}, false, nil
+}
 
 type mockContextRepo struct {
 	entries map[string]model.Context

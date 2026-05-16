@@ -494,15 +494,25 @@ func (e *testEnv) uploadBytes(t *testing.T, filename string, data []byte) *http.
 }
 
 // uploadBytesWithFields is like uploadBytes but also writes additional text
-// form fields (e.g. "transcript") alongside the file part.
-func (e *testEnv) uploadBytesWithFields(t *testing.T, filename string, data []byte, fields map[string]string) *http.Response {
+// form fields and/or named file parts. textFields entries are written as plain
+// form fields; fileParts entries are written as file parts under their map
+// key (e.g. "artifact:transcribe:raw_text" → multipart file part with that
+// field name).
+func (e *testEnv) uploadBytesWithFields(t *testing.T, filename string, data []byte, textFields map[string]string, fileParts ...filePart) *http.Response {
 	t.Helper()
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
 	fw, _ := mw.CreateFormFile("file", filename)
 	fw.Write(data)
-	for k, v := range fields {
+	for k, v := range textFields {
 		_ = mw.WriteField(k, v)
+	}
+	for _, fp := range fileParts {
+		pw, err := mw.CreateFormFile(fp.fieldName, fp.filename)
+		if err != nil {
+			t.Fatalf("multipart create part %s: %v", fp.fieldName, err)
+		}
+		pw.Write(fp.data)
 	}
 	mw.Close()
 	resp, err := http.Post(e.srv.URL+"/api/v1/documents", mw.FormDataContentType(), &buf)
@@ -510,6 +520,12 @@ func (e *testEnv) uploadBytesWithFields(t *testing.T, filename string, data []by
 		t.Fatalf("upload: %v", err)
 	}
 	return resp
+}
+
+type filePart struct {
+	fieldName string // multipart form-data part name (e.g. "artifact:transcribe:raw_text")
+	filename  string // filename inside the part header (informational)
+	data      []byte
 }
 
 // waitForJobStatus polls until any job for docID reaches one of the given
@@ -795,8 +811,9 @@ func TestSkipOCRForAudio(t *testing.T) {
 	}
 }
 
-// TestUserSuppliedTranscript: when the upload includes a transcript field,
-// the transcribe stage must consume it verbatim and skip whisper entirely.
+// TestUserSuppliedTranscript: when the upload includes a multipart part named
+// "artifact:transcribe:raw_text", the transcribe stage must consume that
+// artifact's content verbatim and skip whisper entirely.
 func TestUserSuppliedTranscript(t *testing.T) {
 	env := newAudioTestEnv(t,
 		`<output><tags>["audio"]</tags><summary>note</summary><confidence>high</confidence></output>`,
@@ -804,9 +821,9 @@ func TestUserSuppliedTranscript(t *testing.T) {
 	defer env.Close()
 
 	supplied := "[SPEAKER_00] hello there\n[SPEAKER_01] hi back"
-	resp := env.uploadBytesWithFields(t, "memo.mp4", []byte("fake-mp4-bytes"), map[string]string{
-		"transcript": supplied,
-	})
+	resp := env.uploadBytesWithFields(t, "memo.mp4", []byte("fake-mp4-bytes"), nil,
+		filePart{fieldName: "artifact:transcribe:raw_text", filename: "transcript.txt", data: []byte(supplied)},
+	)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
 		b, _ := io.ReadAll(resp.Body)
@@ -879,33 +896,34 @@ func previewForField(run map[string]any, side, field string) string {
 	return ""
 }
 
-// TestTranscriptRejectedForNonAudio: the transcript field is only valid on
-// audio/video uploads.
-func TestTranscriptRejectedForNonAudio(t *testing.T) {
+// TestSeedArtifactUnknownStage: posting an artifact part for a stage that
+// doesn't exist in the pipeline is rejected with 422.
+func TestSeedArtifactUnknownStage(t *testing.T) {
 	env := newAudioTestEnv(t, `<output/>`, "unused")
 	defer env.Close()
 
-	resp := env.uploadBytesWithFields(t, "note.txt", []byte("hello"), map[string]string{
-		"transcript": "this should not be allowed",
-	})
+	resp := env.uploadBytesWithFields(t, "memo.mp3", []byte("fake-mp3"), nil,
+		filePart{fieldName: "artifact:nosuchstage:raw_text", filename: "x.txt", data: []byte("data")},
+	)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusUnprocessableEntity {
-		t.Fatalf("expected 422 for transcript on non-audio; got %d", resp.StatusCode)
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 422 for unknown stage; got %d (%s)", resp.StatusCode, b)
 	}
 }
 
-// TestTranscriptOversize: transcripts larger than the 1 MiB cap are rejected.
-func TestTranscriptOversize(t *testing.T) {
+// TestSeedArtifactOversize: artifact parts larger than the per-part cap are rejected.
+func TestSeedArtifactOversize(t *testing.T) {
 	env := newAudioTestEnv(t, `<output/>`, "unused")
 	defer env.Close()
 
-	big := strings.Repeat("a", (1<<20)+1)
-	resp := env.uploadBytesWithFields(t, "memo.mp3", []byte("fake-mp3"), map[string]string{
-		"transcript": big,
-	})
+	big := []byte(strings.Repeat("a", (1<<20)+1))
+	resp := env.uploadBytesWithFields(t, "memo.mp3", []byte("fake-mp3"), nil,
+		filePart{fieldName: "artifact:transcribe:raw_text", filename: "big.txt", data: big},
+	)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusUnprocessableEntity {
-		t.Fatalf("expected 422 for oversize transcript; got %d", resp.StatusCode)
+		t.Fatalf("expected 422 for oversize artifact; got %d", resp.StatusCode)
 	}
 }
 

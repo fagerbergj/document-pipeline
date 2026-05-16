@@ -381,9 +381,17 @@ func (w *WorkerService) runTranscribe(
 		return fmt.Errorf("no media path on document %s", doc.ID[:8])
 	}
 
-	// User-supplied transcript bypass: skip whisper and the Ollama-unload churn.
-	if meta.UserSuppliedTranscript != "" {
-		return w.finishTranscribe(ctx, doc, job, stage, meta, "(user-supplied transcript)", meta.UserSuppliedTranscript)
+	// User-seeded transcript artifact: if the doc has an artifact tagged with
+	// this stage's name and raw_text field, consume its content as the output
+	// and skip whisper + the Ollama-unload churn.
+	if seed, ok, err := w.artifacts.GetByStageField(ctx, doc.ID, stage.Name, "raw_text"); err != nil {
+		return fmt.Errorf("lookup seed artifact: %w", err)
+	} else if ok {
+		text, err := readArtifactText(w.store, w.vaultPath, seed)
+		if err != nil {
+			return fmt.Errorf("read seed artifact: %w", err)
+		}
+		return w.finishTranscribe(ctx, doc, job, stage, meta, "(user-supplied transcript)", text)
 	}
 
 	if w.transcriber == nil {

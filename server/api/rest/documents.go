@@ -2,6 +2,8 @@ package rest
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -164,19 +166,16 @@ func (h *handler) uploadDocument(w http.ResponseWriter, r *http.Request) {
 	additionalContext := strings.TrimSpace(r.FormValue("additional_context"))
 	series := strings.TrimSpace(r.FormValue("series"))
 
-	// Optional user-supplied transcript: when present on an audio/video upload,
-	// the transcribe stage will consume this verbatim instead of calling whisper.
-	const maxTranscriptBytes = 1 << 20 // 1 MiB
-	transcript := strings.TrimSpace(r.FormValue("transcript"))
-	if transcript != "" {
-		if !ft.IsTranscribable() {
-			writeError(w, http.StatusUnprocessableEntity, "transcript field only valid for audio/video uploads")
-			return
-		}
-		if len(transcript) > maxTranscriptBytes {
-			writeError(w, http.StatusUnprocessableEntity, "transcript exceeds 1MiB limit")
-			return
-		}
+	// Pre-seeded stage outputs: any multipart file part whose name matches the
+	// pattern `artifact:<stage>:<field>` is treated as a user-supplied output
+	// for that stage. The worker detects these via ArtifactRepo.GetByStageField
+	// and uses them in place of running the stage (e.g. an audio upload with
+	// `artifact:transcribe:raw_text=@transcript.txt` skips whisper).
+	const maxSeedArtifactBytes = 1 << 20 // 1 MiB per artifact
+	seedArtifacts, seedErr := readSeedArtifacts(r, maxSeedArtifactBytes)
+	if seedErr != nil {
+		writeError(w, http.StatusUnprocessableEntity, seedErr.Error())
+		return
 	}
 
 	var linkedContexts []string
@@ -220,14 +219,20 @@ func (h *handler) uploadDocument(w http.ResponseWriter, r *http.Request) {
 		LinkedContexts:    linkedContexts,
 		Series:            series,
 		Meta: core.IngestMeta{
-			AttachmentFilename:     filename,
-			FileType:               ft,
-			UserSuppliedTranscript: transcript,
+			AttachmentFilename: filename,
+			FileType:           ft,
 		},
+		SeedArtifacts: seedArtifacts,
 	}
 
 	job, ok, err := h.ingest.IngestStreamed(r.Context(), req)
 	if err != nil {
+		var seedErr *core.ErrSeedValidation
+		if errors.As(err, &seedErr) {
+			_ = os.Remove(tmpPath)
+			writeError(w, http.StatusUnprocessableEntity, seedErr.Error())
+			return
+		}
 		slog.Error("uploadDocument ingest", "err", err)
 		_ = os.Remove(tmpPath)
 		writeError(w, http.StatusInternalServerError, "ingest failed")
@@ -428,6 +433,56 @@ func sortDocsByOrder(data []schema.DocumentSummary, order map[string]int) {
 			data[j], data[j-1] = data[j-1], data[j]
 		}
 	}
+}
+
+// readSeedArtifacts walks the parsed multipart form for any file part whose
+// name matches the pattern `artifact:<stage>:<field>` and returns them as
+// SeedArtifact values. Each part's bytes are buffered into memory; per-part
+// size is capped at maxBytes.
+func readSeedArtifacts(r *http.Request, maxBytes int64) ([]core.SeedArtifact, error) {
+	if r.MultipartForm == nil || len(r.MultipartForm.File) == 0 {
+		return nil, nil
+	}
+	var seeds []core.SeedArtifact
+	for fieldName, headers := range r.MultipartForm.File {
+		if !strings.HasPrefix(fieldName, "artifact:") {
+			continue
+		}
+		parts := strings.SplitN(fieldName, ":", 3)
+		if len(parts) != 3 || parts[1] == "" || parts[2] == "" {
+			return nil, fmt.Errorf("malformed artifact field name %q (expected artifact:<stage>:<field>)", fieldName)
+		}
+		stage, field := parts[1], parts[2]
+		for _, h := range headers {
+			if h.Size > maxBytes {
+				return nil, fmt.Errorf("artifact %s/%s exceeds %d byte limit", stage, field, maxBytes)
+			}
+			f, err := h.Open()
+			if err != nil {
+				return nil, fmt.Errorf("open artifact %s/%s: %w", stage, field, err)
+			}
+			buf, err := io.ReadAll(io.LimitReader(f, maxBytes+1))
+			f.Close()
+			if err != nil {
+				return nil, fmt.Errorf("read artifact %s/%s: %w", stage, field, err)
+			}
+			if int64(len(buf)) > maxBytes {
+				return nil, fmt.Errorf("artifact %s/%s exceeds %d byte limit", stage, field, maxBytes)
+			}
+			contentType := h.Header.Get("Content-Type")
+			if contentType == "" {
+				contentType = "application/octet-stream"
+			}
+			seeds = append(seeds, core.SeedArtifact{
+				Stage:       stage,
+				Field:       field,
+				Filename:    h.Filename,
+				ContentType: contentType,
+				Bytes:       buf,
+			})
+		}
+	}
+	return seeds, nil
 }
 
 func splitCSV(s string) []string {

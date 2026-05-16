@@ -18,10 +18,25 @@ var _ port.ArtifactRepo = (*ArtifactRepo)(nil)
 func (r *ArtifactRepo) Insert(ctx context.Context, a model.Artifact) error {
 	_, err := r.db.ExecContext(ctx, q["artifacts.Insert"],
 		a.ID, a.DocumentID, a.Filename, a.ContentType, a.CreatedJobID, a.Path,
+		a.Stage, a.Field,
 		a.CreatedAt.UTC().Format(time.RFC3339Nano),
 		a.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	)
 	return err
+}
+
+// GetByStageField returns the most recently created artifact tagged with the
+// given stage and field for this document, or (zero, false, nil) if none.
+func (r *ArtifactRepo) GetByStageField(ctx context.Context, documentID, stage, field string) (model.Artifact, bool, error) {
+	row := r.db.QueryRowContext(ctx, q["artifacts.GetByStageField"], documentID, stage, field)
+	a, err := scanArtifact(row)
+	if err == sql.ErrNoRows {
+		return model.Artifact{}, false, nil
+	}
+	if err != nil {
+		return model.Artifact{}, false, err
+	}
+	return a, true, nil
 }
 
 func (r *ArtifactRepo) Get(ctx context.Context, documentID, artifactID string) (model.Artifact, error) {
@@ -113,6 +128,7 @@ func scanArtifact(row rowScanner) (model.Artifact, error) {
 	err := row.Scan(
 		&a.ID, &a.DocumentID, &a.Filename, &a.ContentType,
 		&a.CreatedJobID, &createdAt, &updatedAt, &a.Path,
+		&a.Stage, &a.Field,
 	)
 	if err != nil {
 		return model.Artifact{}, err
