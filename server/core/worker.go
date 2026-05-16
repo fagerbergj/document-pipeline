@@ -682,6 +682,27 @@ func chunkText(text string, size, overlap int) []string {
 	return chunks
 }
 
+// contextualizeChunk asks the embed stage's contextual LLM for a 1-2 sentence
+// situating context that locates the chunk inside the document. The document
+// is sent FIRST so any prompt-prefix caching the runtime supports can be
+// reused across chunks. Returns the trimmed text or an error.
+func (w *WorkerService) contextualizeChunk(ctx context.Context, stage model.StageDefinition, document, chunk string) (string, error) {
+	prompt, err := w.prompts.Render(stage.ContextualPrompt, map[string]any{
+		"Document": document,
+		"Chunk":    chunk,
+	})
+	if err != nil {
+		return "", fmt.Errorf("render contextual prompt: %w", err)
+	}
+	var buf strings.Builder
+	if err := w.llm.GenerateText(ctx, stage.ContextualModel, prompt, func(c string) {
+		buf.WriteString(c)
+	}); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(buf.String()), nil
+}
+
 func (w *WorkerService) runEmbed(
 	ctx context.Context, doc model.Document, job model.Job,
 	stage model.StageDefinition, stageData map[string]map[string]any,
@@ -758,7 +779,23 @@ func (w *WorkerService) runEmbed(
 			chunkPayload[port.PayloadNextChunk] = fmt.Sprintf("%s-%04d", doc.ID, i+1)
 		}
 
-		vec, err := w.llm.GenerateEmbed(ctx, stage.Model, chunk)
+		// Contextual embeddings: ask the small LLM to produce a 1-2 sentence
+		// situating context for this chunk, prepend it to the chunk before
+		// embedding, and store the context separately on the payload so
+		// retrieval results can show both. Failure falls back to raw-chunk
+		// embedding rather than failing the whole stage.
+		embedText := chunk
+		if stage.ContextualModel != "" && stage.ContextualPrompt != "" {
+			ctxText, err := w.contextualizeChunk(ctx, stage, inputText, chunk)
+			if err != nil {
+				slog.Warn("contextual embed: falling back to raw chunk", "doc_id", doc.ID[:8], "chunk_index", i, "err", err)
+			} else if ctxText != "" {
+				chunkPayload[port.PayloadContext] = ctxText
+				embedText = ctxText + "\n\n" + chunk
+			}
+		}
+
+		vec, err := w.llm.GenerateEmbed(ctx, stage.Model, embedText)
 		if err != nil {
 			return fmt.Errorf("chunk %d embed: %w", i, err)
 		}

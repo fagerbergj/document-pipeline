@@ -46,8 +46,10 @@ func (s *YAMLPipelineSource) Load() (model.PipelineConfig, error) {
 			StartIf        map[string]any      `yaml:"start_if"`
 			ContinueIf     []map[string]any    `yaml:"continue_if"`
 			SkipIf         map[string]any      `yaml:"skip_if"`
-			MaxConcurrent  *int                `yaml:"max_concurrent"`
-			Vision         bool                `yaml:"vision"`
+			MaxConcurrent    *int                `yaml:"max_concurrent"`
+			Vision           bool                `yaml:"vision"`
+			ContextualModel  string              `yaml:"contextual_model"`
+			ContextualPrompt string              `yaml:"contextual_prompt"`
 		} `yaml:"stages"`
 	}
 
@@ -74,9 +76,11 @@ func (s *YAMLPipelineSource) Load() (model.PipelineConfig, error) {
 			MetadataFields: s.MetadataFields,
 			StartIf:        s.StartIf,
 			ContinueIf:     s.ContinueIf,
-			SkipIf:         s.SkipIf,
-			MaxConcurrent:  s.MaxConcurrent,
-			Vision:         s.Vision,
+			SkipIf:           s.SkipIf,
+			MaxConcurrent:    s.MaxConcurrent,
+			Vision:           s.Vision,
+			ContextualModel:  s.ContextualModel,
+			ContextualPrompt: s.ContextualPrompt,
 		})
 	}
 

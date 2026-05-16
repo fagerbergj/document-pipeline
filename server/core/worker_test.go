@@ -296,6 +296,11 @@ type mockLLM struct {
 	textResponse   string
 	embedVector    []float32
 	err            error
+	// textErr, when set, overrides err for GenerateText only — lets tests
+	// fail the contextualize call without also failing the embed call.
+	textErr error
+	// embedInputs captures every text passed to GenerateEmbed for assertion.
+	embedInputs []string
 }
 
 func (m *mockLLM) GenerateVision(ctx context.Context, model_, prompt string, imageBytes []byte, onChunk func(string)) error {
@@ -306,6 +311,9 @@ func (m *mockLLM) GenerateVision(ctx context.Context, model_, prompt string, ima
 	return nil
 }
 func (m *mockLLM) GenerateText(ctx context.Context, model_, prompt string, onChunk func(string)) error {
+	if m.textErr != nil {
+		return m.textErr
+	}
 	if m.err != nil {
 		return m.err
 	}
@@ -319,6 +327,7 @@ func (m *mockLLM) ChatStream(ctx context.Context, model_ string, messages []port
 	return nil
 }
 func (m *mockLLM) GenerateEmbed(ctx context.Context, model_, text string) ([]float32, error) {
+	m.embedInputs = append(m.embedInputs, text)
 	return m.embedVector, m.err
 }
 func (m *mockLLM) Unload(ctx context.Context, model_ string) error { return nil }
@@ -326,10 +335,13 @@ func (m *mockLLM) Unload(ctx context.Context, model_ string) error { return nil 
 type mockEmbedStore struct {
 	upsertCount  int
 	deleteCalled bool
+	// payloads captures every payload passed to Upsert for assertion.
+	payloads []map[string]any
 }
 
 func (m *mockEmbedStore) Upsert(ctx context.Context, id string, textVector, imageVector []float32, payload map[string]any) error {
 	m.upsertCount++
+	m.payloads = append(m.payloads, payload)
 	return nil
 }
 func (m *mockEmbedStore) Search(_ context.Context, _ string, vector []float32, topK int) ([]port.EmbedResult, error) {
@@ -967,6 +979,138 @@ func TestProcessJob_Embed_Success(t *testing.T) {
 	updatedJob, _ := jobs.GetByID(context.Background(), job.ID)
 	if updatedJob.Status != model.JobStatusDone {
 		t.Errorf("job status: got %q, want done", updatedJob.Status)
+	}
+}
+
+// TestProcessJob_Embed_Contextual verifies that when an embed stage has a
+// contextual model configured, each chunk gets prepended with an LLM-produced
+// situating context before embedding, and the context is recorded on the
+// chunk's payload.
+func TestProcessJob_Embed_Contextual(t *testing.T) {
+	doc := model.Document{
+		ID:        uuid.NewString(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	job := newTestJob(doc.ID, "embed")
+
+	priorClarifyJobID := uuid.NewString()
+	jobs := newMockJobRepo(job)
+
+	embed := &mockEmbedStore{}
+	llm := &mockLLM{
+		textResponse: "Situating context line.",
+		embedVector:  []float32{0.1, 0.2, 0.3},
+	}
+
+	stage := model.StageDefinition{
+		Name:             "embed",
+		Type:             model.StageTypeEmbed,
+		Model:            "nomic-embed-text",
+		Input:            "clarified_text",
+		ContextualModel:  "test-context-llm",
+		ContextualPrompt: "fake-path.txt",
+	}
+	pipeline := model.PipelineConfig{MaxConcurrent: 1, Stages: []model.StageDefinition{stage}}
+	w := newWorker(t,
+		newMockDocRepo(doc),
+		jobs,
+		newMockEventRepo(),
+		llm,
+		embed,
+		newMockKVRepo(),
+		&mockPromptRenderer{},
+		pipeline,
+	)
+
+	priorOutputs := seedFieldOutputs(t, w, doc.ID, priorClarifyJobID, [2]string{"clarified_text", "the chunk text"})
+	_ = jobs.Upsert(context.Background(), model.Job{
+		ID:         priorClarifyJobID,
+		DocumentID: doc.ID,
+		Stage:      "clarify",
+		Status:     model.JobStatusDone,
+		Runs:       []model.Run{{ID: uuid.NewString(), Outputs: priorOutputs}},
+	})
+
+	w.processJob(context.Background(), job, stage)
+
+	if len(llm.embedInputs) == 0 {
+		t.Fatal("expected GenerateEmbed to be called")
+	}
+	got := llm.embedInputs[0]
+	want := "Situating context line.\n\nthe chunk text"
+	if got != want {
+		t.Errorf("embed input:\n  got:  %q\n  want: %q", got, want)
+	}
+	if len(embed.payloads) == 0 {
+		t.Fatal("expected Upsert to be called")
+	}
+	if ctxVal, _ := embed.payloads[0][port.PayloadContext].(string); ctxVal != "Situating context line." {
+		t.Errorf("payload context: got %q want %q", ctxVal, "Situating context line.")
+	}
+	if textVal, _ := embed.payloads[0][port.PayloadText].(string); textVal != "the chunk text" {
+		t.Errorf("payload text should remain the raw chunk: got %q", textVal)
+	}
+}
+
+// TestProcessJob_Embed_Contextual_Fallback: if the contextual LLM call fails,
+// embed should fall back to raw-chunk embedding (no PayloadContext, raw text
+// to embed) rather than failing the stage.
+func TestProcessJob_Embed_Contextual_Fallback(t *testing.T) {
+	doc := model.Document{
+		ID:        uuid.NewString(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	job := newTestJob(doc.ID, "embed")
+	priorClarifyJobID := uuid.NewString()
+	jobs := newMockJobRepo(job)
+	embed := &mockEmbedStore{}
+	llm := &mockLLM{
+		textErr:     fmt.Errorf("ollama unreachable"),
+		embedVector: []float32{0.1, 0.2, 0.3},
+	}
+
+	stage := model.StageDefinition{
+		Name:             "embed",
+		Type:             model.StageTypeEmbed,
+		Model:            "nomic-embed-text",
+		Input:            "clarified_text",
+		ContextualModel:  "test-context-llm",
+		ContextualPrompt: "fake-path.txt",
+	}
+	pipeline := model.PipelineConfig{MaxConcurrent: 1, Stages: []model.StageDefinition{stage}}
+	w := newWorker(t,
+		newMockDocRepo(doc),
+		jobs,
+		newMockEventRepo(),
+		llm,
+		embed,
+		newMockKVRepo(),
+		&mockPromptRenderer{},
+		pipeline,
+	)
+
+	priorOutputs := seedFieldOutputs(t, w, doc.ID, priorClarifyJobID, [2]string{"clarified_text", "chunk content"})
+	_ = jobs.Upsert(context.Background(), model.Job{
+		ID:         priorClarifyJobID,
+		DocumentID: doc.ID,
+		Stage:      "clarify",
+		Status:     model.JobStatusDone,
+		Runs:       []model.Run{{ID: uuid.NewString(), Outputs: priorOutputs}},
+	})
+
+	w.processJob(context.Background(), job, stage)
+
+	updatedJob, _ := jobs.GetByID(context.Background(), job.ID)
+	if updatedJob.Status != model.JobStatusDone {
+		t.Errorf("job status: got %q want done — fallback should not fail the stage", updatedJob.Status)
+	}
+	if len(embed.payloads) == 0 {
+		t.Fatal("expected Upsert to be called even after contextual failure")
+	}
+	if _, ok := embed.payloads[0][port.PayloadContext]; ok {
+		t.Error("payload should not include context when contextual call failed")
 	}
 }
 
