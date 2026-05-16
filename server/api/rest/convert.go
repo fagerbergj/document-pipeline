@@ -190,6 +190,8 @@ func toArtifacts(arts []model.Artifact) []schema.Artifact {
 			Filename:     a.Filename,
 			ContentType:  a.ContentType,
 			CreatedJobId: toUUIDPtr(a.CreatedJobID),
+			Stage:        a.Stage,
+			Field:        a.Field,
 			CreatedAt:    a.CreatedAt,
 			UpdatedAt:    a.UpdatedAt,
 		})

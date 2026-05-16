@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "generate": "python3 ../export_schema.py && openapi-ts",
+    "generate": "openapi-ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

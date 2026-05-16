@@ -77,7 +77,17 @@ export const listDocuments = <ThrowOnError extends boolean = false>(options?: Op
 /**
  * Upload a document
  *
- * Upload a .txt, .md, or image file to create a new document. Text files skip the OCR stage.
+ * Upload a .txt, .md, image, audio, or .mp4 file to create a new document.
+ * Text files skip the OCR stage.
+ *
+ * Any additional multipart file part named `artifact:<stage>:<field>`
+ * (e.g. `artifact:transcribe:raw_text`) is attached to the document as a
+ * pre-existing stage output. The named stage will detect the seeded
+ * artifact at execution time and use its content in place of running.
+ * Common case: upload an `.mp4` together with
+ * `artifact:transcribe:raw_text=@transcript.txt` to bypass whisper.
+ * Each seed artifact is capped at 1 MiB.
+ *
  */
 export const uploadDocument = <ThrowOnError extends boolean = false>(options: Options<UploadDocumentData, ThrowOnError>) => (options.client ?? client).post<UploadDocumentResponses, UploadDocumentErrors, ThrowOnError>({
     ...formDataBodySerializer,
