@@ -135,6 +135,11 @@ func (w *WorkerService) persistDrafts(ctx context.Context, job model.Job, runID 
 	return out, nil
 }
 
+// PreviewOf returns the truncated inline preview stored on a model.Field. The
+// REST handler reuses it when a user edits a run output so the stored preview
+// stays consistent with how stage execution writes it.
+func PreviewOf(s string) string { return previewOf(s) }
+
 func previewOf(s string) string {
 	const max = 200
 	if len(s) <= max {

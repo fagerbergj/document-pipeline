@@ -148,6 +148,10 @@ func (h *handler) patchRun(w http.ResponseWriter, r *http.Request) {
 
 	var body struct {
 		Questions []model.Question `json:"questions"`
+		Outputs   []struct {
+			Field   string `json:"field"`
+			Content string `json:"content"`
+		} `json:"outputs"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
@@ -170,6 +174,47 @@ func (h *handler) patchRun(w http.ResponseWriter, r *http.Request) {
 	if body.Questions != nil {
 		job.Runs[runIdx].Questions = body.Questions
 	}
+
+	// Output edits: for each {field, content}, locate the matching output on the
+	// run, overwrite the backing artifact's bytes on disk, and refresh the
+	// field's Size + Preview so list views stay in sync.
+	for _, edit := range body.Outputs {
+		fieldIdx := -1
+		for i, f := range job.Runs[runIdx].Outputs {
+			if f.Field == edit.Field {
+				fieldIdx = i
+				break
+			}
+		}
+		if fieldIdx < 0 {
+			writeError(w, http.StatusUnprocessableEntity, "unknown output field: "+edit.Field)
+			return
+		}
+		fld := job.Runs[runIdx].Outputs[fieldIdx]
+		art, err := h.artifacts.Get(r.Context(), job.DocumentID, fld.ArtifactID)
+		if err != nil {
+			slog.Error("patchRun get artifact", "err", err, "artifact_id", fld.ArtifactID)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		data := []byte(edit.Content)
+		if art.Path != nil && *art.Path != "" {
+			if err := h.store.SaveAt(h.vaultPath, *art.Path, data); err != nil {
+				slog.Error("patchRun save artifact", "err", err, "path", *art.Path)
+				writeError(w, http.StatusInternalServerError, "internal error")
+				return
+			}
+		} else {
+			if err := h.store.Save(h.vaultPath, art.ID, art.Filename, data); err != nil {
+				slog.Error("patchRun save artifact", "err", err, "artifact_id", art.ID)
+				writeError(w, http.StatusInternalServerError, "internal error")
+				return
+			}
+		}
+		job.Runs[runIdx].Outputs[fieldIdx].Size = int64(len(data))
+		job.Runs[runIdx].Outputs[fieldIdx].Preview = core.PreviewOf(edit.Content)
+	}
+
 	job.Runs[runIdx].UpdatedAt = now
 
 	if err := h.jobs.UpdateRuns(r.Context(), jobID, job.Runs, now); err != nil {
