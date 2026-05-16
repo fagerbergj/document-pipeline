@@ -189,8 +189,10 @@ func mockWhisperServer(t *testing.T, transcript string) *whisperMock {
 	return m
 }
 
-// makeAudioPipeline returns the full transcribe -> ocr -> clarify -> classify ->
-// summarize -> embed pipeline used by the audio integration tests.
+// makeAudioPipeline returns a minimal transcribe -> ocr -> classify ->
+// summarize pipeline used by the audio integration tests. It omits the
+// production `correct`, `clarify`, and `embed` stages so tests can validate
+// worker mechanics without LLM-shaped output parsing.
 func makeAudioPipeline(promptPath string) model.PipelineConfig {
 	return model.PipelineConfig{
 		MaxConcurrent: 1,

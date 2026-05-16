@@ -532,12 +532,27 @@ func (w *WorkerService) runLLMText(
 
 	// input_size_lt_kb: skip the stage when its input is shorter than the
 	// configured threshold (used by `summarize` for already-short documents).
+	// When the stage has a single Output field configured, pass the input
+	// through as that output so downstream stages still find the field they
+	// expect (e.g. clarify reading `narrative_summary` works regardless of
+	// whether summarize actually ran).
 	if isSkipBySize(stage, inputText) {
 		now = time.Now().UTC()
+		if stage.Output != "" {
+			inputs := []fieldDraft{txtField("source", "(passthrough — input below size threshold)")}
+			outputs := []fieldDraft{mdField(stage.Output, inputText)}
+			run, err := w.persistRun(ctx, job, inputs, outputs, model.ConfidenceHigh, nil)
+			if err != nil {
+				return err
+			}
+			if err := w.jobs.UpdateRuns(ctx, job.ID, appendRun(job.Runs, run), now); err != nil {
+				return err
+			}
+		}
 		_ = w.jobs.UpdateStatus(ctx, job.ID, string(model.JobStatusDone), now)
 		_ = w.events.Append(ctx, model.StageEvent{DocumentID: doc.ID, Stage: stage.Name, EventType: model.EventSkipped, Timestamp: now})
 		_ = w.advancePipeline(ctx, job, now)
-		slog.Info("doc skipped (input below size threshold)", "doc_id", doc.ID[:8], "stage", stage.Name, "bytes", len(inputText))
+		slog.Info("doc skipped (input below size threshold)", "doc_id", doc.ID[:8], "stage", stage.Name, "bytes", len(inputText), "passthrough", stage.Output != "")
 		return nil
 	}
 
