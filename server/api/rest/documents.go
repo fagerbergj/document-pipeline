@@ -128,6 +128,11 @@ func (h *handler) listDocuments(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) uploadDocument(w http.ResponseWriter, r *http.Request) {
+	// Hard ceiling on total upload body. ParseMultipartForm's maxMemory arg only
+	// controls memory-vs-disk spillover; without MaxBytesReader a malicious form
+	// value (e.g. an enormous transcript field) could be buffered unbounded.
+	const maxUploadBytes = 512 << 20 // 512 MiB
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "invalid multipart form")
 		return
@@ -164,7 +169,7 @@ func (h *handler) uploadDocument(w http.ResponseWriter, r *http.Request) {
 	const maxTranscriptBytes = 1 << 20 // 1 MiB
 	transcript := strings.TrimSpace(r.FormValue("transcript"))
 	if transcript != "" {
-		if !ft.IsAudio() {
+		if !ft.IsTranscribable() {
 			writeError(w, http.StatusUnprocessableEntity, "transcript field only valid for audio/video uploads")
 			return
 		}

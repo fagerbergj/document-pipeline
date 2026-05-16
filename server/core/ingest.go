@@ -125,7 +125,7 @@ func (s *IngestService) Ingest(ctx context.Context, req IngestRequest) (model.Jo
 		p := filepath.Join(s.vaultPath, "artifacts", sourceArtifactID, sourceArtifactFilename)
 		mediaPath = &p
 
-	case req.FileType.IsAudio():
+	case req.FileType.IsTranscribable():
 		sourceArtifactID = uuid.NewString()
 		sourceArtifactFilename = hash[:8] + "." + string(req.FileType)
 		sourceContentType = mimeForFileType(req.FileType)

@@ -369,7 +369,7 @@ func (w *WorkerService) runTranscribe(
 
 	// Skip non-audio inputs (image + text). Mirrors the OCR text-skip flow:
 	// emit a no-op skipped event so downstream stages still advance.
-	if meta == nil || !meta.FileType.IsAudio() || isSkipFileType(stage, meta.FileType) {
+	if meta == nil || !meta.FileType.IsTranscribable() || isSkipFileType(stage, meta.FileType) {
 		_ = w.jobs.UpdateStatus(ctx, job.ID, string(model.JobStatusDone), now)
 		_ = w.events.Append(ctx, model.StageEvent{DocumentID: doc.ID, Stage: stage.Name, EventType: model.EventSkipped, Timestamp: now})
 		_ = w.advancePipeline(ctx, job, now)

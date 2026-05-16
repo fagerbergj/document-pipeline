@@ -24,8 +24,9 @@ func (f FileType) IsImage() bool {
 	return f == FileTypePNG || f == FileTypeJPG || f == FileTypeJPEG
 }
 
-// IsAudio reports whether the file type is recorded audio.
-func (f FileType) IsAudio() bool {
+// IsTranscribable reports whether the file type is media that the transcribe
+// stage knows how to handle (audio formats and MP4 video).
+func (f FileType) IsTranscribable() bool {
 	switch f {
 	case FileTypeWEBM, FileTypeWAV, FileTypeMP3, FileTypeM4A, FileTypeOGG, FileTypeFLAC, FileTypeMP4:
 		return true
