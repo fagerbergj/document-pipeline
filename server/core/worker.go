@@ -785,7 +785,7 @@ func (w *WorkerService) runEmbed(
 		// retrieval results can show both. Failure falls back to raw-chunk
 		// embedding rather than failing the whole stage.
 		embedText := chunk
-		if stage.ContextualModel != "" && stage.ContextualPrompt != "" {
+		if stage.ContextualModel != "" {
 			ctxText, err := w.contextualizeChunk(ctx, stage, inputText, chunk)
 			if err != nil {
 				slog.Warn("contextual embed: falling back to raw chunk", "doc_id", doc.ID[:8], "chunk_index", i, "err", err)

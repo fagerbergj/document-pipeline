@@ -63,6 +63,12 @@ func (s *YAMLPipelineSource) Load() (model.PipelineConfig, error) {
 	}
 
 	for _, s := range raw.Stages {
+		// Contextual embeddings: model and prompt must be set together. An
+		// empty pair disables the feature for this stage; a half-set pair is
+		// a config bug — surface it at load time, not on the first chunk.
+		if (s.ContextualModel == "") != (s.ContextualPrompt == "") {
+			return model.PipelineConfig{}, fmt.Errorf("stage %q: contextual_model and contextual_prompt must both be set or both empty", s.Name)
+		}
 		cfg.Stages = append(cfg.Stages, model.StageDefinition{
 			Name:           s.Name,
 			Type:           s.Type,
