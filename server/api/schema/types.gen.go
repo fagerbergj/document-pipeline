@@ -4,6 +4,8 @@
 package schema
 
 import (
+	"encoding/json"
+	"fmt"
 	"time"
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
@@ -194,11 +196,19 @@ type Artifact struct {
 	// CreatedJobId UUID of the job that created this artifact. Null for source artifacts created during ingest.
 	CreatedJobId *openapi_types.UUID `json:"created_job_id,omitempty"`
 
+	// Field Output field name this artifact represents (e.g. `raw_text`). Paired with `stage`.
+	Field *string `json:"field,omitempty"`
+
 	// Filename Original filename of the artifact.
 	Filename string `json:"filename"`
 
 	// Id Unique artifact identifier.
 	Id openapi_types.UUID `json:"id"`
+
+	// Stage Pipeline stage this artifact represents an output for. Set on
+	// user-seeded artifacts attached at upload time. Null on artifacts
+	// created automatically by stage execution.
+	Stage *string `json:"stage,omitempty"`
 
 	// UpdatedAt ISO 8601 last-updated timestamp.
 	UpdatedAt time.Time `json:"updated_at"`
@@ -792,13 +802,17 @@ type ListDocumentsParamsSort string
 
 // UploadDocumentMultipartBody defines parameters for UploadDocument.
 type UploadDocumentMultipartBody struct {
-	AdditionalContext *string               `json:"additional_context,omitempty"`
-	File              openapi_types.File    `json:"file"`
-	LinkedContexts    *[]openapi_types.UUID `json:"linked_contexts,omitempty"`
+	AdditionalContext *string `json:"additional_context,omitempty"`
+
+	// File Source file. Accepted extensions: png, jpg, jpeg, txt, md,
+	// webm, wav, mp3, m4a, ogg, flac, mp4.
+	File           openapi_types.File    `json:"file"`
+	LinkedContexts *[]openapi_types.UUID `json:"linked_contexts,omitempty"`
 
 	// Series Series name for grouping related documents into a shared embedding corpus.
-	Series *string `json:"series,omitempty"`
-	Title  *string `json:"title,omitempty"`
+	Series               *string                       `json:"series,omitempty"`
+	Title                *string                       `json:"title,omitempty"`
+	AdditionalProperties map[string]openapi_types.File `json:"-"`
 }
 
 // ListJobsParams defines parameters for ListJobs.
@@ -878,3 +892,129 @@ type PutJobStatusJSONRequestBody = PutJobStatusBody
 
 // ReceiveWebhookMultipartRequestBody defines body for ReceiveWebhook for multipart/form-data ContentType.
 type ReceiveWebhookMultipartRequestBody ReceiveWebhookMultipartBody
+
+// Getter for additional properties for UploadDocumentMultipartBody. Returns the specified
+// element and whether it was found
+func (a UploadDocumentMultipartBody) Get(fieldName string) (value openapi_types.File, found bool) {
+	if a.AdditionalProperties != nil {
+		value, found = a.AdditionalProperties[fieldName]
+	}
+	return
+}
+
+// Setter for additional properties for UploadDocumentMultipartBody
+func (a *UploadDocumentMultipartBody) Set(fieldName string, value openapi_types.File) {
+	if a.AdditionalProperties == nil {
+		a.AdditionalProperties = make(map[string]openapi_types.File)
+	}
+	a.AdditionalProperties[fieldName] = value
+}
+
+// Override default JSON handling for UploadDocumentMultipartBody to handle AdditionalProperties
+func (a *UploadDocumentMultipartBody) UnmarshalJSON(b []byte) error {
+	object := make(map[string]json.RawMessage)
+	err := json.Unmarshal(b, &object)
+	if err != nil {
+		return err
+	}
+
+	if raw, found := object["additional_context"]; found {
+		err = json.Unmarshal(raw, &a.AdditionalContext)
+		if err != nil {
+			return fmt.Errorf("error reading 'additional_context': %w", err)
+		}
+		delete(object, "additional_context")
+	}
+
+	if raw, found := object["file"]; found {
+		err = json.Unmarshal(raw, &a.File)
+		if err != nil {
+			return fmt.Errorf("error reading 'file': %w", err)
+		}
+		delete(object, "file")
+	}
+
+	if raw, found := object["linked_contexts"]; found {
+		err = json.Unmarshal(raw, &a.LinkedContexts)
+		if err != nil {
+			return fmt.Errorf("error reading 'linked_contexts': %w", err)
+		}
+		delete(object, "linked_contexts")
+	}
+
+	if raw, found := object["series"]; found {
+		err = json.Unmarshal(raw, &a.Series)
+		if err != nil {
+			return fmt.Errorf("error reading 'series': %w", err)
+		}
+		delete(object, "series")
+	}
+
+	if raw, found := object["title"]; found {
+		err = json.Unmarshal(raw, &a.Title)
+		if err != nil {
+			return fmt.Errorf("error reading 'title': %w", err)
+		}
+		delete(object, "title")
+	}
+
+	if len(object) != 0 {
+		a.AdditionalProperties = make(map[string]openapi_types.File)
+		for fieldName, fieldBuf := range object {
+			var fieldVal openapi_types.File
+			err := json.Unmarshal(fieldBuf, &fieldVal)
+			if err != nil {
+				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
+			}
+			a.AdditionalProperties[fieldName] = fieldVal
+		}
+	}
+	return nil
+}
+
+// Override default JSON handling for UploadDocumentMultipartBody to handle AdditionalProperties
+func (a UploadDocumentMultipartBody) MarshalJSON() ([]byte, error) {
+	var err error
+	object := make(map[string]json.RawMessage)
+
+	if a.AdditionalContext != nil {
+		object["additional_context"], err = json.Marshal(a.AdditionalContext)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'additional_context': %w", err)
+		}
+	}
+
+	object["file"], err = json.Marshal(a.File)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'file': %w", err)
+	}
+
+	if a.LinkedContexts != nil {
+		object["linked_contexts"], err = json.Marshal(a.LinkedContexts)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'linked_contexts': %w", err)
+		}
+	}
+
+	if a.Series != nil {
+		object["series"], err = json.Marshal(a.Series)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'series': %w", err)
+		}
+	}
+
+	if a.Title != nil {
+		object["title"], err = json.Marshal(a.Title)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'title': %w", err)
+		}
+	}
+
+	for fieldName, field := range a.AdditionalProperties {
+		object[fieldName], err = json.Marshal(field)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
+		}
+	}
+	return json.Marshal(object)
+}
