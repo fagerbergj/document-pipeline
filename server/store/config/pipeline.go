@@ -33,19 +33,19 @@ func (s *YAMLPipelineSource) Load() (model.PipelineConfig, error) {
 	var raw struct {
 		MaxConcurrent int `yaml:"max_concurrent"`
 		Stages        []struct {
-			Name           string              `yaml:"name"`
-			Type           string              `yaml:"type"`
-			Model          string              `yaml:"model"`
-			Prompt         string              `yaml:"prompt"`
-			Input          string              `yaml:"input"`
-			Output         string              `yaml:"output"`
-			Outputs        []model.StageOutput `yaml:"outputs"`
-			RequireContext bool                `yaml:"require_context"`
-			Destinations   []map[string]any    `yaml:"destinations"`
-			MetadataFields []string            `yaml:"metadata_fields"`
-			StartIf        map[string]any      `yaml:"start_if"`
-			ContinueIf     []map[string]any    `yaml:"continue_if"`
-			SkipIf         map[string]any      `yaml:"skip_if"`
+			Name             string              `yaml:"name"`
+			Type             string              `yaml:"type"`
+			Model            string              `yaml:"model"`
+			Prompt           string              `yaml:"prompt"`
+			Input            string              `yaml:"input"`
+			Output           string              `yaml:"output"`
+			Outputs          []model.StageOutput `yaml:"outputs"`
+			RequireContext   bool                `yaml:"require_context"`
+			Destinations     []map[string]any    `yaml:"destinations"`
+			MetadataFields   []string            `yaml:"metadata_fields"`
+			StartIf          map[string]any      `yaml:"start_if"`
+			ContinueIf       []map[string]any    `yaml:"continue_if"`
+			SkipIf           map[string]any      `yaml:"skip_if"`
 			MaxConcurrent    *int                `yaml:"max_concurrent"`
 			Vision           bool                `yaml:"vision"`
 			ContextualModel  string              `yaml:"contextual_model"`
@@ -70,18 +70,18 @@ func (s *YAMLPipelineSource) Load() (model.PipelineConfig, error) {
 			return model.PipelineConfig{}, fmt.Errorf("stage %q: contextual_model and contextual_prompt must both be set or both empty", s.Name)
 		}
 		cfg.Stages = append(cfg.Stages, model.StageDefinition{
-			Name:           s.Name,
-			Type:           s.Type,
-			Model:          s.Model,
-			Prompt:         s.Prompt,
-			Input:          s.Input,
-			Output:         s.Output,
-			Outputs:        s.Outputs,
-			RequireContext: s.RequireContext,
-			Destinations:   s.Destinations,
-			MetadataFields: s.MetadataFields,
-			StartIf:        s.StartIf,
-			ContinueIf:     s.ContinueIf,
+			Name:             s.Name,
+			Type:             s.Type,
+			Model:            s.Model,
+			Prompt:           s.Prompt,
+			Input:            s.Input,
+			Output:           s.Output,
+			Outputs:          s.Outputs,
+			RequireContext:   s.RequireContext,
+			Destinations:     s.Destinations,
+			MetadataFields:   s.MetadataFields,
+			StartIf:          s.StartIf,
+			ContinueIf:       s.ContinueIf,
 			SkipIf:           s.SkipIf,
 			MaxConcurrent:    s.MaxConcurrent,
 			Vision:           s.Vision,
