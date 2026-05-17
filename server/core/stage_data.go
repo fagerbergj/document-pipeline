@@ -11,7 +11,7 @@ import (
 // CollectStageData returns the latest outputs from each completed or waiting job
 // for the given document, keyed by stage name. Output text is loaded from the
 // artifact backing each Field.
-func CollectStageData(ctx context.Context, jobs port.JobRepo, artifacts port.ArtifactRepo, store port.DocumentArtifactStore, vaultPath, docID string) (map[string]map[string]any, error) {
+func CollectStageData(ctx context.Context, jobs port.JobRepo, artifacts port.ArtifactRepo, store port.DocumentArtifactStore, vaultPath, docID string) (model.StageOutputs, error) {
 	jobList, err := jobs.ListForDocument(ctx, docID)
 	if err != nil {
 		return nil, err
@@ -20,22 +20,36 @@ func CollectStageData(ctx context.Context, jobs port.JobRepo, artifacts port.Art
 }
 
 // CollectStageDataBatch returns CollectStageData results for many documents
-// in a single jobs query. Useful for tools that resolve a search-results list
-// of doc ids — it collapses N "list jobs for doc" round trips into one.
-func CollectStageDataBatch(ctx context.Context, jobs port.JobRepo, artifacts port.ArtifactRepo, store port.DocumentArtifactStore, vaultPath string, docIDs []string) (map[string]map[string]map[string]any, error) {
-	out := make(map[string]map[string]map[string]any, len(docIDs))
+// without a per-doc round trip. Jobs across the entire doc set are fetched
+// via paged ListPaginated calls — pagination is required because doc sets
+// with retried/edited jobs can exceed any fixed-size first page.
+func CollectStageDataBatch(ctx context.Context, jobs port.JobRepo, artifacts port.ArtifactRepo, store port.DocumentArtifactStore, vaultPath string, docIDs []string) (model.StageOutputsByDoc, error) {
+	out := make(model.StageOutputsByDoc, len(docIDs))
 	if len(docIDs) == 0 {
 		return out, nil
 	}
-	// One query for all jobs across the doc set.
-	page := model.PageRequest{PageSize: len(docIDs) * 16}
-	result, err := jobs.ListPaginated(ctx, port.JobFilter{DocumentIDs: docIDs}, page)
-	if err != nil {
-		return nil, err
-	}
+	const pageSize = 200
 	byDoc := make(map[string][]model.Job, len(docIDs))
-	for _, j := range result.Data {
-		byDoc[j.DocumentID] = append(byDoc[j.DocumentID], j)
+	var token *model.PageToken
+	for {
+		req := model.PageRequest{PageSize: pageSize, PageToken: token}
+		result, err := jobs.ListPaginated(ctx, port.JobFilter{DocumentIDs: docIDs}, req)
+		if err != nil {
+			return nil, err
+		}
+		for _, j := range result.Data {
+			byDoc[j.DocumentID] = append(byDoc[j.DocumentID], j)
+		}
+		if result.NextPageToken == nil {
+			break
+		}
+		// Decode the opaque next-page token into the structured form
+		// ListPaginated expects on its next call.
+		decoded, err := DecodePageToken(*result.NextPageToken)
+		if err != nil {
+			return nil, err
+		}
+		token = &decoded
 	}
 	for _, id := range docIDs {
 		out[id] = stageDataFromJobs(ctx, byDoc[id], artifacts, store, vaultPath, id)
@@ -43,8 +57,8 @@ func CollectStageDataBatch(ctx context.Context, jobs port.JobRepo, artifacts por
 	return out, nil
 }
 
-func stageDataFromJobs(ctx context.Context, jobList []model.Job, artifacts port.ArtifactRepo, store port.DocumentArtifactStore, vaultPath, docID string) map[string]map[string]any {
-	stageData := map[string]map[string]any{}
+func stageDataFromJobs(ctx context.Context, jobList []model.Job, artifacts port.ArtifactRepo, store port.DocumentArtifactStore, vaultPath, docID string) model.StageOutputs {
+	stageData := model.StageOutputs{}
 	for _, j := range jobList {
 		if (j.Status != model.JobStatusDone && j.Status != model.JobStatusWaiting) || len(j.Runs) == 0 {
 			continue

@@ -43,10 +43,10 @@ type DocsBatchFn func(ctx context.Context, ids []string) (map[string]model.Docum
 
 // StageDataFn returns the latest outputs from each completed stage for a
 // document, keyed by field name. Supplied by the wiring layer.
-type StageDataFn func(ctx context.Context, id string) (map[string]map[string]any, error)
+type StageDataFn func(ctx context.Context, id string) (model.StageOutputs, error)
 
 // StageDataBatchFn returns stage data for many documents in one query.
-type StageDataBatchFn func(ctx context.Context, ids []string) (map[string]map[string]map[string]any, error)
+type StageDataBatchFn func(ctx context.Context, ids []string) (model.StageOutputsByDoc, error)
 
 // NewSearchDocumentsTool returns an ADK tool that runs a Lucene query against
 // OpenSearch and resolves each hit to a lean DocumentHit. The full content of
@@ -134,7 +134,7 @@ func runSearchDocuments(
 // stringFromStageData reads a string output field from a specific stage's
 // results. Scoping by stage avoids ambiguity when two stages happen to emit
 // the same field name.
-func stringFromStageData(sd map[string]map[string]any, stage, field string) string {
+func stringFromStageData(sd model.StageOutputs, stage, field string) string {
 	v, ok := sd[stage][field]
 	if !ok {
 		return ""
@@ -147,7 +147,7 @@ func stringFromStageData(sd map[string]map[string]any, stage, field string) stri
 // string (the raw artifact contents); production stage data therefore stores
 // it as a string, not a []string. Test fixtures sometimes pre-parse, so we
 // accept both shapes.
-func tagsFromStageData(sd map[string]map[string]any, stage, field string) []string {
+func tagsFromStageData(sd model.StageOutputs, stage, field string) []string {
 	v, ok := sd[stage][field]
 	if !ok {
 		return nil

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fagerbergj/document-pipeline/server/core/model"
 	"github.com/fagerbergj/document-pipeline/server/core/port"
 )
 
@@ -150,9 +151,9 @@ func (s *IndexerService) indexDoc(ctx context.Context, docID string) error {
 		return err
 	}
 
-	content := stringField(stageData, "clarify", "clarified_text")
-	summary := stringField(stageData, "classify", "summary")
-	tags := parseTagsField(stageData, "classify", "tags")
+	content := stringField(stageData, model.StageNameClarify, model.FieldClarifiedText)
+	summary := stringField(stageData, model.StageNameClassify, model.FieldSummary)
+	tags := parseTagsField(stageData, model.StageNameClassify, model.FieldTags)
 
 	jobs, err := s.jobs.ListForDocument(ctx, docID)
 	if err != nil {
