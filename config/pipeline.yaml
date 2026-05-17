@@ -69,6 +69,13 @@ stages:
     type: embed
     max_concurrent: 1
     model: ${EMBED_MODEL}
+    # Contextual embeddings: before embedding each chunk a small LLM produces
+    # a 1-2 sentence situating context which is prepended to the chunk fed
+    # into the embedding model. Improves retrieval relevance because chunks
+    # alone often lack the context needed to be matched against queries.
+    # Set CONTEXTUAL_MODEL=  (empty) to disable.
+    contextual_model: ${CONTEXTUAL_MODEL}
+    contextual_prompt: prompts/contextual.txt
     input: clarified_text
     metadata_fields: [title, tags, summary, narrative_summary, date_month, series]
     chunk_size: 800

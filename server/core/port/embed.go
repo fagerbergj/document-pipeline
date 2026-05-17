@@ -13,6 +13,10 @@ const (
 	PayloadSeriesName = "series_name"
 	PayloadPrevChunk  = "prev_chunk_id"
 	PayloadNextChunk  = "next_chunk_id"
+	// PayloadContext is the LLM-produced situating context generated when an
+	// embed stage runs with contextual_model set. Stored so retrieval results
+	// can show both the chunk and the situating sentence.
+	PayloadContext = "context"
 )
 
 // EmbedStore stores and retrieves document embeddings.

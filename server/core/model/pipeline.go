@@ -24,6 +24,14 @@ type StageDefinition struct {
 	SkipIf         map[string]any
 	Vision         bool
 	MaxConcurrent  *int // nil means use PipelineConfig.MaxConcurrent
+	// ContextualModel, when set on an embed stage, enables contextual
+	// embeddings: before embedding each chunk a small LLM is asked to produce
+	// a 1-2 sentence situating context, which is prepended to the chunk text
+	// fed into the embedding model. Empty disables (chunks are embedded raw).
+	ContextualModel string
+	// ContextualPrompt is the path to the prompt template used by the
+	// contextual embedding step. Required when ContextualModel is set.
+	ContextualPrompt string
 }
 
 type StageOutput struct {
