@@ -40,24 +40,26 @@ func (m *PortLLMModel) call(ctx context.Context, req *model.LLMRequest) (*model.
 	messages := m.buildMessages(req)
 	tools := m.buildTools(req)
 
-	text, calls, err := m.llm.ChatWithTools(ctx, m.name, messages, tools)
+	resp, err := m.llm.ChatWithTools(ctx, m.name, messages, tools)
 	if err != nil {
 		return nil, fmt.Errorf("adk model call: %w", err)
 	}
 
 	var parts []*genai.Part
-	if len(calls) > 0 {
-		for _, c := range calls {
-			parts = append(parts, &genai.Part{
-				FunctionCall: &genai.FunctionCall{
-					ID:   c.ID,
-					Name: c.Name,
-					Args: c.Arguments,
-				},
-			})
-		}
-	} else {
-		parts = append(parts, &genai.Part{Text: text})
+	if resp.Thinking != "" {
+		parts = append(parts, &genai.Part{Text: resp.Thinking, Thought: true})
+	}
+	if resp.Text != "" {
+		parts = append(parts, &genai.Part{Text: resp.Text})
+	}
+	for _, c := range resp.ToolCalls {
+		parts = append(parts, &genai.Part{
+			FunctionCall: &genai.FunctionCall{
+				ID:   c.ID,
+				Name: c.Name,
+				Args: c.Arguments,
+			},
+		})
 	}
 
 	return &model.LLMResponse{

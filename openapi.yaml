@@ -455,8 +455,10 @@ paths:
       summary: Stream LLM tokens (SSE)
       description: |
         Server-Sent Events stream of LLM output tokens while the job is
-        in the `running` state. Emits `token` events with `{"text": "..."}` payloads
-        and a final `done` event when generation completes or status changes.
+        in the `running` state. Emits `token` and `thinking` events with `{"text": "..."}`
+        payloads — `thinking` carries out-of-band reasoning from reasoning models and should be
+        rendered as a separate collapsible trace, distinct from the final answer. A final
+        `done` event closes the stream when generation completes or status changes.
       operationId: streamJobTokens
       responses:
         '200':
@@ -650,7 +652,11 @@ paths:
               $ref: '#/components/schemas/SendMessageBody'
       responses:
         '200':
-          description: SSE stream of token events followed by a done event.
+          description: >
+            SSE stream of `token` / `thinking` / `tool_call` / `tool_result` /
+            `confirmation_request` events followed by a `done` event. `thinking` carries
+            out-of-band reasoning from reasoning models — render it as a collapsible trace,
+            separate from the final answer.
           content:
             text/event-stream:
               schema:
@@ -689,8 +695,9 @@ paths:
       responses:
         '200':
           description: >
-            On approve, SSE stream of the resumed agent loop (token / tool_call / tool_result /
-            confirmation_request / done events). On reject, a single `done` event closes the stream.
+            On approve, SSE stream of the resumed agent loop (token / thinking / tool_call /
+            tool_result / confirmation_request / done events). On reject, a single `done` event
+            closes the stream.
           content:
             text/event-stream:
               schema:

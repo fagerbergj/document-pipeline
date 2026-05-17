@@ -8,7 +8,6 @@ import {
   markConfirmation,
   partsToText,
   AssistantParts,
-  AssistantText,
   type MessagePart,
   type ToolCallPart,
 } from '../components/AgentParts'
@@ -143,16 +142,22 @@ describe('AssistantParts', () => {
   })
 })
 
-describe('AssistantText with <think>', () => {
-  it('renders <think> content inside a collapsible labeled "thinking"', () => {
-    render(<AssistantText text={'<think>my reasoning</think>then the answer'} />)
+describe('ThinkingPart rendering', () => {
+  it('renders a thinking part inside a collapsible labeled "thinking"', () => {
+    render(<AssistantParts parts={[
+      { kind: 'thinking', text: 'my reasoning' },
+      { kind: 'text', text: 'then the answer' },
+    ]} />)
     expect(screen.getByText('thinking')).toBeInTheDocument()
     expect(screen.getByText('my reasoning')).toBeInTheDocument()
     expect(screen.getByText(/then the answer/)).toBeInTheDocument()
   })
 
   it('starts the thinking block collapsed', () => {
-    const { container } = render(<AssistantText text={'<think>secret</think>visible'} />)
+    const { container } = render(<AssistantParts parts={[
+      { kind: 'thinking', text: 'secret' },
+      { kind: 'text', text: 'visible' },
+    ]} />)
     const details = container.querySelector('details')
     expect(details).toBeTruthy()
     expect(details?.open).toBe(false)

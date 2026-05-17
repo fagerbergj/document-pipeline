@@ -2,12 +2,14 @@ import { api } from '../api'
 import {
   appendConfirmation,
   appendTextPart,
+  appendThinkingPart,
   appendToolCall,
   fillToolResult,
   markConfirmation,
   partsToText,
   type MessagePart,
 } from '../components/AgentParts'
+import { readAgentStream } from './agentStream'
 
 // Message is the chat-page-level view of a chat message — same shape as the
 // component used to manage locally before the stream state was hoisted into
@@ -220,6 +222,7 @@ export class ChatStore {
 
     await readAgentStream(body, {
       onToken: text => updateMessage(parts => appendTextPart(parts, text)),
+      onThinking: text => updateMessage(parts => appendThinkingPart(parts, text)),
       onToolCall: (name, args) => updateMessage(parts => appendToolCall(parts, name, args)),
       onToolResult: (name, result) => updateMessage(parts => fillToolResult(parts, name, result)),
       onConfirmationRequest: req => updateMessage(parts => appendConfirmation(parts, {
@@ -291,80 +294,3 @@ function withParts(m: Message, parts: MessagePart[]): Message {
   return { ...m, parts, content: partsToText(parts) }
 }
 
-// ── SSE parser (moved verbatim from Chat.tsx so the store owns the loop) ───
-
-export interface ConfirmationRequestPayload {
-  callId: string
-  toolName: string
-  hint: string
-  payload: Record<string, unknown>
-}
-
-export async function readAgentStream(
-  body: ReadableStream<Uint8Array>,
-  handlers: {
-    onToken: (text: string) => void
-    onToolCall: (name: string, args: Record<string, unknown>) => void
-    onToolResult: (name: string, result: unknown) => void
-    onConfirmationRequest: (req: ConfirmationRequestPayload) => void
-    onError: (msg: string) => void
-  },
-): Promise<void> {
-  const reader = body.getReader()
-  const decoder = new TextDecoder()
-  let buf = ''
-  let currentEvent = 'message'
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buf += decoder.decode(value, { stream: true })
-    const lines = buf.split('\n')
-    buf = lines.pop()!
-    for (const line of lines) {
-      if (line.startsWith('event: ')) {
-        currentEvent = line.slice(7).trim()
-        continue
-      }
-      if (!line.startsWith('data: ')) continue
-      const raw = line.slice(6).trim()
-      if (!raw) continue
-      let parsed: unknown
-      try { parsed = JSON.parse(raw) } catch { continue }
-      switch (currentEvent) {
-        case 'token':
-          if (hasStringField(parsed, 'text')) handlers.onToken(parsed.text)
-          break
-        case 'tool_call':
-          if (hasStringField(parsed, 'name')) {
-            const args = (parsed as { args?: Record<string, unknown> }).args ?? {}
-            handlers.onToolCall(parsed.name, args)
-          }
-          break
-        case 'tool_result':
-          if (hasStringField(parsed, 'name')) {
-            const result = (parsed as unknown as { result: unknown }).result
-            handlers.onToolResult(parsed.name, result)
-          }
-          break
-        case 'confirmation_request':
-          if (hasStringField(parsed, 'call_id')) {
-            const p = parsed as { call_id: string; tool_name?: string; hint?: string; payload?: Record<string, unknown> }
-            handlers.onConfirmationRequest({
-              callId: p.call_id,
-              toolName: p.tool_name ?? '',
-              hint: p.hint ?? '',
-              payload: p.payload ?? {},
-            })
-          }
-          break
-        case 'error':
-          if (hasStringField(parsed, 'error')) handlers.onError(parsed.error)
-          break
-      }
-    }
-  }
-}
-
-function hasStringField<K extends string>(v: unknown, field: K): v is Record<K, string> {
-  return typeof v === 'object' && v !== null && typeof (v as Record<string, unknown>)[field] === 'string'
-}

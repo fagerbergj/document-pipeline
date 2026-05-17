@@ -565,10 +565,7 @@ func chatInstruction(systemPrompt string) string {
 		"you couldn't find anything rather than spamming more searches.\n\n" +
 		"If the user reports that a specific stage output is wrong, use update_document to fix it. " +
 		"The user will approve, reject, or edit your proposal in a UI card; downstream stages " +
-		"re-run automatically on approval.\n\n" +
-		"Wrap any planning or reasoning between tool calls in <think>...</think>. The user sees " +
-		"these blocks collapsed and can expand them — write them like you're talking through " +
-		"the problem out loud. Keep the final answer outside the <think> tags."
+		"re-run automatically on approval."
 	if systemPrompt != "" {
 		instruction += "\n\nAdditional context:\n" + systemPrompt
 	}
@@ -576,7 +573,7 @@ func chatInstruction(systemPrompt string) string {
 }
 
 func (h *handler) queryModel() string {
-	if m := os.Getenv("QUERY_MODEL"); m != "" {
+	if m := os.Getenv("CHAT_MODEL"); m != "" {
 		return m
 	}
 	if m := os.Getenv("CLARIFY_MODEL"); m != "" {
@@ -659,7 +656,7 @@ func messagesFromSession(sess session.Session) []schema.ChatMessage {
 		}
 		if e.IsFinalResponse() && e.Content.Role == "model" {
 			for _, p := range e.Content.Parts {
-				if p.Text != "" {
+				if p.Text != "" && !p.Thought {
 					t.modelContent = p.Text
 					t.modelEventID = e.ID
 					t.modelTimestamp = e.Timestamp

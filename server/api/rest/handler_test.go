@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"google.golang.org/adk/session"
+	"google.golang.org/genai"
 
 	"github.com/fagerbergj/document-pipeline/server/core"
 	"github.com/fagerbergj/document-pipeline/server/core/model"
@@ -269,8 +270,8 @@ func (m *mockLLM) GenerateVision(_ context.Context, _, _ string, _ []byte, _ fun
 	return nil
 }
 func (m *mockLLM) GenerateText(_ context.Context, _, _ string, _ func(string)) error { return nil }
-func (m *mockLLM) ChatWithTools(_ context.Context, _ string, _ []port.LLMMessage, _ []port.LLMTool) (string, []port.LLMToolCall, error) {
-	return "", nil, nil
+func (m *mockLLM) ChatWithTools(_ context.Context, _ string, _ []port.LLMMessage, _ []port.LLMTool) (port.LLMChatResponse, error) {
+	return port.LLMChatResponse{}, nil
 }
 func (m *mockLLM) ChatStream(_ context.Context, _ string, _ []port.LLMMessage, _ func(string)) error {
 	return nil
@@ -930,6 +931,46 @@ func TestDeleteChat(t *testing.T) {
 	rr := doRequest(t, h, http.MethodDelete, "/api/v1/chats/chat-1", nil)
 	if rr.Code != http.StatusNoContent {
 		t.Fatalf("status %d, want 204", rr.Code)
+	}
+}
+
+// ── messagesFromSession ───────────────────────────────────────────────────────
+
+func TestMessagesFromSession_FiltersThoughtParts(t *testing.T) {
+	ctx := context.Background()
+	svc := session.InMemoryService()
+	cr, err := svc.Create(ctx, &session.CreateRequest{AppName: "test", UserID: "u", SessionID: "s"})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	userEvent := session.NewEvent("inv-1")
+	userEvent.Author = "user"
+	userEvent.Content = &genai.Content{Role: "user", Parts: []*genai.Part{{Text: "hi"}}}
+	if err := svc.AppendEvent(ctx, cr.Session, userEvent); err != nil {
+		t.Fatalf("append user: %v", err)
+	}
+
+	modelEvent := session.NewEvent("inv-1")
+	modelEvent.Author = "model"
+	modelEvent.Content = &genai.Content{Role: "model", Parts: []*genai.Part{
+		{Text: "reasoning trace", Thought: true},
+		{Text: "the final answer"},
+	}}
+	if err := svc.AppendEvent(ctx, cr.Session, modelEvent); err != nil {
+		t.Fatalf("append model: %v", err)
+	}
+
+	gr, err := svc.Get(ctx, &session.GetRequest{AppName: "test", UserID: "u", SessionID: "s"})
+	if err != nil {
+		t.Fatalf("get session: %v", err)
+	}
+	msgs := messagesFromSession(gr.Session)
+	if len(msgs) != 2 {
+		t.Fatalf("got %d messages, want 2 (user + assistant)", len(msgs))
+	}
+	if msgs[1].Content != "the final answer" {
+		t.Errorf("assistant content = %q, want %q (thought part should be filtered)", msgs[1].Content, "the final answer")
 	}
 }
 

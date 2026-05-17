@@ -1,17 +1,21 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import rehypeRaw from 'rehype-raw'
-import { useState, type ComponentPropsWithoutRef, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import EditableOutput from './EditableOutput'
 import DiffView from './DiffView'
 
-// MessagePart is one ordered chunk of an assistant message — model text
-// (which may contain <think>…</think> blocks), a tool call, or a pending
+// MessagePart is one ordered chunk of an assistant message — model text,
+// out-of-band reasoning (collapsible), a tool call, or a pending
 // human-in-the-loop confirmation card.
-export type MessagePart = TextPart | ToolCallPart | ConfirmationPart
+export type MessagePart = TextPart | ThinkingPart | ToolCallPart | ConfirmationPart
 
 export interface TextPart {
   kind: 'text'
+  text: string
+}
+
+export interface ThinkingPart {
+  kind: 'thinking'
   text: string
 }
 
@@ -59,6 +63,7 @@ export function AssistantParts({ parts, showCursor, onDecideConfirmation }: {
     <>
       {parts.map((p, i) => {
         if (p.kind === 'text') return <AssistantText key={i} text={p.text} />
+        if (p.kind === 'thinking') return <ThinkBlock key={i} text={p.text} />
         if (p.kind === 'tool_call') return <ToolBlock key={i} part={p} />
         return <ConfirmationBlock key={i} part={p} onDecide={onDecideConfirmation} />
       })}
@@ -69,18 +74,23 @@ export function AssistantParts({ parts, showCursor, onDecideConfirmation }: {
   )
 }
 
-// appendTextPart appends streamed text to the last text part, creating a new
-// text part if the last part is a tool_call (or the array is empty).
-export function appendTextPart(parts: MessagePart[], text: string): MessagePart[] {
+// appendStreamingPart merges a streamed chunk into the last part if it has
+// the same kind, otherwise opens a new part. Used for both regular tokens
+// and out-of-band thinking — the two share the {kind, text} shape and the
+// same coalescing rule.
+export function appendStreamingPart(parts: MessagePart[], kind: 'text' | 'thinking', text: string): MessagePart[] {
   const next = [...parts]
   const last = next[next.length - 1]
-  if (last && last.kind === 'text') {
+  if (last && last.kind === kind) {
     next[next.length - 1] = { ...last, text: last.text + text }
   } else {
-    next.push({ kind: 'text', text })
+    next.push({ kind, text })
   }
   return next
 }
+
+export const appendTextPart = (parts: MessagePart[], text: string) => appendStreamingPart(parts, 'text', text)
+export const appendThinkingPart = (parts: MessagePart[], text: string) => appendStreamingPart(parts, 'thinking', text)
 
 // appendToolCall pushes a new tool_call part with no result yet.
 export function appendToolCall(parts: MessagePart[], name: string, args: Record<string, unknown>): MessagePart[] {
@@ -118,40 +128,27 @@ export function partsToText(parts: MessagePart[]): string {
   return parts.filter(p => p.kind === 'text').map(p => (p as TextPart).text).join('')
 }
 
-// AssistantText renders model-emitted text with markdown, intercepting
-// <think>…</think> tags as collapsible reasoning traces.
+// AssistantText renders model-emitted text as markdown. Reasoning traces
+// arrive on a separate SSE event and render via ThinkBlock.
 export function AssistantText({ text }: { text: string }) {
   return (
     <div className="prose prose-sm dark:prose-invert max-w-none">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeRaw]}
-        components={{
-          // 'think' is a non-standard tag; rehype-raw passes it through and
-          // our custom renderer turns it into a collapsible.
-          // @ts-expect-error — react-markdown's component map doesn't type
-          // custom tag names but the runtime accepts them via rehype-raw.
-          think: ThinkBlock,
-        }}
-      >
-        {text}
-      </ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
     </div>
   )
 }
 
-// ThinkBlock renders <think>…</think> content as a collapsed-by-default
-// block. The model is asked (via the system prompt) to wrap reasoning
-// between tool calls in these tags; the user sees the conclusion and can
-// expand to read the reasoning.
-function ThinkBlock({ children }: ComponentPropsWithoutRef<'div'>) {
+// ThinkBlock renders out-of-band reasoning (the `thinking` SSE event) as a
+// collapsed-by-default block. Content is plain text — reasoning traces are
+// not parsed as markdown to keep rendering robust against streaming.
+function ThinkBlock({ text }: { text: string }) {
   return (
     <details className="my-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 not-prose">
       <summary className="cursor-pointer select-none px-3 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400">
         thinking
       </summary>
       <div className="px-3 pb-3 pt-1 text-xs text-gray-600 dark:text-gray-300 whitespace-pre-wrap font-mono">
-        {children}
+        {text}
       </div>
     </details>
   )

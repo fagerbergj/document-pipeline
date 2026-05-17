@@ -8,7 +8,8 @@ import { api } from '../api'
 import type { DocumentDetail, JobDetail, JobSummary, Run, Artifact } from '../types'
 import StatusBadge from '../components/StatusBadge'
 import LoadingSpinner from '../components/LoadingSpinner'
-import { AssistantParts, appendTextPart, appendToolCall, fillToolResult, type MessagePart } from '../components/AgentParts'
+import { AssistantParts, appendTextPart, appendThinkingPart, appendToolCall, fillToolResult, type MessagePart } from '../components/AgentParts'
+import { attachAgentEventSource } from '../state/agentStream'
 import DocKebabMenu from '../components/DocKebabMenu'
 import EditableOutput from '../components/EditableOutput'
 
@@ -546,6 +547,11 @@ function LiveLogSection({ jobId, onDone }: { jobId: string; onDone: () => void }
     setStatusMsg('')
     let errorCount = 0
     let receivedTokens = false
+    const onStreamText = () => {
+      errorCount = 0
+      receivedTokens = true
+      setStatusMsg('')
+    }
     const es = new EventSource(`/api/v1/jobs/${jobId}/stream`)
     es.addEventListener('status', (e) => {
       if (!receivedTokens) {
@@ -553,35 +559,31 @@ function LiveLogSection({ jobId, onDone }: { jobId: string; onDone: () => void }
         setStatusMsg(data.text ?? '')
       }
     })
-    es.addEventListener('token', (e) => {
-      errorCount = 0
-      receivedTokens = true
-      setStatusMsg('')
-      const data = JSON.parse((e as MessageEvent).data) as { text: string }
-      setParts(prev => appendTextPart(prev, data.text))
-      setStatus('streaming…')
-    })
-    es.addEventListener('tool_call', (e) => {
-      const data = JSON.parse((e as MessageEvent).data) as { name: string; args?: Record<string, unknown> }
-      setParts(prev => appendToolCall(prev, data.name, data.args ?? {}))
-    })
-    es.addEventListener('tool_result', (e) => {
-      const data = JSON.parse((e as MessageEvent).data) as { name: string; result: unknown }
-      setParts(prev => fillToolResult(prev, data.name, data.result))
-    })
-    es.addEventListener('done', () => {
-      es.close()
-      setStatus('done')
-      setTimeout(onDone, 800)
+    const detach = attachAgentEventSource(es, {
+      onToken: text => {
+        onStreamText()
+        setParts(prev => appendTextPart(prev, text))
+        setStatus('streaming…')
+      },
+      onThinking: text => {
+        onStreamText()
+        setParts(prev => appendThinkingPart(prev, text))
+      },
+      onToolCall: (name, args) => setParts(prev => appendToolCall(prev, name, args)),
+      onToolResult: (name, result) => setParts(prev => fillToolResult(prev, name, result)),
+      onDone: () => {
+        setStatus('done')
+        setTimeout(onDone, 800)
+      },
     })
     es.onerror = () => {
       errorCount++
       if (errorCount >= 3) {
-        es.close()
+        detach()
         onDone()
       }
     }
-    return () => es.close()
+    return detach
   }, [jobId, onDone])
 
   useEffect(() => {
