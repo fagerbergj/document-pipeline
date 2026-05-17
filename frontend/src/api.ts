@@ -226,4 +226,20 @@ export const api = {
       body: JSON.stringify({ content }),
       signal,
     }),
+
+  // decideConfirmation submits the user's approve/reject decision for a
+  // pending tool-call confirmation. The response body is an SSE stream
+  // (continuation on approve, single `done` event on reject).
+  decideConfirmation: (
+    chatId: string,
+    callId: string,
+    body: { confirmed: boolean; content?: string },
+    signal?: AbortSignal,
+  ): Promise<Response> =>
+    fetch(`/api/v1/chats/${chatId}/confirmations/${callId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal,
+    }),
 }

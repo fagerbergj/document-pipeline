@@ -316,11 +316,210 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rag := ragConfigFromSession(sess)
-	ragTool, err := adktools.NewRagSearchTool(h.embed, h.llm.GenerateEmbed, h.embedModel, rag.MaxSources, rag.MinimumScore)
+	tools, err := h.buildChatTools(rag)
 	if err != nil {
-		slog.Error("sendChatMessage NewRagSearchTool", "chat_id", chatID, "err", err)
+		slog.Error("sendChatMessage buildChatTools", "chat_id", chatID, "err", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
+	}
+
+	mdl := adk.NewPortLLMModel(h.llm, h.queryModel())
+	userParts := []*genai.Part{{Text: content}}
+	result, ok := h.streamAgentRun(w, r, chatID, mdl, tools, chatInstruction(systemPrompt), userParts, "sendChatMessage")
+	if !ok {
+		return
+	}
+	slog.Info("sendChatMessage agent done", "chat_id", chatID, "tool_responses", len(result.ToolResponses), "final_text_len", len(result.Text))
+
+	if existingTitle == "" {
+		title := content
+		if len(title) > 60 {
+			title = title[:60]
+		}
+		_ = adk.AppendStateEvent(r.Context(), h.sessionSvc, chatID, map[string]any{stateKeyTitle: strings.TrimSpace(title)})
+	}
+}
+
+// streamAgentRun is the shared SSE-streaming body used by every chat
+// endpoint that drives the agent loop (initial message + confirmation
+// resume). It sets the SSE headers, runs a keepalive ticker on a side
+// goroutine, calls adk.RunAgent forwarding each stream event as an SSE
+// frame, and writes the terminating done/error event.
+//
+// Returns (result, true) on success, (zero, false) if the stream could not
+// be set up or RunAgent returned an error — callers should treat false as
+// "stop, response already written" and skip post-stream work.
+//
+// logTag is just a slog prefix so error logs distinguish caller sites.
+func (h *handler) streamAgentRun(
+	w http.ResponseWriter,
+	r *http.Request,
+	chatID string,
+	mdl *adk.PortLLMModel,
+	tools []tool.Tool,
+	instruction string,
+	userParts []*genai.Part,
+	logTag string,
+) (adk.RunResult, bool) {
+	sseHeaders(w)
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "streaming not supported")
+		return adk.RunResult{}, false
+	}
+
+	// Serialize all writes to the SSE stream so keepalives don't interleave
+	// with token / tool / confirmation events from the agent loop.
+	var writeMu sync.Mutex
+	keepaliveCtx, stopKeepalive := context.WithCancel(r.Context())
+	defer stopKeepalive()
+	go func() {
+		t := time.NewTicker(15 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-keepaliveCtx.Done():
+				return
+			case <-t.C:
+				writeMu.Lock()
+				writeSSEComment(w, "keepalive")
+				flusher.Flush()
+				writeMu.Unlock()
+			}
+		}
+	}()
+
+	result, runErr := adk.RunAgent(r.Context(), mdl, tools, instruction, userParts, h.sessionSvc, chatID, func(ev adk.StreamEvent) {
+		eventType := ev.SSEEventType()
+		if eventType == "" {
+			return
+		}
+		payload, err := ev.JSONPayload()
+		if err != nil {
+			return
+		}
+		writeMu.Lock()
+		defer writeMu.Unlock()
+		writeSSEEvent(w, eventType, string(payload))
+		flusher.Flush()
+	})
+	stopKeepalive()
+	writeMu.Lock()
+	defer writeMu.Unlock()
+	if runErr != nil {
+		slog.Error(logTag+" RunAgent", "chat_id", chatID, "err", runErr)
+		b, _ := json.Marshal(map[string]string{port.EventFieldError: runErr.Error()})
+		writeSSEEvent(w, port.EventError, string(b))
+		flusher.Flush()
+		return adk.RunResult{}, false
+	}
+	writeSSEEvent(w, port.EventDone, "{}")
+	flusher.Flush()
+	return result, true
+}
+
+// buildUpdateDocumentTool constructs the update_document ADK tool wired to the
+// handler's repos. Both sendChatMessage (initial turn) and confirmChatToolCall
+// (resume after user decision) need this tool registered with the same
+// closures so ADK can re-invoke the same tool body on resume.
+func (h *handler) buildUpdateDocumentTool() (tool.Tool, error) {
+	deps := core.StageUpdateDeps{
+		Jobs:       h.jobs,
+		Artifacts:  h.artifacts,
+		Store:      h.store,
+		SessionSvc: h.sessionSvc,
+		Pipeline:   h.pipeline,
+		VaultPath:  h.vaultPath,
+	}
+	read := func(ctx context.Context, docID, field string) (string, string, error) {
+		return core.CurrentStageOutput(ctx, deps, docID, field)
+	}
+	update := func(ctx context.Context, docID, field, content string) (string, []string, error) {
+		return core.UpdateStageArtifact(ctx, deps, docID, field, content)
+	}
+	return adktools.NewUpdateDocumentTool(read, update)
+}
+
+// confirmChatToolCall handles a user's approve/reject decision on a pending
+// tool-call confirmation. On approve, persists the user's FunctionResponse
+// into the session and resumes the agent loop; the SSE response streams the
+// continuation. On reject, persists the rejection but does NOT resume the
+// agent — the turn ends with a single `done` event.
+func (h *handler) confirmChatToolCall(w http.ResponseWriter, r *http.Request) {
+	chatID := chi.URLParam(r, "chat_id")
+	callID := chi.URLParam(r, "call_id")
+
+	sessResp, err := h.sessionSvc.Get(r.Context(), &session.GetRequest{
+		AppName:   adk.AppName,
+		UserID:    adk.UserID,
+		SessionID: chatID,
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	sess := sessResp.Session
+	systemPrompt := stateStr(sess, stateKeySystemPrompt)
+
+	var body struct {
+		Confirmed bool    `json:"confirmed"`
+		Content   *string `json:"content"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+
+	// Persist the decision so RequestConfirmationRequestProcessor can pair it
+	// with the original tool call on the next runner.Run call.
+	var payload map[string]any
+	if body.Content != nil {
+		payload = map[string]any{"content": *body.Content}
+	}
+	if err := adk.AppendConfirmationResponse(r.Context(), h.sessionSvc, chatID, callID, body.Confirmed, payload); err != nil {
+		slog.Error("confirmChatToolCall AppendConfirmationResponse", "chat_id", chatID, "call_id", callID, "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	// Reject short-circuit: the rejection is persisted in the session and
+	// will be observed naturally on the next user message; we do not resume
+	// the agent loop here. Stream a single done event for UI symmetry.
+	if !body.Confirmed {
+		sseHeaders(w)
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			writeError(w, http.StatusInternalServerError, "streaming not supported")
+			return
+		}
+		writeSSEEvent(w, port.EventDone, "{}")
+		flusher.Flush()
+		slog.Info("confirmChatToolCall rejected", "chat_id", chatID, "call_id", callID)
+		return
+	}
+
+	// Approve: rebuild the same toolset and resume the runner with no new
+	// user message. ADK pairs the persisted FunctionResponse with the
+	// original tool call and re-invokes the tool with Confirmed=true.
+	rag := ragConfigFromSession(sess)
+	tools, err := h.buildChatTools(rag)
+	if err != nil {
+		slog.Error("confirmChatToolCall buildChatTools", "chat_id", chatID, "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	mdl := adk.NewPortLLMModel(h.llm, h.queryModel())
+	_, _ = h.streamAgentRun(w, r, chatID, mdl, tools, chatInstruction(systemPrompt), nil, "confirmChatToolCall")
+}
+
+// buildChatTools constructs the full toolset used by the chat agent. Shared
+// between the initial-message handler and the confirmation-resume handler so
+// the resumed runner sees the same tools the original turn was built with —
+// ADK requires the original tool to still be registered for the confirmation
+// processor to find it.
+func (h *handler) buildChatTools(rag model.RAGConfig) ([]tool.Tool, error) {
+	ragTool, err := adktools.NewRagSearchTool(h.embed, h.llm.GenerateEmbed, h.embedModel, rag.MaxSources, rag.MinimumScore)
+	if err != nil {
+		return nil, err
 	}
 	collectStageData := func(ctx context.Context, docID string) (map[string]map[string]any, error) {
 		return core.CollectStageData(ctx, h.jobs, h.artifacts, h.store, h.vaultPath, docID)
@@ -341,26 +540,22 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	searchDocsTool, err := adktools.NewSearchDocumentsTool(h.search, getDocsBatch, stageDataBatch, 10)
 	if err != nil {
-		slog.Error("sendChatMessage NewSearchDocumentsTool", "chat_id", chatID, "err", err)
-		writeError(w, http.StatusInternalServerError, "internal error")
-		return
+		return nil, err
 	}
 	getDocTool, err := adktools.NewGetDocumentTool(h.docs.Get, collectStageData)
 	if err != nil {
-		slog.Error("sendChatMessage NewGetDocumentTool", "chat_id", chatID, "err", err)
-		writeError(w, http.StatusInternalServerError, "internal error")
-		return
+		return nil, err
 	}
-
-	sseHeaders(w)
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		writeError(w, http.StatusInternalServerError, "streaming not supported")
-		return
+	updateDocTool, err := h.buildUpdateDocumentTool()
+	if err != nil {
+		return nil, err
 	}
+	return []tool.Tool{ragTool, searchDocsTool, getDocTool, updateDocTool}, nil
+}
 
-	queryModel := h.queryModel()
-
+// chatInstruction returns the system instruction for the chat agent. Single
+// source of truth shared by sendChatMessage and confirmChatToolCall.
+func chatInstruction(systemPrompt string) string {
 	instruction := "You are a helpful assistant with access to a personal notes knowledge base. " +
 		"Use the retrieval tools (rag_search, search_documents, get_document) to find " +
 		"relevant notes before answering — each tool's description tells you when to pick it.\n\n" +
@@ -368,74 +563,16 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 		"terms you encounter. Only stop when results stop adding new information. " +
 		"If a search returns no results, try one broader variant; if still empty, tell the user " +
 		"you couldn't find anything rather than spamming more searches.\n\n" +
+		"If the user reports that a specific stage output is wrong, use update_document to fix it. " +
+		"The user will approve, reject, or edit your proposal in a UI card; downstream stages " +
+		"re-run automatically on approval.\n\n" +
 		"Wrap any planning or reasoning between tool calls in <think>...</think>. The user sees " +
 		"these blocks collapsed and can expand them — write them like you're talking through " +
 		"the problem out loud. Keep the final answer outside the <think> tags."
 	if systemPrompt != "" {
 		instruction += "\n\nAdditional context:\n" + systemPrompt
 	}
-
-	mdl := adk.NewPortLLMModel(h.llm, queryModel)
-	userParts := []*genai.Part{{Text: content}}
-
-	// Serialize all writes to the SSE stream so keepalives don't interleave with tokens.
-	var writeMu sync.Mutex
-
-	keepaliveCtx, stopKeepalive := context.WithCancel(r.Context())
-	defer stopKeepalive()
-	go func() {
-		t := time.NewTicker(15 * time.Second)
-		defer t.Stop()
-		for {
-			select {
-			case <-keepaliveCtx.Done():
-				return
-			case <-t.C:
-				writeMu.Lock()
-				writeSSEComment(w, "keepalive")
-				flusher.Flush()
-				writeMu.Unlock()
-			}
-		}
-	}()
-
-	result, runErr := adk.RunAgent(r.Context(), mdl, []tool.Tool{ragTool, searchDocsTool, getDocTool}, instruction, userParts, h.sessionSvc, chatID, func(ev adk.StreamEvent) {
-		eventType := ev.SSEEventType()
-		if eventType == "" {
-			return
-		}
-		payload, err := ev.JSONPayload()
-		if err != nil {
-			return
-		}
-		writeMu.Lock()
-		defer writeMu.Unlock()
-		writeSSEEvent(w, eventType, string(payload))
-		flusher.Flush()
-	})
-	stopKeepalive()
-	writeMu.Lock()
-	defer writeMu.Unlock()
-	if runErr != nil {
-		slog.Error("sendChatMessage RunAgent", "chat_id", chatID, "err", runErr)
-		b, _ := json.Marshal(map[string]string{port.EventFieldError: runErr.Error()})
-		writeSSEEvent(w, port.EventError, string(b))
-		flusher.Flush()
-		return
-	}
-	slog.Info("sendChatMessage agent done", "chat_id", chatID, "tool_responses", len(result.ToolResponses), "final_text_len", len(result.Text))
-
-	// Auto-set title from first message.
-	if existingTitle == "" {
-		title := content
-		if len(title) > 60 {
-			title = title[:60]
-		}
-		_ = adk.AppendStateEvent(r.Context(), h.sessionSvc, chatID, map[string]any{stateKeyTitle: strings.TrimSpace(title)})
-	}
-
-	writeSSEEvent(w, port.EventDone, "{}")
-	flusher.Flush()
+	return instruction
 }
 
 func (h *handler) queryModel() string {

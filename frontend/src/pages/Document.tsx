@@ -10,6 +10,7 @@ import StatusBadge from '../components/StatusBadge'
 import LoadingSpinner from '../components/LoadingSpinner'
 import { AssistantParts, appendTextPart, appendToolCall, fillToolResult, type MessagePart } from '../components/AgentParts'
 import DocKebabMenu from '../components/DocKebabMenu'
+import EditableOutput from '../components/EditableOutput'
 
 export default function Document() {
   const { id } = useParams<{ id: string }>()
@@ -683,7 +684,7 @@ function ReviewSection({ job, run, docId, onRefresh }: {
         {editableOutputs.length > 0 && (
           <div className="mb-4 space-y-3">
             {editableOutputs.map(out => (
-              <EditableOutput
+              <FetchedEditableOutput
                 key={out.field}
                 docId={docId}
                 field={out.field!}
@@ -786,11 +787,12 @@ function ErrorSection({ job, onRefresh }: { job: JobDetail; onRefresh: () => voi
 }
 
 
-// EditableOutput renders one of a run's outputs. In view mode it fetches the
-// full artifact text and renders it (markdown for known prose fields, mono
-// preformatted otherwise). In edit mode it shows the same text in a textarea
-// and reports keystrokes up via onChange; the parent decides when to PATCH.
-function EditableOutput({ docId, field, artifactId, preview, editing, value, onChange }: {
+// FetchedEditableOutput is the doc-page wrapper around the shared
+// EditableOutput. It fetches the full artifact text on mount (so view mode
+// can render the rich version instead of just the preview), then delegates
+// rendering to the shared component. The parent owns the `value` state for
+// edit mode and decides when to PATCH.
+function FetchedEditableOutput({ docId, field, artifactId, preview, editing, value, onChange }: {
   docId: string
   field: string
   artifactId: string
@@ -799,8 +801,6 @@ function EditableOutput({ docId, field, artifactId, preview, editing, value, onC
   value: string | undefined
   onChange: (text: string) => void
 }) {
-  const isMarkdown = field === 'clarified_text' || field === 'summary' || field === 'narrative_summary'
-  const isTags = field === 'tags'
   const [text, setText] = useState<string | null>(null)
 
   useEffect(() => {
@@ -811,36 +811,16 @@ function EditableOutput({ docId, field, artifactId, preview, editing, value, onC
 
   const fetched = text ?? preview
   const display = value ?? fetched
+  const edited = editing && value !== undefined && value !== fetched
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-1">
-        <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">{field.replace(/_/g, ' ')}</div>
-        {editing && value !== undefined && value !== fetched && (
-          <div className="text-xs text-amber-600 dark:text-amber-400">edited</div>
-        )}
-      </div>
-      {editing ? (
-        <textarea
-          value={display}
-          onChange={e => onChange(e.target.value)}
-          rows={Math.min(20, Math.max(6, display.split('\n').length))}
-          className="w-full text-sm font-mono bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800 dark:text-gray-100 max-h-[60vh]"
-        />
-      ) : isTags ? (
-        <div className="flex flex-wrap gap-1">
-          {(() => { try { return JSON.parse(display) as string[] } catch { return [] } })().map((t, i) => (
-            <span key={i} className="px-2 py-0.5 text-xs bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 rounded-full">{t}</span>
-          ))}
-        </div>
-      ) : isMarkdown ? (
-        <div className="prose prose-sm dark:prose-invert max-w-none text-sm text-gray-700 dark:text-gray-200 max-h-[60vh] overflow-y-auto bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-lg p-3">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{display}</ReactMarkdown>
-        </div>
-      ) : (
-        <pre className="bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 text-gray-800 dark:text-gray-200 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap max-h-[60vh] overflow-y-auto">{display}</pre>
-      )}
-    </div>
+    <EditableOutput
+      field={field}
+      content={display}
+      editing={editing}
+      onChange={onChange}
+      edited={edited}
+    />
   )
 }
 

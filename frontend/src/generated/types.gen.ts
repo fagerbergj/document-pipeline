@@ -652,6 +652,21 @@ export type SendMessageBody = {
 };
 
 /**
+ * User decision on a pending tool-call confirmation.
+ */
+export type ConfirmChatBody = {
+    /**
+     * True to approve and run the proposed action; false to reject.
+     */
+    confirmed: boolean;
+    /**
+     * Optional user-edited content to apply instead of the model's original proposal. Only meaningful for tools whose confirmation payload accepts a content override (e.g. update_document). Ignored when `confirmed` is false.
+     *
+     */
+    content?: string;
+};
+
+/**
  * UUID of the document.
  */
 export type DocId = string;
@@ -1441,3 +1456,35 @@ export type SendChatMessageResponses = {
 };
 
 export type SendChatMessageResponse = SendChatMessageResponses[keyof SendChatMessageResponses];
+
+export type ConfirmChatToolCallData = {
+    body?: ConfirmChatBody;
+    path: {
+        chat_id: string;
+        /**
+         * The function call ID surfaced by the preceding `confirmation_request` event.
+         */
+        call_id: string;
+    };
+    query?: never;
+    url: '/api/v1/chats/{chat_id}/confirmations/{call_id}';
+};
+
+export type ConfirmChatToolCallErrors = {
+    /**
+     * The requested resource was not found.
+     */
+    404: ErrorResponse;
+};
+
+export type ConfirmChatToolCallError = ConfirmChatToolCallErrors[keyof ConfirmChatToolCallErrors];
+
+export type ConfirmChatToolCallResponses = {
+    /**
+     * On approve, SSE stream of the resumed agent loop (token / tool_call / tool_result / confirmation_request / done events). On reject, a single `done` event closes the stream.
+     *
+     */
+    200: string;
+};
+
+export type ConfirmChatToolCallResponse = ConfirmChatToolCallResponses[keyof ConfirmChatToolCallResponses];

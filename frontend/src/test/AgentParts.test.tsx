@@ -1,9 +1,11 @@
-import { describe, it, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, it, expect, vi } from 'vitest'
+import { render, screen, fireEvent } from '@testing-library/react'
 import {
   appendTextPart,
   appendToolCall,
+  appendConfirmation,
   fillToolResult,
+  markConfirmation,
   partsToText,
   AssistantParts,
   AssistantText,
@@ -154,5 +156,72 @@ describe('AssistantText with <think>', () => {
     const details = container.querySelector('details')
     expect(details).toBeTruthy()
     expect(details?.open).toBe(false)
+  })
+})
+
+// ── confirmation card ────────────────────────────────────────────────────────
+
+describe('appendConfirmation / markConfirmation', () => {
+  it('appends a pending confirmation part', () => {
+    const out = appendConfirmation([], {
+      callId: 'c1', toolName: 'update_document', hint: 'Replace clarified_text?',
+      field: 'clarified_text', stage: 'clarify', before: 'a', after: 'b',
+    })
+    expect(out).toHaveLength(1)
+    const c = out[0] as { kind: string; status: string }
+    expect(c.kind).toBe('confirmation')
+    expect(c.status).toBe('pending')
+  })
+
+  it('marks an existing confirmation status by callId', () => {
+    const start = appendConfirmation([], {
+      callId: 'c1', toolName: 't', hint: '', field: 'clarified_text', stage: 'clarify', before: '', after: '',
+    })
+    const approved = markConfirmation(start, 'c1', 'approved')
+    expect((approved[0] as { status: string }).status).toBe('approved')
+    // No-op for unknown callId
+    expect(markConfirmation(start, 'c2', 'approved')).toEqual(start)
+  })
+})
+
+describe('ConfirmationBlock rendering', () => {
+  const part = {
+    kind: 'confirmation' as const,
+    callId: 'c1',
+    toolName: 'update_document',
+    hint: 'Replace clarified_text for doc abc?',
+    field: 'clarified_text',
+    stage: 'clarify',
+    before: 'old text',
+    after: 'new text',
+    status: 'pending' as const,
+  }
+
+  it('shows hint, diff, and Approve/Reject buttons when pending', () => {
+    render(<AssistantParts parts={[part]} onDecideConfirmation={() => {}} />)
+    expect(screen.getByText(/Replace clarified_text/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /approve/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /reject/i })).toBeInTheDocument()
+  })
+
+  it('invokes onDecide with edited content on Approve', () => {
+    const onDecide = vi.fn()
+    render(<AssistantParts parts={[part]} onDecideConfirmation={onDecide} />)
+    fireEvent.click(screen.getByRole('button', { name: /approve/i }))
+    expect(onDecide).toHaveBeenCalledWith('c1', true, 'new text')
+  })
+
+  it('invokes onDecide with false on Reject', () => {
+    const onDecide = vi.fn()
+    render(<AssistantParts parts={[part]} onDecideConfirmation={onDecide} />)
+    fireEvent.click(screen.getByRole('button', { name: /reject/i }))
+    expect(onDecide).toHaveBeenCalledWith('c1', false)
+  })
+
+  it('hides buttons once status is approved', () => {
+    const decided = { ...part, status: 'approved' as const }
+    render(<AssistantParts parts={[decided]} onDecideConfirmation={() => {}} />)
+    expect(screen.queryByRole('button', { name: /approve/i })).not.toBeInTheDocument()
+    expect(screen.getByText(/approved/i)).toBeInTheDocument()
   })
 })
