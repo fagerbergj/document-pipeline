@@ -9,6 +9,7 @@ import (
 	"google.golang.org/adk/tool/functiontool"
 
 	"github.com/fagerbergj/document-pipeline/server/core/model"
+	"github.com/fagerbergj/document-pipeline/server/core/stagefield"
 )
 
 // GetDocumentArgs is the input schema for the get_document tool.
@@ -53,9 +54,9 @@ func runGetDocument(ctx context.Context, getDoc DocLookupFn, stageData StageData
 	}
 	out := GetDocumentResult{
 		ID:       doc.ID,
-		FullText: stringFromStageData(sd, model.StageNameClarify, model.FieldClarifiedText),
-		Summary:  stringFromStageData(sd, model.StageNameClassify, model.FieldSummary),
-		Tags:     tagsFromStageData(sd, model.StageNameClassify, model.FieldTags),
+		FullText: stagefield.String(sd, model.StageNameClarify, model.FieldClarifiedText),
+		Summary:  stagefield.String(sd, model.StageNameClassify, model.FieldSummary),
+		Tags:     stagefield.Tags(sd, model.StageNameClassify, model.FieldTags),
 	}
 	if doc.Title != nil {
 		out.Title = *doc.Title

@@ -2,16 +2,15 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
 
 	"github.com/fagerbergj/document-pipeline/server/core/model"
 	"github.com/fagerbergj/document-pipeline/server/core/port"
+	"github.com/fagerbergj/document-pipeline/server/core/stagefield"
 )
 
 // SearchDocumentsArgs is the input schema for the search_documents tool.
@@ -123,56 +122,11 @@ func runSearchDocuments(
 			h.DateMonth = *doc.DateMonth
 		}
 		if sd, ok := stageMap[id]; ok {
-			h.Summary = stringFromStageData(sd, model.StageNameClassify, model.FieldSummary)
-			h.Tags = tagsFromStageData(sd, model.StageNameClassify, model.FieldTags)
+			h.Summary = stagefield.String(sd, model.StageNameClassify, model.FieldSummary)
+			h.Tags = stagefield.Tags(sd, model.StageNameClassify, model.FieldTags)
 		}
 		hits = append(hits, h)
 	}
 	return SearchDocumentsResult{Results: hits}, nil
 }
 
-// stringFromStageData reads a string output field from a specific stage's
-// results. Scoping by stage avoids ambiguity when two stages happen to emit
-// the same field name.
-func stringFromStageData(sd model.StageOutputs, stage, field string) string {
-	v, ok := sd[stage][field]
-	if !ok {
-		return ""
-	}
-	s, _ := v.(string)
-	return s
-}
-
-// tagsFromStageData reads a tag list. classify emits tags as a JSON-encoded
-// string (the raw artifact contents); production stage data therefore stores
-// it as a string, not a []string. Test fixtures sometimes pre-parse, so we
-// accept both shapes.
-func tagsFromStageData(sd model.StageOutputs, stage, field string) []string {
-	v, ok := sd[stage][field]
-	if !ok {
-		return nil
-	}
-	switch t := v.(type) {
-	case []string:
-		return t
-	case []any:
-		out := make([]string, 0, len(t))
-		for _, x := range t {
-			if s, ok := x.(string); ok {
-				out = append(out, s)
-			}
-		}
-		return out
-	case string:
-		raw := strings.TrimSpace(t)
-		if raw == "" {
-			return nil
-		}
-		var tags []string
-		if err := json.Unmarshal([]byte(raw), &tags); err != nil {
-			return nil
-		}
-		return tags
-	}
-	return nil
-}
