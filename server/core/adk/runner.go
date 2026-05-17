@@ -93,11 +93,16 @@ func RunAgent(
 		}
 		for _, p := range event.Content.Parts {
 			if p.FunctionCall != nil && onToken != nil {
-				query := ""
+				// Tool name disambiguates rag_search (semantic) vs
+				// search_documents (Lucene) vs get_document (by-id) etc.
+				// "arg" is whichever single string arg the tool accepts.
+				arg := ""
 				if q, ok := p.FunctionCall.Args["query"].(string); ok {
-					query = q
+					arg = q
+				} else if id, ok := p.FunctionCall.Args["id"].(string); ok {
+					arg = id
 				}
-				onToken(fmt.Sprintf("*Searching: %q…*\n\n", query))
+				onToken(fmt.Sprintf("*`%s` %q…*\n\n", p.FunctionCall.Name, arg))
 			}
 			if p.FunctionResponse != nil && p.FunctionResponse.Response != nil {
 				toolResponses = append(toolResponses, p.FunctionResponse.Response)

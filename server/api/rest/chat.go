@@ -361,20 +361,13 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 
 	queryModel := h.queryModel()
 
-	instruction := "You are a helpful assistant with access to a personal notes knowledge base.\n\n" +
-		"You have three retrieval tools — pick the right one for the question:\n" +
-		"  • rag_search(query): semantic search across all notes. Use for fuzzy/topical questions " +
-		"like \"what's been said about X?\" or when you need passages from many docs.\n" +
-		"  • search_documents(query): Lucene search for specific docs by title, tag, date, or " +
-		"series. Use when the user references a particular document by name, date, or topic that " +
-		"lives in one place. Returns lean summaries.\n" +
-		"  • get_document(id): fetch a single doc's full text by its UUID. Use after " +
-		"search_documents identifies a candidate.\n\n" +
-		"Strategy: prefer search_documents → get_document when the question is about one or two " +
-		"specific docs. Use rag_search for cross-doc / topical questions. Search multiple times " +
-		"with different queries — start broad, follow up on names and terms you encounter. Only " +
-		"stop when results stop adding new information. If you can't find relevant info after " +
-		"several searches, say so."
+	instruction := "You are a helpful assistant with access to a personal notes knowledge base. " +
+		"Use the retrieval tools (rag_search, search_documents, get_document) to find " +
+		"relevant notes before answering — each tool's description tells you when to pick it.\n\n" +
+		"Search multiple times with different queries — start broad, follow up on names and " +
+		"terms you encounter. Only stop when results stop adding new information. " +
+		"If a search returns no results, try one broader variant; if still empty, tell the user " +
+		"you couldn't find anything rather than spamming more searches."
 	if systemPrompt != "" {
 		instruction += "\n\nAdditional context:\n" + systemPrompt
 	}
