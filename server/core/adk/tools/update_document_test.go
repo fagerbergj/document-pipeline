@@ -25,10 +25,10 @@ type fakeConfirmCtx struct {
 	requestErr error
 }
 
-func (f *fakeConfirmCtx) Deadline() (time.Time, bool)       { return time.Time{}, false }
-func (f *fakeConfirmCtx) Done() <-chan struct{}             { return nil }
-func (f *fakeConfirmCtx) Err() error                        { return nil }
-func (f *fakeConfirmCtx) Value(_ any) any                   { return nil }
+func (f *fakeConfirmCtx) Deadline() (time.Time, bool)                          { return time.Time{}, false }
+func (f *fakeConfirmCtx) Done() <-chan struct{}                                { return nil }
+func (f *fakeConfirmCtx) Err() error                                           { return nil }
+func (f *fakeConfirmCtx) Value(_ any) any                                      { return nil }
 func (f *fakeConfirmCtx) ToolConfirmation() *toolconfirmation.ToolConfirmation { return f.confirmation }
 func (f *fakeConfirmCtx) RequestConfirmation(hint string, payload any) error {
 	if f.requestErr != nil {
