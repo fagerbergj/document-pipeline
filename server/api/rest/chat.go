@@ -17,6 +17,7 @@ import (
 	"google.golang.org/genai"
 
 	"github.com/fagerbergj/document-pipeline/server/api/schema"
+	"github.com/fagerbergj/document-pipeline/server/core"
 	"github.com/fagerbergj/document-pipeline/server/core/adk"
 	adktools "github.com/fagerbergj/document-pipeline/server/core/adk/tools"
 	"github.com/fagerbergj/document-pipeline/server/core/model"
@@ -321,6 +322,21 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
+	collectStageData := func(ctx context.Context, docID string) (map[string]map[string]any, error) {
+		return core.CollectStageData(ctx, h.jobs, h.artifacts, h.store, h.vaultPath, docID)
+	}
+	searchDocsTool, err := adktools.NewSearchDocumentsTool(h.search, h.docs.Get, collectStageData, 10)
+	if err != nil {
+		slog.Error("sendChatMessage NewSearchDocumentsTool", "chat_id", chatID, "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	getDocTool, err := adktools.NewGetDocumentTool(h.docs.Get, collectStageData)
+	if err != nil {
+		slog.Error("sendChatMessage NewGetDocumentTool", "chat_id", chatID, "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
 
 	sseHeaders(w)
 	flusher, ok := w.(http.Flusher)
@@ -332,11 +348,19 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 	queryModel := h.queryModel()
 
 	instruction := "You are a helpful assistant with access to a personal notes knowledge base.\n\n" +
-		"Use the rag_search tool to find relevant notes before answering. " +
-		"Search multiple times with different, specific queries — start broad, then follow up on names, " +
-		"terms, or concepts you encounter in the results. " +
-		"Only stop searching when the results stop adding new information. " +
-		"If you cannot find relevant information after several searches, say so."
+		"You have three retrieval tools — pick the right one for the question:\n" +
+		"  • rag_search(query): semantic search across all notes. Use for fuzzy/topical questions " +
+		"like \"what's been said about X?\" or when you need passages from many docs.\n" +
+		"  • search_documents(query): Lucene search for specific docs by title, tag, date, or " +
+		"series. Use when the user references a particular document by name, date, or topic that " +
+		"lives in one place. Returns lean summaries.\n" +
+		"  • get_document(id): fetch a single doc's full text by its UUID. Use after " +
+		"search_documents identifies a candidate.\n\n" +
+		"Strategy: prefer search_documents → get_document when the question is about one or two " +
+		"specific docs. Use rag_search for cross-doc / topical questions. Search multiple times " +
+		"with different queries — start broad, follow up on names and terms you encounter. Only " +
+		"stop when results stop adding new information. If you can't find relevant info after " +
+		"several searches, say so."
 	if systemPrompt != "" {
 		instruction += "\n\nAdditional context:\n" + systemPrompt
 	}
@@ -365,7 +389,7 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	result, runErr := adk.RunAgent(r.Context(), mdl, []tool.Tool{ragTool}, instruction, userParts, h.sessionSvc, chatID, func(token string) {
+	result, runErr := adk.RunAgent(r.Context(), mdl, []tool.Tool{ragTool, searchDocsTool, getDocTool}, instruction, userParts, h.sessionSvc, chatID, func(token string) {
 		b, _ := json.Marshal(map[string]string{port.EventFieldText: token})
 		writeMu.Lock()
 		writeSSEEvent(w, port.EventToken, string(b))
