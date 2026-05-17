@@ -8,6 +8,7 @@ import { api } from '../api'
 import type { DocumentDetail, JobDetail, JobSummary, Run, Artifact } from '../types'
 import StatusBadge from '../components/StatusBadge'
 import LoadingSpinner from '../components/LoadingSpinner'
+import { AssistantParts, appendTextPart, appendToolCall, fillToolResult, type MessagePart } from '../components/AgentParts'
 import DocKebabMenu from '../components/DocKebabMenu'
 
 export default function Document() {
@@ -528,35 +529,38 @@ function TextArtifact({ url, filename, raw, onToggleRaw }: {
 }
 
 function LiveLogSection({ jobId, onDone }: { jobId: string; onDone: () => void }) {
-  const logRef = useRef<HTMLPreElement>(null)
   const [status, setStatus] = useState('connecting…')
   const [statusMsg, setStatusMsg] = useState('')
-  const hasTokens = useRef(false)
+  const [parts, setParts] = useState<MessagePart[]>([])
+  const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    hasTokens.current = false
+    setParts([])
     setStatusMsg('')
     let errorCount = 0
+    let receivedTokens = false
     const es = new EventSource(`/api/v1/jobs/${jobId}/stream`)
     es.addEventListener('status', (e) => {
-      if (!hasTokens.current) {
+      if (!receivedTokens) {
         const data = JSON.parse((e as MessageEvent).data)
         setStatusMsg(data.text ?? '')
       }
     })
     es.addEventListener('token', (e) => {
       errorCount = 0
-      const data = JSON.parse((e as MessageEvent).data)
-      if (logRef.current) {
-        if (!hasTokens.current) {
-          hasTokens.current = true
-          setStatusMsg('')
-          logRef.current.textContent = ''
-        }
-        logRef.current.textContent = (logRef.current.textContent ?? '') + data.text
-        logRef.current.scrollTop = logRef.current.scrollHeight
-      }
+      receivedTokens = true
+      setStatusMsg('')
+      const data = JSON.parse((e as MessageEvent).data) as { text: string }
+      setParts(prev => appendTextPart(prev, data.text))
       setStatus('streaming…')
+    })
+    es.addEventListener('tool_call', (e) => {
+      const data = JSON.parse((e as MessageEvent).data) as { name: string; args?: Record<string, unknown> }
+      setParts(prev => appendToolCall(prev, data.name, data.args ?? {}))
+    })
+    es.addEventListener('tool_result', (e) => {
+      const data = JSON.parse((e as MessageEvent).data) as { name: string; result: unknown }
+      setParts(prev => fillToolResult(prev, data.name, data.result))
     })
     es.addEventListener('done', () => {
       es.close()
@@ -569,10 +573,13 @@ function LiveLogSection({ jobId, onDone }: { jobId: string; onDone: () => void }
         es.close()
         onDone()
       }
-      // otherwise let EventSource auto-reconnect silently
     }
     return () => es.close()
   }, [jobId, onDone])
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+  }, [parts])
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
@@ -580,14 +587,18 @@ function LiveLogSection({ jobId, onDone }: { jobId: string; onDone: () => void }
         <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">Live output</div>
         <span className="text-xs text-gray-400 dark:text-gray-500">{status}</span>
       </div>
-      {status === 'connecting…' && (
+      {parts.length === 0 && (
         <p className="text-xs text-gray-500 animate-pulse mb-2">{statusMsg || 'Waiting for model…'}</p>
       )}
-      <pre ref={logRef}
-        className="bg-gray-950 text-gray-100 rounded-lg p-3 text-xs min-h-24 max-h-96 overflow-y-auto whitespace-pre-wrap font-mono" />
+      {parts.length > 0 && (
+        <div ref={scrollRef} className="max-h-96 overflow-y-auto">
+          <AssistantParts parts={parts} showCursor={status === 'streaming…'} />
+        </div>
+      )}
     </div>
   )
 }
+
 
 function ReviewSection({ job, run, docId, onRefresh }: {
   job: JobDetail

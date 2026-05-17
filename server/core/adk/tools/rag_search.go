@@ -3,7 +3,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -129,28 +128,6 @@ func NewRagSearchTool(store port.EmbedStore, embedFn EmbedFn, embedModel string,
 		}
 		return RagSearchResult{Results: chunks}, nil
 	})
-}
-
-// RagSourcesFromEvents extracts retrieved chunks from tool call results so the
-// caller can report them as sources. results is a slice of (query, result-JSON) pairs
-// accumulated during the agent loop.
-func RagSourcesFromPayloads(payloads []map[string]any) []RagChunk {
-	var all []RagChunk
-	for _, p := range payloads {
-		raw, ok := p["results"]
-		if !ok {
-			continue
-		}
-		b, err := json.Marshal(raw)
-		if err != nil {
-			continue
-		}
-		var chunks []RagChunk
-		if err := json.Unmarshal(b, &chunks); err == nil {
-			all = append(all, chunks...)
-		}
-	}
-	return all
 }
 
 func stringVal(m map[string]any, key string) string {

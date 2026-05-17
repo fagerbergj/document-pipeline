@@ -1350,36 +1350,6 @@ components:
           default: 0.0
           description: Minimum similarity score for retrieved sources.
 
-    SourceDoc:
-      type: object
-      description: A document or series corpus chunk retrieved from the vector store as a RAG source.
-      required: [score]
-      properties:
-        document_id:
-          type: string
-          format: uuid
-          nullable: true
-          description: UUID of the source document. Null for series corpus chunks.
-        series_name:
-          type: string
-          nullable: true
-          description: Series name for corpus chunks that span multiple documents.
-        title:
-          type: string
-          description: Document title.
-        summary:
-          type: string
-          default: ''
-          description: Brief summary of the document's content.
-        date_month:
-          type: string
-          default: ''
-          description: YYYY-MM month label for the document.
-        score:
-          type: number
-          format: float
-          description: Vector similarity score.
-
     ChatMessage:
       type: object
       description: A single message turn in a chat.
@@ -1400,12 +1370,6 @@ components:
         content:
           type: string
           description: Message text.
-        sources:
-          type: array
-          nullable: true
-          items:
-            $ref: '#/components/schemas/SourceDoc'
-          description: Retrieved source documents (only set on assistant messages).
         created_at:
           type: string
           format: date-time

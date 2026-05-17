@@ -2,10 +2,12 @@ package port
 
 // SSE event type names published by WorkerService and consumed by REST handlers.
 const (
-	EventToken  = "token"
-	EventDone   = "done"
-	EventError  = "error"
-	EventStatus = "status"
+	EventToken      = "token"
+	EventToolCall   = "tool_call"
+	EventToolResult = "tool_result"
+	EventDone       = "done"
+	EventError      = "error"
+	EventStatus     = "status"
 )
 
 // SSE event payload field keys used in the JSON data body of each event.
