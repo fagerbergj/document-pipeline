@@ -6,6 +6,7 @@
 import {
   getPipeline as getPipelineApiV1PipelinesPipelineIdGet,
   getDocument as getDocumentApiV1DocumentsDocIdGet,
+  listDocumentSeries as listDocumentSeriesApiV1DocumentsSeriesGet,
   patchDocument as patchDocumentApiV1DocumentsDocIdPatch,
   deleteDocument as deleteDocumentApiV1DocumentsDocIdDelete,
   listJobs as listJobsApiV1JobsGet,
@@ -116,6 +117,9 @@ export const api = {
 
   document: (id: string) =>
     unwrap(getDocumentApiV1DocumentsDocIdGet({ path: { doc_id: id } })),
+
+  documentSeries: (): Promise<string[]> =>
+    unwrap(listDocumentSeriesApiV1DocumentsSeriesGet()).then(r => r.data),
 
   updateDocument: (id: string, patch: { title?: string | null; additional_context?: string | null; linked_contexts?: string[] | null; series?: string | null }) =>
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

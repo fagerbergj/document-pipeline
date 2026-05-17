@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -73,6 +74,20 @@ func (m *mockDocRepo) ListBySeries(_ context.Context, series string) ([]model.Do
 			out = append(out, d)
 		}
 	}
+	return out, nil
+}
+func (m *mockDocRepo) ListDistinctSeries(_ context.Context) ([]string, error) {
+	seen := map[string]struct{}{}
+	for _, d := range m.docs {
+		if d.Series != nil && *d.Series != "" {
+			seen[*d.Series] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for s := range seen {
+		out = append(out, s)
+	}
+	sort.Strings(out)
 	return out, nil
 }
 
@@ -505,6 +520,29 @@ func TestGetDocument(t *testing.T) {
 	decodeResponse(t, rr, &resp)
 	if resp["id"] != testDocID {
 		t.Errorf("id: got %v", resp["id"])
+	}
+}
+
+func TestListDocumentSeries(t *testing.T) {
+	h, docs, _ := newTestHandler(t)
+	now := time.Now().UTC()
+	s1, s2, empty := "Beta", "Alpha", ""
+	docs.Insert(context.Background(), model.Document{ID: "d1", ContentHash: "h1", Series: &s1, CreatedAt: now, UpdatedAt: now})
+	docs.Insert(context.Background(), model.Document{ID: "d2", ContentHash: "h2", Series: &s2, CreatedAt: now, UpdatedAt: now})
+	docs.Insert(context.Background(), model.Document{ID: "d3", ContentHash: "h3", Series: &s1, CreatedAt: now, UpdatedAt: now}) // duplicate
+	docs.Insert(context.Background(), model.Document{ID: "d4", ContentHash: "h4", Series: &empty, CreatedAt: now, UpdatedAt: now})
+	docs.Insert(context.Background(), model.Document{ID: "d5", ContentHash: "h5", Series: nil, CreatedAt: now, UpdatedAt: now})
+
+	rr := doRequest(t, h, http.MethodGet, "/api/v1/documents/series", nil)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d body=%s", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		Data []string `json:"data"`
+	}
+	decodeResponse(t, rr, &resp)
+	if len(resp.Data) != 2 || resp.Data[0] != "Alpha" || resp.Data[1] != "Beta" {
+		t.Fatalf("want [Alpha Beta] sorted distinct, got %v", resp.Data)
 	}
 }
 

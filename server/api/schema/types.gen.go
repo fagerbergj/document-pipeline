@@ -349,6 +349,12 @@ type DocumentDetail struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// DocumentSeriesList List of distinct series names currently assigned to documents.
+type DocumentSeriesList struct {
+	// Data Sorted distinct non-empty series values.
+	Data []string `json:"data"`
+}
+
 // DocumentSummary Lightweight document representation used in list views.
 type DocumentSummary struct {
 	// CreatedAt ISO 8601 creation timestamp.
