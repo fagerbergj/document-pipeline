@@ -2,8 +2,6 @@ package core
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -662,8 +660,15 @@ const defaultChunkSize = 1500
 const defaultChunkOverlap = 200
 
 // chunkText splits text into overlapping character-based chunks.
+// Empty/whitespace-only fragments (which can appear at tail boundaries when
+// the input ends in a run of whitespace) are dropped — downstream stores
+// reject blank content, and embedding blanks is wasted work either way.
 func chunkText(text string, size, overlap int) []string {
+	keep := func(c string) bool { return strings.TrimSpace(c) != "" }
 	if len(text) <= size {
+		if !keep(text) {
+			return nil
+		}
 		return []string{text}
 	}
 	step := size - overlap
@@ -676,7 +681,9 @@ func chunkText(text string, size, overlap int) []string {
 		if end > len(text) {
 			end = len(text)
 		}
-		chunks = append(chunks, text[i:end])
+		if c := text[i:end]; keep(c) {
+			chunks = append(chunks, c)
+		}
 		if end == len(text) {
 			break
 		}
@@ -875,10 +882,8 @@ func (w *WorkerService) rebuildSeriesCorpus(
 
 	// Skip the rebuild entirely if the corpus hash matches the last successful
 	// rebuild. Embed-replay on every doc in a series would otherwise produce N
-	// identical rebuilds, each hammering qdrant and Open WebUI with the same
-	// chunks.
-	hashBytes := sha256.Sum256([]byte(combined))
-	corpusHash := hex.EncodeToString(hashBytes[:])
+	// identical rebuilds, each hammering qdrant with the same chunks.
+	corpusHash := ContentHash([]byte(combined))
 	hashKey := kvSeriesCorpusHashPrefix + series
 	if prev, ok, err := w.kv.Get(ctx, hashKey); err == nil && ok && prev == corpusHash {
 		now := time.Now().UTC()
@@ -897,17 +902,7 @@ func (w *WorkerService) rebuildSeriesCorpus(
 	if chunkOverlap <= 0 {
 		chunkOverlap = defaultChunkOverlap
 	}
-	rawChunks := chunkText(combined, chunkSize, chunkOverlap)
-	// Drop empty / whitespace-only chunks. Open WebUI's KB upload rejects
-	// blank content with HTTP 400, leaving an orphan file in the system; the
-	// chunker can produce such fragments at tail boundaries.
-	chunks := make([]string, 0, len(rawChunks))
-	for _, c := range rawChunks {
-		if strings.TrimSpace(c) == "" {
-			continue
-		}
-		chunks = append(chunks, c)
-	}
+	chunks := chunkText(combined, chunkSize, chunkOverlap)
 
 	// Delete old series corpus before rebuilding.
 	if err := w.embed.DeleteBySeries(ctx, series); err != nil {
