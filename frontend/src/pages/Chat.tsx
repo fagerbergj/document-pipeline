@@ -2,112 +2,9 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api, type ChatSummary } from '../api'
-import {
-  AssistantParts,
-  appendTextPart,
-  appendToolCall,
-  appendConfirmation,
-  fillToolResult,
-  markConfirmation,
-  partsToText,
-  type MessagePart,
-} from '../components/AgentParts'
-
-interface Message {
-  role: 'user' | 'assistant'
-  // User messages carry plain content. Assistant messages carry an ordered
-  // parts array (text segments + tool calls) reconstructed from the SSE
-  // stream; their plain content is derived from the text parts on demand.
-  content: string
-  parts?: MessagePart[]
-}
-
-// readAgentStream parses a server-sent agent event stream into ordered tokens,
-// tool calls, and tool results. It tracks the `event:` line so handlers can
-// dispatch by typed event rather than guessing from payload shape.
-interface ConfirmationRequestPayload {
-  callId: string
-  toolName: string
-  hint: string
-  payload: Record<string, unknown>
-}
-
-async function readAgentStream(
-  body: ReadableStream<Uint8Array>,
-  handlers: {
-    onToken: (text: string) => void
-    onToolCall: (name: string, args: Record<string, unknown>) => void
-    onToolResult: (name: string, result: unknown) => void
-    onConfirmationRequest: (req: ConfirmationRequestPayload) => void
-    onError: (msg: string) => void
-  },
-): Promise<void> {
-  const reader = body.getReader()
-  const decoder = new TextDecoder()
-  let buf = ''
-  let currentEvent = 'message'
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buf += decoder.decode(value, { stream: true })
-    const lines = buf.split('\n')
-    buf = lines.pop()!
-    for (const line of lines) {
-      if (line.startsWith('event: ')) {
-        currentEvent = line.slice(7).trim()
-        continue
-      }
-      if (!line.startsWith('data: ')) continue
-      const raw = line.slice(6).trim()
-      if (!raw) continue
-      let parsed: unknown
-      try { parsed = JSON.parse(raw) } catch { continue }
-      switch (currentEvent) {
-        case 'token':
-          if (hasStringField(parsed, 'text')) handlers.onToken(parsed.text)
-          break
-        case 'tool_call':
-          if (hasStringField(parsed, 'name')) {
-            const args = (parsed as { args?: Record<string, unknown> }).args ?? {}
-            handlers.onToolCall(parsed.name, args)
-          }
-          break
-        case 'tool_result':
-          if (hasStringField(parsed, 'name')) {
-            const result = (parsed as unknown as { result: unknown }).result
-            handlers.onToolResult(parsed.name, result)
-          }
-          break
-        case 'confirmation_request':
-          if (hasStringField(parsed, 'call_id')) {
-            const p = parsed as { call_id: string; tool_name?: string; hint?: string; payload?: Record<string, unknown> }
-            handlers.onConfirmationRequest({
-              callId: p.call_id,
-              toolName: p.tool_name ?? '',
-              hint: p.hint ?? '',
-              payload: p.payload ?? {},
-            })
-          }
-          break
-        case 'error':
-          if (hasStringField(parsed, 'error')) handlers.onError(parsed.error)
-          break
-      }
-    }
-  }
-}
-
-// hasStringField is a type guard for "the JSON payload has a non-empty
-// string field of this name." Used to discriminate SSE event payloads.
-function hasStringField<K extends string>(v: unknown, field: K): v is Record<K, string> {
-  return typeof v === 'object' && v !== null && typeof (v as Record<string, unknown>)[field] === 'string'
-}
-
-// withParts updates a message's parts and keeps content in sync as the
-// plain-text rendering of the text parts (for copy/download).
-function withParts(m: Message, parts: MessagePart[]): Message {
-  return { ...m, parts, content: partsToText(parts) }
-}
+import { AssistantParts } from '../components/AgentParts'
+import { useChatStore, useChatTurn } from '../state/ChatStoreProvider'
+import type { Message } from '../state/chatStore'
 
 function relativeDate(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime()
@@ -125,26 +22,22 @@ export default function Chat() {
   const { chatId: urlChatId } = useParams<{ chatId?: string }>()
   const navigate = useNavigate()
 
+  const store = useChatStore()
   const [chats, setChats] = useState<ChatSummary[]>([])
   const [activeChatId, setActiveChatId] = useState<string | null>(null)
-  const [messages, setMessages] = useState<Message[]>([])
+  const turn = useChatTurn(activeChatId)
+  const messages = turn.messages
+  const streaming = turn.streaming
+  const error = turn.error
   const [input, setInput] = useState('')
   const [systemPrompt, setSystemPrompt] = useState('')
   const [maxSources, setMaxSources] = useState(5)
   const [minScore, setMinScore] = useState(0.5)
   const [showSettings, setShowSettings] = useState(false)
   const [chatListOpen, setChatListOpen] = useState(false)
-  const [streaming, setStreaming] = useState(false)
-  const [error, setError] = useState('')
   const [copied, setCopied] = useState<number | null>(null)
-  const abortRef = useRef<AbortController | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  // Abort any in-flight stream on unmount so setState doesn't fire on an
-  // unmounted component (matters for both the initial-message stream and the
-  // confirmation-resume stream).
-  useEffect(() => () => abortRef.current?.abort(), [])
 
   const { data: contextsPage } = useQuery({
     queryKey: ['contexts'],
@@ -180,37 +73,42 @@ export default function Chat() {
   }, [])
 
   useEffect(() => {
-    if (!activeChatId) {
-      setMessages([])
-      return
-    }
+    if (!activeChatId) return
+    // Effects fire in declaration order; if the user clicks A → B → A
+    // quickly the in-flight getChat(A) from the first run could land
+    // after we've moved to B. Track a cancellation flag and drop any
+    // late response so settings + chats don't get clobbered by stale data.
+    let cancelled = false
     api.getChat(activeChatId).then(detail => {
+      if (cancelled) return
       setSystemPrompt(detail.system_prompt ?? '')
       setMaxSources(detail.rag_retrieval?.max_sources ?? 5)
       setMinScore(detail.rag_retrieval?.minimum_score ?? 0.5)
-      setMessages(
-        detail.messages.map(m => ({
-          role: m.role as 'user' | 'assistant',
-          content: m.content,
-          // Historical messages only have the persisted text; tool calls
-          // from past turns aren't reconstructed.
-          parts: m.role === 'assistant' ? [{ kind: 'text', text: m.content }] : undefined,
-        }))
-      )
+      // Seed the store with server-persisted history. The store's seed()
+      // is a no-op if a stream is already running for this chat, so a
+      // background-streaming response is not clobbered when the user
+      // navigates back.
+      const seeded: Message[] = detail.messages.map(m => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+        // Historical messages only have the persisted text; tool calls
+        // from past turns aren't reconstructed.
+        parts: m.role === 'assistant' ? [{ kind: 'text', text: m.content }] : undefined,
+      }))
+      store.seed(activeChatId, seeded)
       setChats(prev => {
         const exists = prev.find(s => s.id === activeChatId)
         if (exists) return prev
         return [detail, ...prev]
       })
     }).catch(() => {})
+    return () => { cancelled = true }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeChatId])
 
   function activateChat(id: string) {
-    if (streaming) abortRef.current?.abort()
     setActiveChatId(id)
     navigate(`/chat/${id}`)
-    setError('')
   }
 
   async function handleNewChat() {
@@ -220,14 +118,13 @@ export default function Chat() {
     })
     setChats(prev => [chat, ...prev])
     setActiveChatId(chat.id)
-    setMessages([])
     navigate(`/chat/${chat.id}`)
-    setError('')
   }
 
   async function handleDeleteChat(id: string, e: React.MouseEvent) {
     e.stopPropagation()
     await api.deleteChat(id)
+    store.clear(id)
     setChats(prev => prev.filter(s => s.id !== id))
     if (activeChatId === id) {
       const remaining = chats.filter(s => s.id !== id)
@@ -237,7 +134,6 @@ export default function Chat() {
       } else {
         setActiveChatId(null)
         navigate('/chat')
-        setMessages([])
       }
     }
   }
@@ -289,91 +185,12 @@ export default function Chat() {
   }
 
   function handleStop() {
-    abortRef.current?.abort()
-    setStreaming(false)
+    if (activeChatId) store.stop(activeChatId)
   }
 
-  // streamHandlersForMessage returns the SSE event handlers wired to the
-  // assistant message at `idx`. Shared by the initial-message submission
-  // and the approval-resume path so both flows append into the same message.
-  function streamHandlersForMessage(idx: number) {
-    return {
-      onToken: (text: string) => {
-        setMessages(prev => prev.map((m, i) =>
-          i === idx ? withParts(m, appendTextPart(m.parts ?? [], text)) : m
-        ))
-      },
-      onToolCall: (name: string, args: Record<string, unknown>) => {
-        setMessages(prev => prev.map((m, i) =>
-          i === idx ? withParts(m, appendToolCall(m.parts ?? [], name, args)) : m
-        ))
-      },
-      onToolResult: (name: string, result: unknown) => {
-        setMessages(prev => prev.map((m, i) =>
-          i === idx ? withParts(m, fillToolResult(m.parts ?? [], name, result)) : m
-        ))
-      },
-      onConfirmationRequest: (req: ConfirmationRequestPayload) => {
-        // update_document's payload carries before/after/field/stage. Other
-        // tools that ever start requesting confirmation will need their
-        // own renderer; for now we assume the doc-edit shape.
-        const p = req.payload as { field?: string; stage?: string; before?: string; after?: string }
-        setMessages(prev => prev.map((m, i) =>
-          i === idx ? withParts(m, appendConfirmation(m.parts ?? [], {
-            callId: req.callId,
-            toolName: req.toolName,
-            hint: req.hint,
-            field: p.field ?? '',
-            stage: p.stage ?? '',
-            before: p.before ?? '',
-            after: p.after ?? '',
-          })) : m
-        ))
-      },
-      onError: (msg: string) => setError(msg),
-    }
-  }
-
-  // decideConfirmation is the click handler for the inline ConfirmationBlock.
-  // Approve: POSTs the decision + (possibly edited) content; reads the SSE
-  // continuation into the same assistant message.
-  // Reject: POSTs the rejection; marks the card status. The server returns
-  // a single `done` event and does not resume the agent.
   async function decideConfirmation(callId: string, confirmed: boolean, content?: string) {
     if (!activeChatId) return
-    // Resolve the hosting message index from the current snapshot (avoids a
-    // side-effect-in-updater pattern that React 18 StrictMode double-invokes).
-    const hostIdx = messages.findIndex(m =>
-      m.role === 'assistant' && m.parts?.some(p => p.kind === 'confirmation' && p.callId === callId)
-    )
-    if (hostIdx < 0) return
-    setMessages(prev => prev.map(m =>
-      m.parts ? { ...m, parts: markConfirmation(m.parts, callId, confirmed ? 'approved' : 'rejected') } : m
-    ))
-
-    setStreaming(true)
-    abortRef.current?.abort()
-    const abort = new AbortController()
-    abortRef.current = abort
-    try {
-      const res = await api.decideConfirmation(activeChatId, callId, { confirmed, content }, abort.signal)
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error((data as { error?: string }).error || `${res.status} ${res.statusText}`)
-      }
-      if (!confirmed) {
-        // Server returns a single done event; no continuation. Drain to release the connection.
-        await res.body?.cancel().catch(() => {})
-        return
-      }
-      await readAgentStream(res.body!, streamHandlersForMessage(hostIdx))
-    } catch (err: unknown) {
-      if ((err as Error)?.name !== 'AbortError') {
-        setError((err as Error)?.message || 'Request failed')
-      }
-    } finally {
-      setStreaming(false)
-    }
+    await store.decide(activeChatId, callId, confirmed, content)
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -381,43 +198,10 @@ export default function Chat() {
     const trimmed = input.trim()
     if (!trimmed || streaming) return
     if (!activeChatId) return
-
-    const userMessage: Message = { role: 'user', content: trimmed }
-    const baseMessages = [...messages, userMessage]
-    setMessages(baseMessages)
     setInput('')
-    setError('')
-    setStreaming(true)
 
-    const assistantIdx = baseMessages.length
-    setMessages(prev => [...prev, { role: 'assistant', content: '', parts: [] }])
-
-    abortRef.current?.abort()
-    const abort = new AbortController()
-    abortRef.current = abort
-
-    try {
-      const res = await api.sendMessage(activeChatId, trimmed, abort.signal)
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error((data as { error?: string }).error || `${res.status} ${res.statusText}`)
-      }
-
-      await readAgentStream(res.body!, streamHandlersForMessage(assistantIdx))
-
-      await loadChats().then(data => setChats(data))
-    } catch (err: unknown) {
-      if ((err as Error)?.name !== 'AbortError') {
-        setError((err as Error)?.message || 'Request failed')
-        setMessages(prev => {
-          const last = prev[prev.length - 1]
-          return last?.role === 'assistant' && !last.content ? prev.slice(0, -1) : prev
-        })
-      }
-    } finally {
-      setStreaming(false)
-    }
+    await store.submit(activeChatId, trimmed)
+    await loadChats().then(data => setChats(data))
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
