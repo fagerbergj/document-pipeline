@@ -20,8 +20,7 @@ const (
 )
 
 // EmbedStore stores and retrieves document embeddings.
-// Implemented by store/embed.EmbedStoreCoordinator, which coordinates
-// a vector store (Qdrant) and a search index (Open WebUI) internally.
+// Implemented by store/embed.EmbedStoreCoordinator over Qdrant.
 //
 // Search performs hybrid retrieval (dense vector + BM25 sparse) when the
 // underlying store supports it. queryText is the raw user query used to build

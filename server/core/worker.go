@@ -660,8 +660,15 @@ const defaultChunkSize = 1500
 const defaultChunkOverlap = 200
 
 // chunkText splits text into overlapping character-based chunks.
+// Empty/whitespace-only fragments (which can appear at tail boundaries when
+// the input ends in a run of whitespace) are dropped — downstream stores
+// reject blank content, and embedding blanks is wasted work either way.
 func chunkText(text string, size, overlap int) []string {
+	keep := func(c string) bool { return strings.TrimSpace(c) != "" }
 	if len(text) <= size {
+		if !keep(text) {
+			return nil
+		}
 		return []string{text}
 	}
 	step := size - overlap
@@ -674,7 +681,9 @@ func chunkText(text string, size, overlap int) []string {
 		if end > len(text) {
 			end = len(text)
 		}
-		chunks = append(chunks, text[i:end])
+		if c := text[i:end]; keep(c) {
+			chunks = append(chunks, c)
+		}
 		if end == len(text) {
 			break
 		}
@@ -835,6 +844,12 @@ func (w *WorkerService) runEmbed(
 	return nil
 }
 
+// kvSeriesCorpusHashPrefix is the KV key prefix for the SHA256 of the last
+// successfully-embedded corpus for a series. Used by rebuildSeriesCorpus to
+// short-circuit when nothing has changed since the previous rebuild — without
+// this guard, queueing embed on N docs in a series fires N identical rebuilds.
+const kvSeriesCorpusHashPrefix = "series_corpus_hash:"
+
 // rebuildSeriesCorpus concatenates all docs in the series, chunks, and re-embeds the corpus.
 func (w *WorkerService) rebuildSeriesCorpus(
 	ctx context.Context, doc model.Document, job model.Job, stage model.StageDefinition,
@@ -864,6 +879,20 @@ func (w *WorkerService) rebuildSeriesCorpus(
 		return fmt.Errorf("series %q: no text found across %d docs", series, len(seriesDocs))
 	}
 	combined := strings.Join(parts, "\n\n---\n\n")
+
+	// Skip the rebuild entirely if the corpus hash matches the last successful
+	// rebuild. Embed-replay on every doc in a series would otherwise produce N
+	// identical rebuilds, each hammering qdrant with the same chunks.
+	corpusHash := ContentHash([]byte(combined))
+	hashKey := kvSeriesCorpusHashPrefix + series
+	if prev, ok, err := w.kv.Get(ctx, hashKey); err == nil && ok && prev == corpusHash {
+		now := time.Now().UTC()
+		_ = w.jobs.UpdateStatus(ctx, job.ID, string(model.JobStatusDone), now)
+		_ = w.events.Append(ctx, model.StageEvent{DocumentID: doc.ID, Stage: stage.Name, EventType: model.EventSkipped, Timestamp: now})
+		_ = w.advancePipeline(ctx, job, now)
+		slog.Info("series corpus rebuild skipped — content unchanged", "series", series, "doc_id", doc.ID[:8])
+		return nil
+	}
 
 	chunkSize := stage.ChunkSize
 	if chunkSize <= 0 {
@@ -918,6 +947,9 @@ func (w *WorkerService) rebuildSeriesCorpus(
 	_ = w.jobs.UpdateStatus(ctx, job.ID, string(model.JobStatusDone), now)
 	_ = w.events.Append(ctx, model.StageEvent{DocumentID: doc.ID, Stage: stage.Name, EventType: model.EventCompleted, Timestamp: now})
 	_ = w.advancePipeline(ctx, job, now)
+	// Persist the corpus hash so subsequent embed-replays on other docs in the
+	// series can short-circuit when nothing has changed.
+	_ = w.kv.Set(ctx, hashKey, corpusHash)
 	slog.Info("series corpus rebuilt", "series", series, "docs", len(seriesDocs), "chunks", len(chunks))
 	return nil
 }
