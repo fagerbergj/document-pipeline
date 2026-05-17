@@ -45,3 +45,27 @@ const (
 	StageTypeEmbed          = "embed"
 	StageTypeTranscribe     = "transcribe"
 )
+
+// StageName* are the canonical names used in pipeline.yaml. They are
+// referenced by code that needs to read a specific stage's outputs (e.g.
+// chat tools fetching the clarify stage's clarified_text). Stage names are
+// ultimately config-driven, so a rename in pipeline.yaml must be matched
+// here — these constants exist to make such references findable in one
+// place.
+const (
+	StageNameTranscribe = "transcribe"
+	StageNameOCR        = "ocr"
+	StageNameSummarize  = "summarize"
+	StageNameClarify    = "clarify"
+	StageNameClassify   = "classify"
+	StageNameEmbed      = "embed"
+)
+
+// Output field names emitted by the standard pipeline stages.
+const (
+	FieldRawText          = "raw_text"
+	FieldNarrativeSummary = "narrative_summary"
+	FieldClarifiedText    = "clarified_text"
+	FieldTags             = "tags"
+	FieldSummary          = "summary"
+)

@@ -2,8 +2,10 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
@@ -36,18 +38,27 @@ type DocumentHit struct {
 // avoid an import cycle between this package and core.
 type DocLookupFn func(ctx context.Context, id string) (model.Document, error)
 
+// DocsBatchFn fetches many documents in a single round trip.
+type DocsBatchFn func(ctx context.Context, ids []string) (map[string]model.Document, error)
+
 // StageDataFn returns the latest outputs from each completed stage for a
 // document, keyed by field name. Supplied by the wiring layer.
 type StageDataFn func(ctx context.Context, id string) (map[string]map[string]any, error)
+
+// StageDataBatchFn returns stage data for many documents in one query.
+type StageDataBatchFn func(ctx context.Context, ids []string) (map[string]map[string]map[string]any, error)
 
 // NewSearchDocumentsTool returns an ADK tool that runs a Lucene query against
 // OpenSearch and resolves each hit to a lean DocumentHit. The full content of
 // any returned doc must be fetched via get_document. maxResults caps the page
 // size; values <= 0 fall back to 10.
+//
+// Doc and stage-data lookups are batched (one round trip each across all
+// hits) so an N-hit search costs O(1) repo queries, not O(N).
 func NewSearchDocumentsTool(
 	indexer port.DocumentIndexer,
-	getDoc DocLookupFn,
-	stageData StageDataFn,
+	getDocs DocsBatchFn,
+	stageDataBatch StageDataBatchFn,
 	maxResults int,
 ) (tool.Tool, error) {
 	if maxResults <= 0 {
@@ -62,7 +73,7 @@ func NewSearchDocumentsTool(
 			"combine with `AND` / `OR`. Use this when the user mentions a specific document by " +
 			"name, date, or topic that lives in one place.",
 	}, func(tctx tool.Context, args SearchDocumentsArgs) (SearchDocumentsResult, error) {
-		return runSearchDocuments(tctx, indexer, getDoc, stageData, maxResults, args)
+		return runSearchDocuments(tctx, indexer, getDocs, stageDataBatch, maxResults, args)
 	})
 }
 
@@ -71,8 +82,8 @@ func NewSearchDocumentsTool(
 func runSearchDocuments(
 	ctx context.Context,
 	indexer port.DocumentIndexer,
-	getDoc DocLookupFn,
-	stageData StageDataFn,
+	getDocs DocsBatchFn,
+	stageDataBatch StageDataBatchFn,
 	maxResults int,
 	args SearchDocumentsArgs,
 ) (SearchDocumentsResult, error) {
@@ -82,12 +93,26 @@ func runSearchDocuments(
 		return SearchDocumentsResult{}, fmt.Errorf("search_documents: %w", err)
 	}
 	slog.Info("search_documents hits", "query", args.Query, "got", len(ids), "total", total)
+	if len(ids) == 0 {
+		return SearchDocumentsResult{Results: []DocumentHit{}}, nil
+	}
+
+	docs, err := getDocs(ctx, ids)
+	if err != nil {
+		return SearchDocumentsResult{}, fmt.Errorf("search_documents: bulk fetch docs: %w", err)
+	}
+	stageMap, err := stageDataBatch(ctx, ids)
+	if err != nil {
+		// Degrade: skip metadata enrichment rather than fail the whole tool call.
+		slog.Warn("search_documents stage data batch failed; returning lean hits", "err", err)
+		stageMap = nil
+	}
 
 	hits := make([]DocumentHit, 0, len(ids))
 	for _, id := range ids {
-		doc, err := getDoc(ctx, id)
-		if err != nil {
-			slog.Warn("search_documents skipping missing doc", "id", id, "err", err)
+		doc, ok := docs[id]
+		if !ok {
+			slog.Warn("search_documents skipping missing doc", "id", id)
 			continue
 		}
 		h := DocumentHit{ID: doc.ID}
@@ -97,9 +122,9 @@ func runSearchDocuments(
 		if doc.DateMonth != nil {
 			h.DateMonth = *doc.DateMonth
 		}
-		if sd, err := stageData(ctx, id); err == nil {
-			h.Summary = stringFromStageData(sd, "classify", "summary")
-			h.Tags = stringSliceFromStageData(sd, "classify", "tags")
+		if sd, ok := stageMap[id]; ok {
+			h.Summary = stringFromStageData(sd, model.StageNameClassify, model.FieldSummary)
+			h.Tags = tagsFromStageData(sd, model.StageNameClassify, model.FieldTags)
 		}
 		hits = append(hits, h)
 	}
@@ -118,9 +143,11 @@ func stringFromStageData(sd map[string]map[string]any, stage, field string) stri
 	return s
 }
 
-// stringSliceFromStageData reads a []string output field, accepting either a
-// native []string or a []any of strings (JSON unmarshal produces the latter).
-func stringSliceFromStageData(sd map[string]map[string]any, stage, field string) []string {
+// tagsFromStageData reads a tag list. classify emits tags as a JSON-encoded
+// string (the raw artifact contents); production stage data therefore stores
+// it as a string, not a []string. Test fixtures sometimes pre-parse, so we
+// accept both shapes.
+func tagsFromStageData(sd map[string]map[string]any, stage, field string) []string {
 	v, ok := sd[stage][field]
 	if !ok {
 		return nil
@@ -136,6 +163,16 @@ func stringSliceFromStageData(sd map[string]map[string]any, stage, field string)
 			}
 		}
 		return out
+	case string:
+		raw := strings.TrimSpace(t)
+		if raw == "" {
+			return nil
+		}
+		var tags []string
+		if err := json.Unmarshal([]byte(raw), &tags); err != nil {
+			return nil
+		}
+		return tags
 	}
 	return nil
 }

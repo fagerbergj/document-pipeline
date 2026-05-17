@@ -27,21 +27,29 @@ func (r realIndexer) Search(_ context.Context, _ string, _, _ int) ([]string, in
 func strPtr(s string) *string { return &s }
 
 func TestSearchDocuments_HappyPath(t *testing.T) {
-	getDoc := func(_ context.Context, id string) (model.Document, error) {
-		return model.Document{ID: id, Title: strPtr("Title " + id), DateMonth: strPtr("2026-05")}, nil
+	getDocs := func(_ context.Context, ids []string) (map[string]model.Document, error) {
+		out := make(map[string]model.Document, len(ids))
+		for _, id := range ids {
+			out[id] = model.Document{ID: id, Title: strPtr("Title " + id), DateMonth: strPtr("2026-05")}
+		}
+		return out, nil
 	}
-	stageData := func(_ context.Context, id string) (map[string]map[string]any, error) {
-		return map[string]map[string]any{
-			"classify": {
-				"summary": "summary for " + id,
-				"tags":    []any{"foo", "bar"},
-			},
-		}, nil
+	stageDataBatch := func(_ context.Context, ids []string) (map[string]map[string]map[string]any, error) {
+		out := make(map[string]map[string]map[string]any, len(ids))
+		for _, id := range ids {
+			out[id] = map[string]map[string]any{
+				"classify": {
+					"summary": "summary for " + id,
+					"tags":    `["foo","bar"]`,
+				},
+			}
+		}
+		return out, nil
 	}
 
 	res, err := runSearchDocuments(context.Background(),
 		realIndexer{ids: []string{"doc-1", "doc-2"}, total: 2},
-		getDoc, stageData, 10,
+		getDocs, stageDataBatch, 10,
 		SearchDocumentsArgs{Query: "hello"})
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -59,18 +67,22 @@ func TestSearchDocuments_HappyPath(t *testing.T) {
 }
 
 func TestSearchDocuments_SkipMissingDocs(t *testing.T) {
-	getDoc := func(_ context.Context, id string) (model.Document, error) {
-		if id == "doc-missing" {
-			return model.Document{}, errors.New("not found")
+	getDocs := func(_ context.Context, ids []string) (map[string]model.Document, error) {
+		out := map[string]model.Document{}
+		for _, id := range ids {
+			if id == "doc-missing" {
+				continue // omitted from batch result
+			}
+			out[id] = model.Document{ID: id}
 		}
-		return model.Document{ID: id}, nil
+		return out, nil
 	}
-	stageData := func(_ context.Context, _ string) (map[string]map[string]any, error) {
+	stageDataBatch := func(_ context.Context, _ []string) (map[string]map[string]map[string]any, error) {
 		return nil, nil
 	}
 	res, err := runSearchDocuments(context.Background(),
 		realIndexer{ids: []string{"doc-ok", "doc-missing"}, total: 2},
-		getDoc, stageData, 10,
+		getDocs, stageDataBatch, 10,
 		SearchDocumentsArgs{Query: "x"})
 	if err != nil {
 		t.Fatal(err)
@@ -79,6 +91,26 @@ func TestSearchDocuments_SkipMissingDocs(t *testing.T) {
 		t.Errorf("expected only doc-ok returned, got %+v", res.Results)
 	}
 }
+
+func TestSearchDocuments_StageDataErrorDegrades(t *testing.T) {
+	getDocs := func(_ context.Context, ids []string) (map[string]model.Document, error) {
+		return map[string]model.Document{ids[0]: {ID: ids[0], Title: strPtr("T")}}, nil
+	}
+	stageDataBatch := func(_ context.Context, _ []string) (map[string]map[string]map[string]any, error) {
+		return nil, errors.New("db down")
+	}
+	res, err := runSearchDocuments(context.Background(),
+		realIndexer{ids: []string{"doc-1"}, total: 1},
+		getDocs, stageDataBatch, 10,
+		SearchDocumentsArgs{Query: "x"})
+	if err != nil {
+		t.Fatalf("tool should not fail on stage data error: %v", err)
+	}
+	if len(res.Results) != 1 || res.Results[0].Title != "T" {
+		t.Errorf("expected lean hit despite stage data error: %+v", res.Results)
+	}
+}
+
 
 func TestGetDocument_HappyPath(t *testing.T) {
 	getDoc := func(_ context.Context, id string) (model.Document, error) {
@@ -105,6 +137,28 @@ func TestGetDocument_HappyPath(t *testing.T) {
 	}
 	if len(res.Tags) != 2 || res.Tags[0] != "a" {
 		t.Errorf("tags wrong: %+v", res.Tags)
+	}
+}
+
+// TestGetDocument_TagsAsJSONString locks in the production shape: classify
+// emits tags as a raw JSON-encoded string via CollectStageData, not as a
+// pre-parsed []string. Regression guard for a real bug.
+func TestGetDocument_TagsAsJSONString(t *testing.T) {
+	getDoc := func(_ context.Context, id string) (model.Document, error) {
+		return model.Document{ID: id}, nil
+	}
+	stageData := func(_ context.Context, _ string) (map[string]map[string]any, error) {
+		return map[string]map[string]any{
+			"clarify":  {"clarified_text": "body"},
+			"classify": {"tags": `["alpha","beta","gamma"]`},
+		}, nil
+	}
+	res, err := runGetDocument(context.Background(), getDoc, stageData, GetDocumentArgs{ID: "doc-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Tags) != 3 || res.Tags[0] != "alpha" || res.Tags[2] != "gamma" {
+		t.Errorf("tags not parsed from JSON string: got %+v", res.Tags)
 	}
 }
 

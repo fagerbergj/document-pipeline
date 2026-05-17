@@ -7,6 +7,8 @@ import (
 
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
+
+	"github.com/fagerbergj/document-pipeline/server/core/model"
 )
 
 // GetDocumentArgs is the input schema for the get_document tool.
@@ -51,9 +53,9 @@ func runGetDocument(ctx context.Context, getDoc DocLookupFn, stageData StageData
 	}
 	out := GetDocumentResult{
 		ID:       doc.ID,
-		FullText: stringFromStageData(sd, "clarify", "clarified_text"),
-		Summary:  stringFromStageData(sd, "classify", "summary"),
-		Tags:     stringSliceFromStageData(sd, "classify", "tags"),
+		FullText: stringFromStageData(sd, model.StageNameClarify, model.FieldClarifiedText),
+		Summary:  stringFromStageData(sd, model.StageNameClassify, model.FieldSummary),
+		Tags:     tagsFromStageData(sd, model.StageNameClassify, model.FieldTags),
 	}
 	if doc.Title != nil {
 		out.Title = *doc.Title

@@ -325,7 +325,21 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 	collectStageData := func(ctx context.Context, docID string) (map[string]map[string]any, error) {
 		return core.CollectStageData(ctx, h.jobs, h.artifacts, h.store, h.vaultPath, docID)
 	}
-	searchDocsTool, err := adktools.NewSearchDocumentsTool(h.search, h.docs.Get, collectStageData, 10)
+	getDocsBatch := func(ctx context.Context, ids []string) (map[string]model.Document, error) {
+		res, err := h.docs.ListPaginated(ctx, port.DocumentFilter{IDs: ids}, model.PageRequest{PageSize: len(ids)})
+		if err != nil {
+			return nil, err
+		}
+		out := make(map[string]model.Document, len(res.Data))
+		for _, d := range res.Data {
+			out[d.ID] = d
+		}
+		return out, nil
+	}
+	stageDataBatch := func(ctx context.Context, ids []string) (map[string]map[string]map[string]any, error) {
+		return core.CollectStageDataBatch(ctx, h.jobs, h.artifacts, h.store, h.vaultPath, ids)
+	}
+	searchDocsTool, err := adktools.NewSearchDocumentsTool(h.search, getDocsBatch, stageDataBatch, 10)
 	if err != nil {
 		slog.Error("sendChatMessage NewSearchDocumentsTool", "chat_id", chatID, "err", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
