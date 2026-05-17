@@ -73,6 +73,10 @@ func NewSearchDocumentsTool(
 			"your query has a colon (`title:foo`, `tags:invoice`, `series:notebooks`, " +
 			"`date_month:2026-05`, `stage:done`). Bare words search full text; combine with " +
 			"AND / OR. " +
+			"IMPORTANT: quote multi-word field values, otherwise Lucene splits on the space " +
+			"and only matches the first word. " +
+			"Correct: `series:\"Secret Campaign\"`, `title:\"may 16\"`. " +
+			"Wrong: `series:Secret Campaign` (parses as series:Secret AND Campaign). " +
 			"For fuzzy or cross-doc topical questions use rag_search instead. " +
 			"Never call with an empty query.",
 	}, func(tctx tool.Context, args SearchDocumentsArgs) (SearchDocumentsResult, error) {

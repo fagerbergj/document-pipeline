@@ -24,13 +24,14 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const qc = useQueryClient()
 
-  const sort   = (searchParams.get('sort') ?? 'pipeline') as SortKey
-  const s      = searchParams.get('s') ?? ''
-  const status = searchParams.get('status') ?? ''
-  const stage  = searchParams.get('stage') ?? ''
-  const adv    = searchParams.get('adv') ?? ''
-  const q      = adv || buildLuceneQuery(s, status, stage)
-  const hasSearch = !!(s || status || stage || adv)
+  const sort      = (searchParams.get('sort') ?? 'pipeline') as SortKey
+  const s         = searchParams.get('s') ?? ''
+  const status    = searchParams.get('status') ?? ''
+  const stage     = searchParams.get('stage') ?? ''
+  const seriesSel = searchParams.get('series') ?? ''
+  const adv       = searchParams.get('adv') ?? ''
+  const q         = adv || buildLuceneQuery(s, status, stage, seriesSel)
+  const hasSearch = !!(s || status || stage || seriesSel || adv)
 
   const [pageSize, setPageSizeState] = useState(20)
 
@@ -67,8 +68,17 @@ export default function Dashboard() {
   })
 
   const docs = page?.data ?? []
-  const seriesList = [...new Set(docs.map(d => d.series).filter((s): s is string => !!s))]
   const jobIds = docs.map(d => d.current_job_id).filter(Boolean).join(',')
+
+  // All distinct series across the corpus, for the series filter dropdown and
+  // the inline series picker. Page size is the cheap upper bound; we don't
+  // currently have a dedicated aggregation endpoint.
+  const { data: allDocsPage } = useQuery({
+    queryKey: ['documents-series-options'],
+    queryFn: () => api.documents({ page_size: 500 }),
+    staleTime: 60_000,
+  })
+  const seriesList = [...new Set((allDocsPage?.data ?? []).map(d => d.series).filter((v): v is string => !!v))].sort()
 
   const { data: jobsPage } = useQuery({
     queryKey: ['jobs-for-page', jobIds],
@@ -128,7 +138,7 @@ export default function Dashboard() {
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <h1 className="text-lg font-semibold text-gray-900 dark:text-white shrink-0">Documents</h1>
           <div className="flex items-center gap-3 flex-wrap flex-1">
-            <SearchBar stages={pipelineStages} />
+            <SearchBar stages={pipelineStages} series={seriesList} />
           </div>
           <div className="flex items-center gap-3 shrink-0">
             <button
