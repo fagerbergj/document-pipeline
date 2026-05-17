@@ -120,4 +120,3 @@ func TestGetDocument_DocNotFound(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
-

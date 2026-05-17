@@ -51,9 +51,9 @@ func runGetDocument(ctx context.Context, getDoc DocLookupFn, stageData StageData
 	}
 	out := GetDocumentResult{
 		ID:       doc.ID,
-		FullText: stringFromStageData(sd, "clarified_text"),
-		Summary:  stringFromStageData(sd, "summary"),
-		Tags:     stringSliceFromStageData(sd, "tags"),
+		FullText: stringFromStageData(sd, "clarify", "clarified_text"),
+		Summary:  stringFromStageData(sd, "classify", "summary"),
+		Tags:     stringSliceFromStageData(sd, "classify", "tags"),
 	}
 	if doc.Title != nil {
 		out.Title = *doc.Title

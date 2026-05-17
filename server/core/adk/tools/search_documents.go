@@ -98,43 +98,44 @@ func runSearchDocuments(
 			h.DateMonth = *doc.DateMonth
 		}
 		if sd, err := stageData(ctx, id); err == nil {
-			h.Summary = stringFromStageData(sd, "summary")
-			h.Tags = stringSliceFromStageData(sd, "tags")
+			h.Summary = stringFromStageData(sd, "classify", "summary")
+			h.Tags = stringSliceFromStageData(sd, "classify", "tags")
 		}
 		hits = append(hits, h)
 	}
 	return SearchDocumentsResult{Results: hits}, nil
 }
 
-func stringFromStageData(sd map[string]map[string]any, field string) string {
-	for _, stage := range sd {
-		if v, ok := stage[field]; ok {
-			if s, ok := v.(string); ok && s != "" {
-				return s
-			}
-		}
+// stringFromStageData reads a string output field from a specific stage's
+// results. Scoping by stage avoids ambiguity when two stages happen to emit
+// the same field name.
+func stringFromStageData(sd map[string]map[string]any, stage, field string) string {
+	v, ok := sd[stage][field]
+	if !ok {
+		return ""
 	}
-	return ""
+	s, _ := v.(string)
+	return s
 }
 
-func stringSliceFromStageData(sd map[string]map[string]any, field string) []string {
-	for _, stage := range sd {
-		v, ok := stage[field]
-		if !ok {
-			continue
-		}
-		switch t := v.(type) {
-		case []string:
-			return t
-		case []any:
-			out := make([]string, 0, len(t))
-			for _, x := range t {
-				if s, ok := x.(string); ok {
-					out = append(out, s)
-				}
+// stringSliceFromStageData reads a []string output field, accepting either a
+// native []string or a []any of strings (JSON unmarshal produces the latter).
+func stringSliceFromStageData(sd map[string]map[string]any, stage, field string) []string {
+	v, ok := sd[stage][field]
+	if !ok {
+		return nil
+	}
+	switch t := v.(type) {
+	case []string:
+		return t
+	case []any:
+		out := make([]string, 0, len(t))
+		for _, x := range t {
+			if s, ok := x.(string); ok {
+				out = append(out, s)
 			}
-			return out
 		}
+		return out
 	}
 	return nil
 }
