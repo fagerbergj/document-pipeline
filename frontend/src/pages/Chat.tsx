@@ -510,7 +510,7 @@ export default function Chat() {
                       {msg.parts && msg.parts.length > 0 && (
                         <AssistantParts parts={msg.parts} showCursor={streaming && idx === messages.length - 1} />
                       )}
-                      {streaming && idx === messages.length - 1 && msg.parts?.[msg.parts.length - 1]?.kind !== 'text' && (
+                      {streaming && idx === messages.length - 1 && (
                         <span className="flex items-center gap-1 h-5 mt-2">
                           <span className="w-2 h-2 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.3s]" />
                           <span className="w-2 h-2 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.15s]" />
