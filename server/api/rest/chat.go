@@ -358,7 +358,6 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "streaming not supported")
 		return
 	}
-	sseUnbuffer(w, flusher)
 
 	queryModel := h.queryModel()
 

@@ -310,7 +310,6 @@ func (h *handler) streamJob(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "streaming not supported")
 		return
 	}
-	sseUnbuffer(w, flusher)
 
 	ch := h.streams.Subscribe(id)
 	defer h.streams.Unsubscribe(id)
