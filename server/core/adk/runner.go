@@ -13,6 +13,7 @@ import (
 	"google.golang.org/adk/runner"
 	"google.golang.org/adk/session"
 	"google.golang.org/adk/tool"
+	"google.golang.org/adk/tool/toolconfirmation"
 	"google.golang.org/genai"
 )
 
@@ -44,6 +45,10 @@ const (
 	// StreamEventToolResult fires when a tool returns. Result carries the
 	// tool's response payload.
 	StreamEventToolResult StreamEventKind = "tool_result"
+	// StreamEventConfirmationRequest fires when a tool calls
+	// ctx.RequestConfirmation. The agent loop pauses; the client must POST a
+	// decision back to /chats/{id}/confirmations/{call_id} to resume.
+	StreamEventConfirmationRequest StreamEventKind = "confirmation_request"
 )
 
 // StreamEvent is a single discrete event emitted during an agent loop. Only
@@ -51,9 +56,12 @@ const (
 type StreamEvent struct {
 	Kind     StreamEventKind
 	Text     string         // StreamEventToken
-	ToolName string         // tool_call / tool_result
+	ToolName string         // tool_call / tool_result / confirmation_request
 	ToolArgs map[string]any // tool_call
 	Result   map[string]any // tool_result
+	CallID   string         // confirmation_request
+	Hint     string         // confirmation_request
+	Payload  any            // confirmation_request (the arbitrary payload the tool attached)
 }
 
 // JSONPayload returns the JSON object that should land in the SSE event's
@@ -66,6 +74,13 @@ func (e StreamEvent) JSONPayload() ([]byte, error) {
 		return json.Marshal(map[string]any{"name": e.ToolName, "args": e.ToolArgs})
 	case StreamEventToolResult:
 		return json.Marshal(map[string]any{"name": e.ToolName, "result": e.Result})
+	case StreamEventConfirmationRequest:
+		return json.Marshal(map[string]any{
+			"call_id":   e.CallID,
+			"tool_name": e.ToolName,
+			"hint":      e.Hint,
+			"payload":   e.Payload,
+		})
 	}
 	return []byte("{}"), nil
 }
@@ -79,6 +94,8 @@ func (e StreamEvent) SSEEventType() string {
 		return "tool_call"
 	case StreamEventToolResult:
 		return "tool_result"
+	case StreamEventConfirmationRequest:
+		return "confirmation_request"
 	}
 	return ""
 }
@@ -129,7 +146,14 @@ func RunAgent(
 		return RunResult{}, fmt.Errorf("adk runner: %w", err)
 	}
 
-	userMsg := &genai.Content{Role: "user", Parts: userParts}
+	// userParts == nil signals a resume call: the user's decision has already
+	// been persisted via session.AppendEvent; the runner picks it up from
+	// session state and re-runs the tool. Pass nil so we don't append an
+	// empty "user" message in front of the resume.
+	var userMsg *genai.Content
+	if len(userParts) > 0 {
+		userMsg = &genai.Content{Role: "user", Parts: userParts}
+	}
 	runCfg := agent.RunConfig{StreamingMode: agent.StreamingModeNone}
 
 	var (
@@ -146,15 +170,20 @@ func RunAgent(
 		}
 		for _, p := range event.Content.Parts {
 			if p.FunctionCall != nil && onEvent != nil {
-				onEvent(StreamEvent{
-					Kind:     StreamEventToolCall,
-					ToolName: p.FunctionCall.Name,
-					ToolArgs: p.FunctionCall.Args,
-				})
+				if p.FunctionCall.Name == toolconfirmation.FunctionCallName {
+					ev := buildConfirmationRequest(p.FunctionCall)
+					onEvent(ev)
+				} else {
+					onEvent(StreamEvent{
+						Kind:     StreamEventToolCall,
+						ToolName: p.FunctionCall.Name,
+						ToolArgs: p.FunctionCall.Args,
+					})
+				}
 			}
 			if p.FunctionResponse != nil && p.FunctionResponse.Response != nil {
 				toolResponses = append(toolResponses, p.FunctionResponse.Response)
-				if onEvent != nil {
+				if onEvent != nil && p.FunctionResponse.Name != toolconfirmation.FunctionCallName {
 					onEvent(StreamEvent{
 						Kind:     StreamEventToolResult,
 						ToolName: p.FunctionResponse.Name,
@@ -224,5 +253,56 @@ func AppendStateEvent(ctx context.Context, svc session.Service, sessionID string
 	e := session.NewEvent(uuid.NewString())
 	e.Author = "system"
 	e.Actions.StateDelta = stateDelta
+	return svc.AppendEvent(ctx, getResp.Session, e)
+}
+
+// buildConfirmationRequest unpacks the args of an adk_request_confirmation
+// FunctionCall into a StreamEvent the client can render as an approval card.
+func buildConfirmationRequest(fc *genai.FunctionCall) StreamEvent {
+	ev := StreamEvent{Kind: StreamEventConfirmationRequest, CallID: fc.ID}
+	if tc, ok := fc.Args["toolConfirmation"].(map[string]any); ok {
+		if h, ok := tc["hint"].(string); ok {
+			ev.Hint = h
+		}
+		ev.Payload = tc["payload"]
+	}
+	if orig, err := toolconfirmation.OriginalCallFrom(fc); err == nil && orig != nil {
+		ev.ToolName = orig.Name
+	}
+	return ev
+}
+
+// AppendConfirmationResponse persists the user's decision on a pending tool
+// confirmation back into the session. The next RunAgent call (with no new
+// user message) will detect the response and re-invoke the original tool
+// with ctx.ToolConfirmation().Confirmed set.
+//
+// confirmed=true approves; payload may carry overrides (e.g. user-edited
+// content) the tool reads via ctx.ToolConfirmation().Payload.
+func AppendConfirmationResponse(ctx context.Context, svc session.Service, sessionID, callID string, confirmed bool, payload map[string]any) error {
+	getResp, err := svc.Get(ctx, &session.GetRequest{
+		AppName:   AppName,
+		UserID:    UserID,
+		SessionID: sessionID,
+	})
+	if err != nil {
+		return fmt.Errorf("session get: %w", err)
+	}
+	resp := map[string]any{"confirmed": confirmed}
+	if payload != nil {
+		resp["payload"] = payload
+	}
+	e := session.NewEvent(uuid.NewString())
+	e.Author = "user"
+	e.Content = &genai.Content{
+		Role: "user",
+		Parts: []*genai.Part{{
+			FunctionResponse: &genai.FunctionResponse{
+				ID:       callID,
+				Name:     toolconfirmation.FunctionCallName,
+				Response: resp,
+			},
+		}},
+	}
 	return svc.AppendEvent(ctx, getResp.Session, e)
 }

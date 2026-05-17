@@ -1,11 +1,14 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
-import type { ComponentPropsWithoutRef, ReactNode } from 'react'
+import { useState, type ComponentPropsWithoutRef, type ReactNode } from 'react'
+import EditableOutput from './EditableOutput'
+import DiffView from './DiffView'
 
-// MessagePart is one ordered chunk of an assistant message — either model
-// text (which may itself contain <think>…</think> blocks) or a tool call.
-export type MessagePart = TextPart | ToolCallPart
+// MessagePart is one ordered chunk of an assistant message — model text
+// (which may contain <think>…</think> blocks), a tool call, or a pending
+// human-in-the-loop confirmation card.
+export type MessagePart = TextPart | ToolCallPart | ConfirmationPart
 
 export interface TextPart {
   kind: 'text'
@@ -21,10 +24,33 @@ export interface ToolCallPart {
   result?: unknown
 }
 
+export interface ConfirmationPart {
+  kind: 'confirmation'
+  callId: string
+  toolName: string
+  hint: string
+  // Stage payload fields surfaced by update_document. Other tools may use
+  // different keys, but we currently only render the doc-edit shape.
+  field: string
+  stage: string
+  before: string
+  after: string
+  status: 'pending' | 'approved' | 'rejected'
+}
+
 // AssistantParts renders a sequence of MessageParts in order — text parts
 // via AssistantText (which intercepts <think> tags), tool_call parts via
-// ToolBlock. Used by the chat page and document live log.
-export function AssistantParts({ parts, showCursor }: { parts: MessagePart[]; showCursor?: boolean }) {
+// ToolBlock, confirmation parts via ConfirmationBlock. Used by the chat
+// page and document live log.
+//
+// onDecideConfirmation is the chat page's approve/reject handler; it is
+// only passed by the chat page (the doc live-log doesn't surface
+// confirmations, since the worker SSE doesn't emit them).
+export function AssistantParts({ parts, showCursor, onDecideConfirmation }: {
+  parts: MessagePart[]
+  showCursor?: boolean
+  onDecideConfirmation?: (callId: string, confirmed: boolean, content?: string) => void
+}) {
   const last = parts[parts.length - 1]
   // Only show the blinking cursor when streaming text. Rendering it after
   // a collapsed tool block looks orphaned.
@@ -32,10 +58,9 @@ export function AssistantParts({ parts, showCursor }: { parts: MessagePart[]; sh
   return (
     <>
       {parts.map((p, i) => {
-        if (p.kind === 'text') {
-          return <AssistantText key={i} text={p.text} />
-        }
-        return <ToolBlock key={i} part={p} />
+        if (p.kind === 'text') return <AssistantText key={i} text={p.text} />
+        if (p.kind === 'tool_call') return <ToolBlock key={i} part={p} />
+        return <ConfirmationBlock key={i} part={p} onDecide={onDecideConfirmation} />
       })}
       {cursorAfterText && (
         <span className="inline-block w-1.5 h-4 bg-gray-400 animate-pulse ml-0.5 align-middle" />
@@ -74,6 +99,17 @@ export function fillToolResult(parts: MessagePart[], name: string, result: unkno
     }
   }
   return next
+}
+
+// appendConfirmation pushes a new pending confirmation card.
+export function appendConfirmation(parts: MessagePart[], part: Omit<ConfirmationPart, 'kind' | 'status'>): MessagePart[] {
+  return [...parts, { kind: 'confirmation', status: 'pending', ...part }]
+}
+
+// markConfirmation updates the status of an existing confirmation card by
+// callId. No-op if no matching card is found.
+export function markConfirmation(parts: MessagePart[], callId: string, status: ConfirmationPart['status']): MessagePart[] {
+  return parts.map(p => (p.kind === 'confirmation' && p.callId === callId ? { ...p, status } : p))
 }
 
 // partsToText concatenates all text parts into a plain-text rendition,
@@ -180,4 +216,80 @@ function prettyJSON(v: unknown): string {
   } catch {
     return String(v)
   }
+}
+
+// ConfirmationBlock renders the inline approval card for a tool-call that
+// requested human-in-the-loop confirmation. Shows the diff of the proposed
+// change, an editable "after" textarea pre-filled with the model's proposal
+// (user can tweak before approving), and Approve / Reject buttons.
+//
+// The "after" textarea state lives in this component because the user may
+// edit it any number of times before deciding; we only push the value up
+// when they click Approve.
+export function ConfirmationBlock({ part, onDecide }: {
+  part: ConfirmationPart
+  onDecide?: (callId: string, confirmed: boolean, content?: string) => void
+}) {
+  const [edited, setEdited] = useState(part.after)
+  const pending = part.status === 'pending'
+
+  return (
+    <div className="my-2 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 not-prose">
+      <div className="px-3 py-2 border-b border-amber-200 dark:border-amber-800 flex items-center gap-2">
+        <span className="text-xs font-semibold text-amber-800 dark:text-amber-300 uppercase tracking-wide">
+          Approval needed
+        </span>
+        <span className="text-xs text-amber-700 dark:text-amber-400">{part.hint}</span>
+        {part.status !== 'pending' && (
+          <span className={`ml-auto text-xs font-medium ${part.status === 'approved' ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}`}>
+            {part.status}
+          </span>
+        )}
+      </div>
+
+      <div className="p-3 space-y-3">
+        <details open className="rounded border border-amber-200 dark:border-amber-800 bg-white dark:bg-gray-900">
+          <summary className="cursor-pointer select-none px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-400">
+            Diff
+          </summary>
+          <DiffView before={part.before} after={edited} />
+        </details>
+
+        <EditableOutput
+          field={part.field}
+          content={edited}
+          editing={pending}
+          onChange={setEdited}
+          edited={pending && edited !== part.after}
+          label={`Proposed ${part.field.replace(/_/g, ' ')}`}
+          maxHeight="30vh"
+        />
+
+        {pending && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onDecide?.(part.callId, true, edited)}
+              className="px-3 py-1.5 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700"
+            >
+              Approve
+            </button>
+            <button
+              onClick={() => onDecide?.(part.callId, false)}
+              className="px-3 py-1.5 text-sm font-medium border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+            >
+              Reject
+            </button>
+            {edited !== part.after && (
+              <button
+                onClick={() => setEdited(part.after)}
+                className="text-xs text-amber-700 dark:text-amber-400 hover:underline ml-auto"
+              >
+                Reset to model's proposal
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
 }

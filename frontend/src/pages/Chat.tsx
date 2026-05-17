@@ -6,7 +6,9 @@ import {
   AssistantParts,
   appendTextPart,
   appendToolCall,
+  appendConfirmation,
   fillToolResult,
+  markConfirmation,
   partsToText,
   type MessagePart,
 } from '../components/AgentParts'
@@ -23,12 +25,20 @@ interface Message {
 // readAgentStream parses a server-sent agent event stream into ordered tokens,
 // tool calls, and tool results. It tracks the `event:` line so handlers can
 // dispatch by typed event rather than guessing from payload shape.
+interface ConfirmationRequestPayload {
+  callId: string
+  toolName: string
+  hint: string
+  payload: Record<string, unknown>
+}
+
 async function readAgentStream(
   body: ReadableStream<Uint8Array>,
   handlers: {
     onToken: (text: string) => void
     onToolCall: (name: string, args: Record<string, unknown>) => void
     onToolResult: (name: string, result: unknown) => void
+    onConfirmationRequest: (req: ConfirmationRequestPayload) => void
     onError: (msg: string) => void
   },
 ): Promise<void> {
@@ -66,6 +76,17 @@ async function readAgentStream(
           if (hasStringField(parsed, 'name')) {
             const result = (parsed as unknown as { result: unknown }).result
             handlers.onToolResult(parsed.name, result)
+          }
+          break
+        case 'confirmation_request':
+          if (hasStringField(parsed, 'call_id')) {
+            const p = parsed as { call_id: string; tool_name?: string; hint?: string; payload?: Record<string, unknown> }
+            handlers.onConfirmationRequest({
+              callId: p.call_id,
+              toolName: p.tool_name ?? '',
+              hint: p.hint ?? '',
+              payload: p.payload ?? {},
+            })
           }
           break
         case 'error':
@@ -119,6 +140,11 @@ export default function Chat() {
   const abortRef = useRef<AbortController | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Abort any in-flight stream on unmount so setState doesn't fire on an
+  // unmounted component (matters for both the initial-message stream and the
+  // confirmation-resume stream).
+  useEffect(() => () => abortRef.current?.abort(), [])
 
   const { data: contextsPage } = useQuery({
     queryKey: ['contexts'],
@@ -267,6 +293,89 @@ export default function Chat() {
     setStreaming(false)
   }
 
+  // streamHandlersForMessage returns the SSE event handlers wired to the
+  // assistant message at `idx`. Shared by the initial-message submission
+  // and the approval-resume path so both flows append into the same message.
+  function streamHandlersForMessage(idx: number) {
+    return {
+      onToken: (text: string) => {
+        setMessages(prev => prev.map((m, i) =>
+          i === idx ? withParts(m, appendTextPart(m.parts ?? [], text)) : m
+        ))
+      },
+      onToolCall: (name: string, args: Record<string, unknown>) => {
+        setMessages(prev => prev.map((m, i) =>
+          i === idx ? withParts(m, appendToolCall(m.parts ?? [], name, args)) : m
+        ))
+      },
+      onToolResult: (name: string, result: unknown) => {
+        setMessages(prev => prev.map((m, i) =>
+          i === idx ? withParts(m, fillToolResult(m.parts ?? [], name, result)) : m
+        ))
+      },
+      onConfirmationRequest: (req: ConfirmationRequestPayload) => {
+        // update_document's payload carries before/after/field/stage. Other
+        // tools that ever start requesting confirmation will need their
+        // own renderer; for now we assume the doc-edit shape.
+        const p = req.payload as { field?: string; stage?: string; before?: string; after?: string }
+        setMessages(prev => prev.map((m, i) =>
+          i === idx ? withParts(m, appendConfirmation(m.parts ?? [], {
+            callId: req.callId,
+            toolName: req.toolName,
+            hint: req.hint,
+            field: p.field ?? '',
+            stage: p.stage ?? '',
+            before: p.before ?? '',
+            after: p.after ?? '',
+          })) : m
+        ))
+      },
+      onError: (msg: string) => setError(msg),
+    }
+  }
+
+  // decideConfirmation is the click handler for the inline ConfirmationBlock.
+  // Approve: POSTs the decision + (possibly edited) content; reads the SSE
+  // continuation into the same assistant message.
+  // Reject: POSTs the rejection; marks the card status. The server returns
+  // a single `done` event and does not resume the agent.
+  async function decideConfirmation(callId: string, confirmed: boolean, content?: string) {
+    if (!activeChatId) return
+    // Resolve the hosting message index from the current snapshot (avoids a
+    // side-effect-in-updater pattern that React 18 StrictMode double-invokes).
+    const hostIdx = messages.findIndex(m =>
+      m.role === 'assistant' && m.parts?.some(p => p.kind === 'confirmation' && p.callId === callId)
+    )
+    if (hostIdx < 0) return
+    setMessages(prev => prev.map(m =>
+      m.parts ? { ...m, parts: markConfirmation(m.parts, callId, confirmed ? 'approved' : 'rejected') } : m
+    ))
+
+    setStreaming(true)
+    abortRef.current?.abort()
+    const abort = new AbortController()
+    abortRef.current = abort
+    try {
+      const res = await api.decideConfirmation(activeChatId, callId, { confirmed, content }, abort.signal)
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error((data as { error?: string }).error || `${res.status} ${res.statusText}`)
+      }
+      if (!confirmed) {
+        // Server returns a single done event; no continuation. Drain to release the connection.
+        await res.body?.cancel().catch(() => {})
+        return
+      }
+      await readAgentStream(res.body!, streamHandlersForMessage(hostIdx))
+    } catch (err: unknown) {
+      if ((err as Error)?.name !== 'AbortError') {
+        setError((err as Error)?.message || 'Request failed')
+      }
+    } finally {
+      setStreaming(false)
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     const trimmed = input.trim()
@@ -295,24 +404,7 @@ export default function Chat() {
         throw new Error((data as { error?: string }).error || `${res.status} ${res.statusText}`)
       }
 
-      await readAgentStream(res.body!, {
-        onToken: (text) => {
-          setMessages(prev => prev.map((m, i) =>
-            i === assistantIdx ? withParts(m, appendTextPart(m.parts ?? [], text)) : m
-          ))
-        },
-        onToolCall: (name, args) => {
-          setMessages(prev => prev.map((m, i) =>
-            i === assistantIdx ? withParts(m, appendToolCall(m.parts ?? [], name, args)) : m
-          ))
-        },
-        onToolResult: (name, result) => {
-          setMessages(prev => prev.map((m, i) =>
-            i === assistantIdx ? withParts(m, fillToolResult(m.parts ?? [], name, result)) : m
-          ))
-        },
-        onError: (msg) => setError(msg),
-      })
+      await readAgentStream(res.body!, streamHandlersForMessage(assistantIdx))
 
       await loadChats().then(data => setChats(data))
     } catch (err: unknown) {
@@ -508,7 +600,7 @@ export default function Chat() {
                   <div>
                     <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl rounded-tl-sm px-5 py-4">
                       {msg.parts && msg.parts.length > 0 && (
-                        <AssistantParts parts={msg.parts} showCursor={streaming && idx === messages.length - 1} />
+                        <AssistantParts parts={msg.parts} showCursor={streaming && idx === messages.length - 1} onDecideConfirmation={decideConfirmation} />
                       )}
                       {streaming && idx === messages.length - 1 && (
                         <span className="flex items-center gap-1 h-5 mt-2">

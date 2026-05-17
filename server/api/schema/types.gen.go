@@ -280,6 +280,15 @@ type ChatSummary struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// ConfirmChatBody User decision on a pending tool-call confirmation.
+type ConfirmChatBody struct {
+	// Confirmed True to approve and run the proposed action; false to reject.
+	Confirmed bool `json:"confirmed"`
+
+	// Content Optional user-edited content to apply instead of the model's original proposal. Only meaningful for tools whose confirmation payload accepts a content override (e.g. update_document). Ignored when `confirmed` is false.
+	Content *string `json:"content,omitempty"`
+}
+
 // ContextEntry A named reusable context snippet with an immutable UUID.
 type ContextEntry struct {
 	// Id Immutable identifier assigned at creation.
@@ -852,6 +861,9 @@ type CreateChatJSONRequestBody = CreateChatBody
 
 // PatchChatJSONRequestBody defines body for PatchChat for application/json ContentType.
 type PatchChatJSONRequestBody = PatchChatBody
+
+// ConfirmChatToolCallJSONRequestBody defines body for ConfirmChatToolCall for application/json ContentType.
+type ConfirmChatToolCallJSONRequestBody = ConfirmChatBody
 
 // SendChatMessageJSONRequestBody defines body for SendChatMessage for application/json ContentType.
 type SendChatMessageJSONRequestBody = SendMessageBody
