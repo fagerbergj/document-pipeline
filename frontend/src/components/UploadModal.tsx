@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { api } from '../api'
 
 interface Props {
@@ -26,18 +26,16 @@ export default function UploadModal({ onClose }: Props) {
   const [additionalContext, setAdditionalContext] = useState('')
   const [linkedIds, setLinkedIds] = useState<string[]>([])
   const [contexts, setContexts] = useState<{ id: string; name: string }[]>([])
-  const [seriesOptions, setSeriesOptions] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
+
+  const { data: seriesOptions = [] } = useQuery({
+    queryKey: ['document-series'],
+    queryFn: () => api.documentSeries(),
+    staleTime: 60_000,
+  })
 
   useEffect(() => {
     api.contexts().then(p => setContexts((p.data ?? []).map(e => ({ id: e.id, name: e.name })))).catch(() => {})
-    api.documents({ page_size: 100 }).then(p => {
-      const names = new Set<string>()
-      for (const d of p.data ?? []) {
-        if (d.series) names.add(d.series)
-      }
-      setSeriesOptions([...names].sort())
-    }).catch(() => {})
   }, [])
 
   const uploadMut = useMutation({

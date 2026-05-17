@@ -2,7 +2,7 @@
 
 import { type Client, formDataBodySerializer, type Options as Options2, type TDataShape } from './client';
 import { client } from './client.gen';
-import type { ConfirmChatToolCallData, ConfirmChatToolCallErrors, ConfirmChatToolCallResponse, ConfirmChatToolCallResponses, CreateChatData, CreateChatResponses, CreateContextData, CreateContextResponses, DeleteChatData, DeleteChatErrors, DeleteChatResponses, DeleteContextData, DeleteContextErrors, DeleteContextResponses, DeleteDocumentData, DeleteDocumentErrors, DeleteDocumentResponses, GetArtifactData, GetArtifactErrors, GetArtifactResponses, GetChatData, GetChatErrors, GetChatResponses, GetDocumentData, GetDocumentErrors, GetDocumentResponses, GetJobData, GetJobErrors, GetJobResponses, GetPipelineData, GetPipelineErrors, GetPipelineResponses, ListChatsData, ListChatsResponses, ListContextsData, ListContextsResponses, ListDocumentsData, ListDocumentsResponses, ListJobsData, ListJobsResponses, ListPipelinesData, ListPipelinesResponses, PatchChatData, PatchChatErrors, PatchChatResponses, PatchDocumentData, PatchDocumentErrors, PatchDocumentResponses, PatchJobData, PatchJobErrors, PatchJobResponses, PatchRunData, PatchRunErrors, PatchRunResponses, PutJobStatusData, PutJobStatusErrors, PutJobStatusResponses, ReceiveWebhookData, ReceiveWebhookResponses, SendChatMessageData, SendChatMessageErrors, SendChatMessageResponse, SendChatMessageResponses, StreamJobTokensData, StreamJobTokensErrors, StreamJobTokensResponse, StreamJobTokensResponses, UpdateContextData, UpdateContextErrors, UpdateContextResponses, UploadDocumentData, UploadDocumentErrors, UploadDocumentResponses } from './types.gen';
+import type { ConfirmChatToolCallData, ConfirmChatToolCallErrors, ConfirmChatToolCallResponse, ConfirmChatToolCallResponses, CreateChatData, CreateChatResponses, CreateContextData, CreateContextResponses, DeleteChatData, DeleteChatErrors, DeleteChatResponses, DeleteContextData, DeleteContextErrors, DeleteContextResponses, DeleteDocumentData, DeleteDocumentErrors, DeleteDocumentResponses, GetArtifactData, GetArtifactErrors, GetArtifactResponses, GetChatData, GetChatErrors, GetChatResponses, GetDocumentData, GetDocumentErrors, GetDocumentResponses, GetJobData, GetJobErrors, GetJobResponses, GetPipelineData, GetPipelineErrors, GetPipelineResponses, ListChatsData, ListChatsResponses, ListContextsData, ListContextsResponses, ListDocumentsData, ListDocumentSeriesData, ListDocumentSeriesResponses, ListDocumentsResponses, ListJobsData, ListJobsResponses, ListPipelinesData, ListPipelinesResponses, PatchChatData, PatchChatErrors, PatchChatResponses, PatchDocumentData, PatchDocumentErrors, PatchDocumentResponses, PatchJobData, PatchJobErrors, PatchJobResponses, PatchRunData, PatchRunErrors, PatchRunResponses, PutJobStatusData, PutJobStatusErrors, PutJobStatusResponses, ReceiveWebhookData, ReceiveWebhookResponses, SendChatMessageData, SendChatMessageErrors, SendChatMessageResponse, SendChatMessageResponses, StreamJobTokensData, StreamJobTokensErrors, StreamJobTokensResponse, StreamJobTokensResponses, UpdateContextData, UpdateContextErrors, UpdateContextResponses, UploadDocumentData, UploadDocumentErrors, UploadDocumentResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -98,6 +98,20 @@ export const uploadDocument = <ThrowOnError extends boolean = false>(options: Op
         'Content-Type': null,
         ...options.headers
     }
+});
+
+/**
+ * List distinct document series
+ *
+ * Returns the sorted list of distinct non-empty `series` values currently
+ * assigned to any document. Used to populate series pickers and filter
+ * dropdowns without paging through the full document list.
+ *
+ */
+export const listDocumentSeries = <ThrowOnError extends boolean = false>(options?: Options<ListDocumentSeriesData, ThrowOnError>) => (options?.client ?? client).get<ListDocumentSeriesResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/documents/series',
+    ...options
 });
 
 /**

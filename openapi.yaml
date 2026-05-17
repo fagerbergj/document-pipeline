@@ -231,6 +231,23 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /api/v1/documents/series:
+    get:
+      tags: [Documents]
+      summary: List distinct document series
+      description: |
+        Returns the sorted list of distinct non-empty `series` values currently
+        assigned to any document. Used to populate series pickers and filter
+        dropdowns without paging through the full document list.
+      operationId: listDocumentSeries
+      responses:
+        '200':
+          description: Sorted list of distinct series names.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentSeriesList'
+
   /api/v1/documents/{doc_id}:
     parameters:
       - $ref: '#/components/parameters/doc_id'
@@ -1060,6 +1077,17 @@ components:
           type: string
           nullable: true
           description: Opaque cursor; pass as `page_token` on next request. Null when no more pages.
+
+    DocumentSeriesList:
+      type: object
+      description: List of distinct series names currently assigned to documents.
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            type: string
+          description: Sorted distinct non-empty series values.
 
     PatchDocumentBody:
       type: object

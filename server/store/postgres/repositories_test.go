@@ -158,6 +158,34 @@ func TestDocumentRepo_ListPaginated(t *testing.T) {
 	}
 }
 
+func TestDocumentRepo_ListDistinctSeries(t *testing.T) {
+	repo := openTestDB(t).Documents()
+	ctx := context.Background()
+
+	beta, alpha, empty := "Beta", "Alpha", ""
+	docs := []model.Document{
+		{ID: "d1", ContentHash: "h1", Series: &beta, LinkedContexts: []string{}, CreatedAt: ts(), UpdatedAt: ts()},
+		{ID: "d2", ContentHash: "h2", Series: &alpha, LinkedContexts: []string{}, CreatedAt: ts(), UpdatedAt: ts()},
+		{ID: "d3", ContentHash: "h3", Series: &beta, LinkedContexts: []string{}, CreatedAt: ts(), UpdatedAt: ts()}, // dup
+		{ID: "d4", ContentHash: "h4", Series: &empty, LinkedContexts: []string{}, CreatedAt: ts(), UpdatedAt: ts()},
+		{ID: "d5", ContentHash: "h5", Series: nil, LinkedContexts: []string{}, CreatedAt: ts(), UpdatedAt: ts()},
+	}
+	for _, d := range docs {
+		if err := repo.Insert(ctx, d); err != nil {
+			t.Fatalf("insert %s: %v", d.ID, err)
+		}
+	}
+
+	got, err := repo.ListDistinctSeries(ctx)
+	if err != nil {
+		t.Fatalf("ListDistinctSeries: %v", err)
+	}
+	want := []string{"Alpha", "Beta"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
 // ── Job tests ─────────────────────────────────────────────────────────────────
 
 func TestJobRepo_UpsertGet(t *testing.T) {
