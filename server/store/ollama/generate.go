@@ -66,9 +66,10 @@ func (c *Client) GenerateText(ctx context.Context, model, prompt string, onChunk
 }
 
 // ChatWithTools calls /api/chat with optional tool definitions (non-streaming).
-// Returns (responseText, toolCalls, error). If the model requests tool calls,
-// responseText is empty; the caller should execute the tools and call again.
-func (c *Client) ChatWithTools(ctx context.Context, model string, messages []port.LLMMessage, tools []port.LLMTool) (string, []port.LLMToolCall, error) {
+// Returns the response, including any out-of-band reasoning the model emitted
+// (Thinking, surfaced separately from Text). If the model requests tool calls,
+// Text is empty; the caller should execute the tools and call again.
+func (c *Client) ChatWithTools(ctx context.Context, model string, messages []port.LLMMessage, tools []port.LLMTool) (port.LLMChatResponse, error) {
 	msgs := msgsToOllama(messages)
 
 	payload := map[string]any{
@@ -96,7 +97,7 @@ func (c *Client) ChatWithTools(ctx context.Context, model string, messages []por
 		if b, jerr := json.Marshal(payload); jerr == nil {
 			slog.Debug("ollama chat-with-tools failed", "payload", string(b))
 		}
-		return "", nil, fmt.Errorf("ollama chat-with-tools: %w", err)
+		return port.LLMChatResponse{}, fmt.Errorf("ollama chat-with-tools: %w", err)
 	}
 
 	var resp struct {
@@ -112,32 +113,24 @@ func (c *Client) ChatWithTools(ctx context.Context, model string, messages []por
 		} `json:"message"`
 	}
 	if err := json.Unmarshal(body, &resp); err != nil {
-		return "", nil, fmt.Errorf("ollama chat-with-tools decode: %w", err)
+		return port.LLMChatResponse{}, fmt.Errorf("ollama chat-with-tools decode: %w", err)
 	}
 
+	out := port.LLMChatResponse{
+		Text:     resp.Message.Content,
+		Thinking: resp.Message.Thinking,
+	}
 	if len(resp.Message.ToolCalls) > 0 {
-		calls := make([]port.LLMToolCall, len(resp.Message.ToolCalls))
+		out.ToolCalls = make([]port.LLMToolCall, len(resp.Message.ToolCalls))
 		for i, tc := range resp.Message.ToolCalls {
-			calls[i] = port.LLMToolCall{
+			out.ToolCalls[i] = port.LLMToolCall{
 				ID:        fmt.Sprintf("call_%d", i),
 				Name:      tc.Function.Name,
 				Arguments: tc.Function.Arguments,
 			}
 		}
-		return "", calls, nil
 	}
-	return wrapThinking(resp.Message.Thinking, resp.Message.Content), nil, nil
-}
-
-// wrapThinking re-attaches Ollama's separate thinking field as a <think> block
-// in front of the content so downstream renderers (the chat UI) can show it
-// collapsed. Reasoning models like qwen3 return reasoning out-of-band; without
-// this it's silently dropped.
-func wrapThinking(thinking, content string) string {
-	if thinking == "" {
-		return content
-	}
-	return "<think>" + thinking + "</think>\n\n" + content
+	return out, nil
 }
 
 // msgsToOllama converts port.LLMMessage slice to the Ollama API message format.

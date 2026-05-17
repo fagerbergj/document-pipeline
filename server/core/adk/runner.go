@@ -15,6 +15,8 @@ import (
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/toolconfirmation"
 	"google.golang.org/genai"
+
+	"github.com/fagerbergj/document-pipeline/server/core/port"
 )
 
 // AppName and UserID are the fixed ADK session coordinates used throughout the
@@ -39,6 +41,11 @@ const (
 	// StreamEventToken is a chunk of model-generated text. Concatenate to
 	// rebuild the model's natural output.
 	StreamEventToken StreamEventKind = "token"
+	// StreamEventThinking is a chunk of out-of-band reasoning (e.g. qwen3's
+	// `thinking` field). Surfaced separately from token so the client can
+	// render it as a collapsible reasoning trace without parsing the content
+	// stream.
+	StreamEventThinking StreamEventKind = "thinking"
 	// StreamEventToolCall fires when the model dispatches a tool. Args
 	// carries the model-supplied arguments.
 	StreamEventToolCall StreamEventKind = "tool_call"
@@ -68,7 +75,7 @@ type StreamEvent struct {
 // data: field. Centralizes the wire format so chat and worker stay aligned.
 func (e StreamEvent) JSONPayload() ([]byte, error) {
 	switch e.Kind {
-	case StreamEventToken:
+	case StreamEventToken, StreamEventThinking:
 		return json.Marshal(map[string]string{"text": e.Text})
 	case StreamEventToolCall:
 		return json.Marshal(map[string]any{"name": e.ToolName, "args": e.ToolArgs})
@@ -89,13 +96,15 @@ func (e StreamEvent) JSONPayload() ([]byte, error) {
 func (e StreamEvent) SSEEventType() string {
 	switch e.Kind {
 	case StreamEventToken:
-		return "token"
+		return port.EventToken
+	case StreamEventThinking:
+		return port.EventThinking
 	case StreamEventToolCall:
-		return "tool_call"
+		return port.EventToolCall
 	case StreamEventToolResult:
-		return "tool_result"
+		return port.EventToolResult
 	case StreamEventConfirmationRequest:
-		return "confirmation_request"
+		return port.EventConfirmationRequest
 	}
 	return ""
 }
@@ -191,7 +200,11 @@ func RunAgent(
 					})
 				}
 			}
-			if event.IsFinalResponse() && p.Text != "" {
+			if p.Text != "" && p.Thought {
+				if onEvent != nil {
+					onEvent(StreamEvent{Kind: StreamEventThinking, Text: p.Text})
+				}
+			} else if event.IsFinalResponse() && p.Text != "" {
 				finalText.WriteString(p.Text)
 				if onEvent != nil {
 					onEvent(StreamEvent{Kind: StreamEventToken, Text: p.Text})
