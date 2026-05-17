@@ -38,23 +38,17 @@ describe('Sidebar counts', () => {
     expect(screen.getByRole('link', { name: /chat/i })).toBeInTheDocument()
   })
 
-  it('renders status labels as read-only text', () => {
+  it('renders status rows as filter links', () => {
     renderSidebar()
-    expect(screen.getByText('pending')).toBeInTheDocument()
-    expect(screen.getByText('done')).toBeInTheDocument()
-    expect(screen.getByText('error')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /pending/i })).toHaveAttribute('href', '/?status=pending')
+    expect(screen.getByRole('link', { name: /done/i })).toHaveAttribute('href', '/?status=done')
   })
 
-  it('has no clickable filter chips for status', () => {
-    renderSidebar()
-    // Status items are divs, not buttons — no role="button" for status rows
-    const buttons = screen.queryAllByRole('button')
-    const statusButtons = buttons.filter(b => /pending|running|waiting|error|done/.test(b.textContent ?? ''))
-    expect(statusButtons).toHaveLength(0)
-  })
-
-  it('does not show clear filter button', () => {
+  it('toggles the active status filter off when re-clicked', () => {
     renderSidebar('/?status=pending')
-    expect(screen.queryByRole('button', { name: /clear filter/i })).not.toBeInTheDocument()
+    // Already pending → link should clear the param
+    expect(screen.getByRole('link', { name: /pending/i })).toHaveAttribute('href', '/')
+    // Other statuses still set their own
+    expect(screen.getByRole('link', { name: /done/i })).toHaveAttribute('href', '/?status=done')
   })
 })

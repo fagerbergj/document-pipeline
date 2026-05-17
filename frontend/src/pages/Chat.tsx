@@ -507,10 +507,11 @@ export default function Chat() {
                 ) : (
                   <div>
                     <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl rounded-tl-sm px-5 py-4">
-                      {msg.parts && msg.parts.length > 0 ? (
+                      {msg.parts && msg.parts.length > 0 && (
                         <AssistantParts parts={msg.parts} showCursor={streaming && idx === messages.length - 1} />
-                      ) : (
-                        <span className="flex items-center gap-1 h-5">
+                      )}
+                      {streaming && idx === messages.length - 1 && msg.parts?.[msg.parts.length - 1]?.kind !== 'text' && (
+                        <span className="flex items-center gap-1 h-5 mt-2">
                           <span className="w-2 h-2 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.3s]" />
                           <span className="w-2 h-2 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.15s]" />
                           <span className="w-2 h-2 rounded-full bg-gray-400 animate-bounce" />

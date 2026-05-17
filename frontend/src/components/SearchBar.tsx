@@ -5,34 +5,44 @@ const STATUSES = ['pending', 'running', 'waiting', 'error', 'done']
 
 interface Props {
   stages: string[]
+  series: string[]
+}
+
+// quoteIfNeeded wraps a Lucene field value in double quotes if it contains
+// whitespace, escaping any embedded quotes. Required so `series:foo bar`
+// doesn't parse as `series:foo AND bar`.
+function quoteIfNeeded(v: string): string {
+  return /\s/.test(v) ? `"${v.replace(/"/g, '\\"')}"` : v
 }
 
 // buildLuceneQuery assembles a Lucene query string from structured params.
-export function buildLuceneQuery(s: string, status: string, stage: string): string {
+export function buildLuceneQuery(s: string, status: string, stage: string, series: string = ''): string {
   const parts: string[] = []
   if (s.trim()) {
-    const term = s.trim().includes(' ') ? `"${s.trim().replace(/"/g, '\\"')}"` : s.trim()
+    const term = quoteIfNeeded(s.trim())
     parts.push(`(title:${term} OR content:${term})`)
   }
   if (status) parts.push(`status:${status}`)
   if (stage)  parts.push(`stage:${stage}`)
+  if (series) parts.push(`series:${quoteIfNeeded(series)}`)
   return parts.join(' AND ')
 }
 
-export default function SearchBar({ stages }: Props) {
+export default function SearchBar({ stages, series }: Props) {
   const [searchParams, setSearchParams] = useSearchParams()
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // URL params
-  const s      = searchParams.get('s') ?? ''
-  const status = searchParams.get('status') ?? ''
-  const stage  = searchParams.get('stage') ?? ''
-  const adv    = searchParams.get('adv') ?? ''   // raw lucene when non-empty
-  const isAdv  = searchParams.has('adv')
+  const s         = searchParams.get('s') ?? ''
+  const status    = searchParams.get('status') ?? ''
+  const stage     = searchParams.get('stage') ?? ''
+  const seriesSel = searchParams.get('series') ?? ''
+  const adv       = searchParams.get('adv') ?? ''   // raw lucene when non-empty
+  const isAdv     = searchParams.has('adv')
 
   // Local text states for controlled inputs
   const [textInput, setTextInput] = useState(s)
-  const [advInput, setAdvInput]   = useState(adv || buildLuceneQuery(s, status, stage))
+  const [advInput, setAdvInput]   = useState(adv || buildLuceneQuery(s, status, stage, seriesSel))
 
   function setParam(key: string, value: string) {
     const next = new URLSearchParams(searchParams)
@@ -57,9 +67,9 @@ export default function SearchBar({ stages }: Props) {
   }
 
   function enterAdvanced() {
-    const assembled = buildLuceneQuery(s, status, stage)
+    const assembled = buildLuceneQuery(s, status, stage, seriesSel)
     const next = new URLSearchParams(searchParams)
-    next.delete('s'); next.delete('status'); next.delete('stage')
+    next.delete('s'); next.delete('status'); next.delete('stage'); next.delete('series')
     next.delete('page_token')
     if (assembled) next.set('adv', assembled)
     else next.set('adv', '')
@@ -82,8 +92,9 @@ export default function SearchBar({ stages }: Props) {
   }
 
   const activePills = [
-    status && { key: 'status', label: `status: ${status}` },
-    stage  && { key: 'stage',  label: `stage: ${stage}` },
+    status    && { key: 'status', label: `status: ${status}` },
+    stage     && { key: 'stage',  label: `stage: ${stage}` },
+    seriesSel && { key: 'series', label: `series: ${seriesSel}` },
   ].filter(Boolean) as { key: string; label: string }[]
 
   if (isAdv) {
@@ -142,6 +153,16 @@ export default function SearchBar({ stages }: Props) {
         >
           <option value="">Stage</option>
           {stages.map(st => <option key={st} value={st}>{st}</option>)}
+        </select>
+
+        {/* Series dropdown */}
+        <select
+          value={seriesSel}
+          onChange={e => setParam('series', e.target.value)}
+          className="text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300 dark:bg-gray-700 dark:text-gray-100 max-w-[12rem]"
+        >
+          <option value="">Series</option>
+          {series.map(name => <option key={name} value={name}>{name}</option>)}
         </select>
 
         {/* Advanced toggle */}

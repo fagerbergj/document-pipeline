@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api'
 import type { JobSummary } from '../generated/types.gen'
@@ -20,6 +20,21 @@ interface SidebarProps {
 
 export default function Sidebar({ open, onClose }: SidebarProps) {
   const { pathname } = useLocation()
+  const [searchParams] = useSearchParams()
+  const activeStatus = searchParams.get('status') ?? ''
+  const activeStage  = searchParams.get('stage') ?? ''
+
+  // dashboardFilterTo returns a `/?…` URL that toggles the given filter:
+  // selecting the already-active value clears it.
+  function dashboardFilterTo(key: 'status' | 'stage', value: string): string {
+    const next = new URLSearchParams(searchParams)
+    next.delete('page_token')
+    const current = next.get(key) ?? ''
+    if (current === value) next.delete(key)
+    else next.set(key, value)
+    const qs = next.toString()
+    return qs ? `/?${qs}` : '/'
+  }
 
   const { data: pipelineDetail } = useQuery({
     queryKey: ['pipeline'],
@@ -119,14 +134,19 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
             <div className="space-y-1">
               {STATUSES.map(s => {
                 const n = statusCounts[s] ?? 0
+                const active = activeStatus === s
                 return (
-                  <div key={s} className="flex items-center justify-between px-2 py-1.5 text-sm text-gray-400">
+                  <Link
+                    key={s}
+                    to={dashboardFilterTo('status', s)}
+                    className={`flex items-center justify-between px-2 py-1.5 text-sm rounded-md transition-colors ${active ? 'bg-gray-800 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800/50'}`}
+                  >
                     <div className="flex items-center gap-2">
                       <span className={`w-2 h-2 rounded-full ${STATUS_COLORS[s]}`} />
                       <span className="capitalize">{s}</span>
                     </div>
                     {n > 0 && <span className="text-xs text-gray-500">{n}</span>}
-                  </div>
+                  </Link>
                 )
               })}
             </div>
@@ -139,11 +159,16 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
               <div className="space-y-1">
                 {pipelineStages.map(s => {
                   const n = stageCounts[s.name] ?? 0
+                  const active = activeStage === s.name
                   return (
-                    <div key={s.name} className="flex items-center justify-between px-2 py-1.5 text-sm text-gray-400">
+                    <Link
+                      key={s.name}
+                      to={dashboardFilterTo('stage', s.name)}
+                      className={`flex items-center justify-between px-2 py-1.5 text-sm rounded-md transition-colors ${active ? 'bg-gray-800 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800/50'}`}
+                    >
                       <span className="font-mono text-xs">{s.name}</span>
                       {n > 0 && <span className="text-xs text-gray-500">{n}</span>}
-                    </div>
+                    </Link>
                   )
                 })}
               </div>
