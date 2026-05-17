@@ -3,12 +3,12 @@ package core
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"log/slog"
-	"strings"
 	"time"
 
+	"github.com/fagerbergj/document-pipeline/server/core/model"
 	"github.com/fagerbergj/document-pipeline/server/core/port"
+	"github.com/fagerbergj/document-pipeline/server/core/stagefield"
 )
 
 // IndexerService polls the index_queue table and keeps OpenSearch in sync with SQLite.
@@ -150,9 +150,9 @@ func (s *IndexerService) indexDoc(ctx context.Context, docID string) error {
 		return err
 	}
 
-	content := stringField(stageData, "clarify", "clarified_text")
-	summary := stringField(stageData, "classify", "summary")
-	tags := parseTagsField(stageData, "classify", "tags")
+	content := stagefield.String(stageData, model.StageNameClarify, model.FieldClarifiedText)
+	summary := stagefield.String(stageData, model.StageNameClassify, model.FieldSummary)
+	tags := stagefield.Tags(stageData, model.StageNameClassify, model.FieldTags)
 
 	jobs, err := s.jobs.ListForDocument(ctx, docID)
 	if err != nil {
@@ -179,28 +179,6 @@ func (s *IndexerService) indexDoc(ctx context.Context, docID string) error {
 	}
 
 	return s.indexer.Index(ctx, idoc)
-}
-
-func stringField(stageData map[string]map[string]any, stage, field string) string {
-	if sd, ok := stageData[stage]; ok {
-		if v, ok := sd[field].(string); ok {
-			return v
-		}
-	}
-	return ""
-}
-
-func parseTagsField(stageData map[string]map[string]any, stage, field string) []string {
-	raw := stringField(stageData, stage, field)
-	if raw == "" {
-		return nil
-	}
-	raw = strings.TrimSpace(raw)
-	var tags []string
-	if err := json.Unmarshal([]byte(raw), &tags); err != nil {
-		return nil
-	}
-	return tags
 }
 
 func ptrStr(s *string) string {

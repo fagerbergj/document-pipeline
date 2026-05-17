@@ -55,6 +55,7 @@ func NewRouter(h *handler, frontendFS fs.FS) http.Handler {
 		r.Patch("/chats/{chat_id}", h.patchChat)
 		r.Delete("/chats/{chat_id}", h.deleteChat)
 		r.Post("/chats/{chat_id}/messages", h.sendChatMessage)
+		r.Post("/chats/{chat_id}/confirmations/{call_id}", h.confirmChatToolCall)
 	})
 
 	// SPA fallback — serve frontend static files, fall through to index.html

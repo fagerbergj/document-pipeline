@@ -189,8 +189,10 @@ func mockWhisperServer(t *testing.T, transcript string) *whisperMock {
 	return m
 }
 
-// makeAudioPipeline returns the full transcribe -> ocr -> clarify -> classify ->
-// summarize -> embed pipeline used by the audio integration tests.
+// makeAudioPipeline returns a minimal transcribe -> ocr -> classify ->
+// summarize pipeline used by the audio integration tests. It omits the
+// production `correct`, `clarify`, and `embed` stages so tests can validate
+// worker mechanics without LLM-shaped output parsing.
 func makeAudioPipeline(promptPath string) model.PipelineConfig {
 	return model.PipelineConfig{
 		MaxConcurrent: 1,
@@ -490,16 +492,42 @@ func (e *testEnv) uploadText(t *testing.T, filename, content string) string {
 // endpoint and returns the HTTP response (caller checks status / parses body).
 func (e *testEnv) uploadBytes(t *testing.T, filename string, data []byte) *http.Response {
 	t.Helper()
+	return e.uploadBytesWithFields(t, filename, data, nil)
+}
+
+// uploadBytesWithFields is like uploadBytes but also writes additional text
+// form fields and/or named file parts. textFields entries are written as plain
+// form fields; fileParts entries are written as file parts under their map
+// key (e.g. "artifact:transcribe:raw_text" → multipart file part with that
+// field name).
+func (e *testEnv) uploadBytesWithFields(t *testing.T, filename string, data []byte, textFields map[string]string, fileParts ...filePart) *http.Response {
+	t.Helper()
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
 	fw, _ := mw.CreateFormFile("file", filename)
 	fw.Write(data)
+	for k, v := range textFields {
+		_ = mw.WriteField(k, v)
+	}
+	for _, fp := range fileParts {
+		pw, err := mw.CreateFormFile(fp.fieldName, fp.filename)
+		if err != nil {
+			t.Fatalf("multipart create part %s: %v", fp.fieldName, err)
+		}
+		pw.Write(fp.data)
+	}
 	mw.Close()
 	resp, err := http.Post(e.srv.URL+"/api/v1/documents", mw.FormDataContentType(), &buf)
 	if err != nil {
 		t.Fatalf("upload: %v", err)
 	}
 	return resp
+}
+
+type filePart struct {
+	fieldName string // multipart form-data part name (e.g. "artifact:transcribe:raw_text")
+	filename  string // filename inside the part header (informational)
+	data      []byte
 }
 
 // waitForJobStatus polls until any job for docID reaches one of the given
@@ -782,6 +810,155 @@ func TestSkipOCRForAudio(t *testing.T) {
 	}
 	if stages["transcribe"] != "done" {
 		t.Errorf("expected transcribe to reach done, got %q", stages["transcribe"])
+	}
+}
+
+// TestUserSuppliedTranscript: when the upload includes a multipart part named
+// "artifact:transcribe:raw_text", the transcribe stage must consume that
+// artifact's content verbatim and skip whisper entirely.
+func TestUserSuppliedTranscript(t *testing.T) {
+	env := newAudioTestEnv(t,
+		`<output><tags>["audio"]</tags><summary>note</summary><confidence>high</confidence></output>`,
+		"WHISPER SHOULD NOT BE CALLED")
+	defer env.Close()
+
+	supplied := "[SPEAKER_00] hello there\n[SPEAKER_01] hi back"
+	resp := env.uploadBytesWithFields(t, "memo.mp4", []byte("fake-mp4-bytes"), nil,
+		filePart{fieldName: "artifact:transcribe:raw_text", filename: "transcript.txt", data: []byte(supplied)},
+	)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("upload: %d %s", resp.StatusCode, b)
+	}
+	var out map[string]any
+	json.NewDecoder(resp.Body).Decode(&out)
+	docID, _ := out["document_id"].(string)
+	if docID == "" {
+		t.Fatal("expected document_id in response")
+	}
+
+	for i := 0; i < 8; i++ {
+		if err := env.worker.RunOnce(context.Background()); err != nil {
+			t.Fatalf("RunOnce[%d]: %v", i, err)
+		}
+	}
+
+	if env.whisper.requests != 0 {
+		t.Errorf("whisper must not be called when transcript is supplied; got %d requests", env.whisper.requests)
+	}
+
+	res := env.get(t, "/api/v1/jobs?document_id="+docID)
+	items, _ := res["data"].([]any)
+	var transcribeJob map[string]any
+	for _, it := range items {
+		j, _ := it.(map[string]any)
+		if fmt.Sprint(j["stage"]) == "transcribe" {
+			transcribeJob = j
+			break
+		}
+	}
+	if transcribeJob == nil {
+		t.Fatal("no transcribe job found")
+	}
+	if got := fmt.Sprint(transcribeJob["status"]); got != "done" {
+		t.Errorf("transcribe status: got %q want done", got)
+	}
+
+	// Assert provenance + content: the run should record source as
+	// "(user-supplied transcript)" and raw_text should be the supplied text.
+	// The list endpoint returns summaries without runs, so fetch the detail.
+	jobID := fmt.Sprint(transcribeJob["id"])
+	detail := env.get(t, "/api/v1/jobs/"+jobID)
+	runs, _ := detail["runs"].([]any)
+	if len(runs) == 0 {
+		t.Fatal("transcribe job has no runs")
+	}
+	run, _ := runs[0].(map[string]any)
+	gotSource := previewForField(run, "inputs", "source")
+	if gotSource != "(user-supplied transcript)" {
+		t.Errorf("input source: got %q want %q", gotSource, "(user-supplied transcript)")
+	}
+	gotRawText := previewForField(run, "outputs", "raw_text")
+	if gotRawText != supplied {
+		t.Errorf("output raw_text: got %q want %q", gotRawText, supplied)
+	}
+}
+
+// previewForField pulls the `preview` value from a run's inputs/outputs list
+// matching the given field name. Returns "" if not found.
+func previewForField(run map[string]any, side, field string) string {
+	fields, _ := run[side].([]any)
+	for _, f := range fields {
+		m, _ := f.(map[string]any)
+		if fmt.Sprint(m["field"]) == field {
+			return fmt.Sprint(m["preview"])
+		}
+	}
+	return ""
+}
+
+// TestSeedArtifactUnknownStage: posting an artifact part for a stage that
+// doesn't exist in the pipeline is rejected with 422.
+func TestSeedArtifactUnknownStage(t *testing.T) {
+	env := newAudioTestEnv(t, `<output/>`, "unused")
+	defer env.Close()
+
+	resp := env.uploadBytesWithFields(t, "memo.mp3", []byte("fake-mp3"), nil,
+		filePart{fieldName: "artifact:nosuchstage:raw_text", filename: "x.txt", data: []byte("data")},
+	)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 422 for unknown stage; got %d (%s)", resp.StatusCode, b)
+	}
+}
+
+// TestSeedArtifactMalformedFieldName: artifact parts whose name doesn't match
+// the artifact:<stage>:<field> shape are rejected with 422.
+func TestSeedArtifactMalformedFieldName(t *testing.T) {
+	env := newAudioTestEnv(t, `<output/>`, "unused")
+	defer env.Close()
+
+	resp := env.uploadBytesWithFields(t, "memo.mp3", []byte("fake-mp3"), nil,
+		filePart{fieldName: "artifact:onlyonepart", filename: "x.txt", data: []byte("data")},
+	)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422 for malformed artifact field name; got %d", resp.StatusCode)
+	}
+}
+
+// TestSeedArtifactPathTraversal: a seed artifact whose Content-Disposition
+// filename contains directory components must not escape the artifact dir.
+// We just verify the upload succeeds (filename gets stripped) — if the path
+// escaped, the server would either error or write outside the vault.
+func TestSeedArtifactPathTraversal(t *testing.T) {
+	env := newAudioTestEnv(t, `<output/>`, "unused")
+	defer env.Close()
+
+	resp := env.uploadBytesWithFields(t, "memo.mp3", []byte("fake-mp3"), nil,
+		filePart{fieldName: "artifact:transcribe:raw_text", filename: "../../etc/foo.txt", data: []byte("safe content")},
+	)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 201, got %d: %s", resp.StatusCode, b)
+	}
+}
+
+// TestSeedArtifactOversize: artifact parts larger than the per-part cap are rejected.
+func TestSeedArtifactOversize(t *testing.T) {
+	env := newAudioTestEnv(t, `<output/>`, "unused")
+	defer env.Close()
+
+	big := []byte(strings.Repeat("a", (1<<20)+1))
+	resp := env.uploadBytesWithFields(t, "memo.mp3", []byte("fake-mp3"), nil,
+		filePart{fieldName: "artifact:transcribe:raw_text", filename: "big.txt", data: big},
+	)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422 for oversize artifact; got %d", resp.StatusCode)
 	}
 }
 

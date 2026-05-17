@@ -190,6 +190,8 @@ func toArtifacts(arts []model.Artifact) []schema.Artifact {
 			Filename:     a.Filename,
 			ContentType:  a.ContentType,
 			CreatedJobId: toUUIDPtr(a.CreatedJobID),
+			Stage:        a.Stage,
+			Field:        a.Field,
 			CreatedAt:    a.CreatedAt,
 			UpdatedAt:    a.UpdatedAt,
 		})
@@ -215,25 +217,6 @@ func toRagRetrieval(r model.RAGConfig) schema.RagRetrieval {
 		MaxSources:   intPtr(r.MaxSources),
 		MinimumScore: float32Ptr(r.MinimumScore),
 	}
-}
-
-func toSourceDocs(refs []model.SourceRef) []schema.SourceDoc {
-	out := make([]schema.SourceDoc, 0, len(refs))
-	for _, r := range refs {
-		doc := schema.SourceDoc{
-			DocumentId: toUUIDPtr(&r.DocumentID),
-			SeriesName: strPtr(r.SeriesName),
-			Title:      strPtr(r.Title),
-			Summary:    strPtr(r.Summary),
-			DateMonth:  strPtr(r.DateMonth),
-			Score:      float32(r.Score),
-		}
-		if r.DocumentID == "" {
-			doc.DocumentId = nil
-		}
-		out = append(out, doc)
-	}
-	return out
 }
 
 // ── Pipelines ─────────────────────────────────────────────────────────────────

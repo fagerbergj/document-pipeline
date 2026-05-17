@@ -13,11 +13,14 @@ const (
 	PayloadSeriesName = "series_name"
 	PayloadPrevChunk  = "prev_chunk_id"
 	PayloadNextChunk  = "next_chunk_id"
+	// PayloadContext is the LLM-produced situating context generated when an
+	// embed stage runs with contextual_model set. Stored so retrieval results
+	// can show both the chunk and the situating sentence.
+	PayloadContext = "context"
 )
 
 // EmbedStore stores and retrieves document embeddings.
-// Implemented by store/embed.EmbedStoreCoordinator, which coordinates
-// a vector store (Qdrant) and a search index (Open WebUI) internally.
+// Implemented by store/embed.EmbedStoreCoordinator over Qdrant.
 //
 // Search performs hybrid retrieval (dense vector + BM25 sparse) when the
 // underlying store supports it. queryText is the raw user query used to build

@@ -58,20 +58,11 @@ export interface DocSummary {
 }
 
 // Chat types (generator returns unknown for these responses)
-export interface SourceDoc {
-  document_id: string
-  title: string | null
-  summary: string | null
-  date_month: string | null
-  score: number
-}
-
 export interface ChatMessage {
   id: string
   external_id?: string | null
   role: 'user' | 'assistant'
   content: string
-  sources?: SourceDoc[] | null
   created_at: string
 }
 
@@ -155,7 +146,14 @@ export const api = {
   putJobStatus: (jobId: string, status: 'pending' | 'done' | 'error') =>
     unwrap(putJobStatusApiV1JobsJobIdStatusPut({ path: { job_id: jobId }, body: { status } })),
 
-  patchRun: (jobId: string, runId: string, patch: { questions?: { segment: string; question: string; answer?: string | null }[] | null }) =>
+  patchRun: (
+    jobId: string,
+    runId: string,
+    patch: {
+      questions?: { segment: string; question: string; answer?: string | null }[] | null
+      outputs?: { field: string; content: string }[] | null
+    },
+  ) =>
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     unwrap(patchRunApiV1JobsJobIdRunsRunIdPatch({ path: { job_id: jobId, run_id: runId }, body: patch as any })),
 
@@ -176,14 +174,26 @@ export const api = {
   // ── Upload (FormData — bypasses generated client) ─────────────────────────
   uploadDocument: async (
     file: File,
-    opts?: { title?: string; additional_context?: string; linked_contexts?: string[]; series?: string },
+    opts?: {
+      title?: string
+      additional_context?: string
+      linked_contexts?: string[]
+      series?: string
+      // Pre-seeded stage outputs. Each entry becomes a multipart file part
+      // named `artifact:<stage>:<field>` that the server tags onto the doc.
+      // Common case: { stage: 'transcribe', field: 'raw_text', file: <transcript.txt> }
+      artifacts?: { stage: string; field: string; file: File }[]
+    },
   ) => {
     const fd = new FormData()
     fd.append('file', file)
     if (opts?.title) fd.append('title', opts.title)
     if (opts?.additional_context) fd.append('additional_context', opts.additional_context)
-    if (opts?.linked_contexts?.length) fd.append('linked_contexts', opts.linked_contexts.join(','))
+    if (opts?.linked_contexts?.length) fd.append('linked_contexts', JSON.stringify(opts.linked_contexts))
     if (opts?.series) fd.append('series', opts.series)
+    for (const a of opts?.artifacts ?? []) {
+      fd.append(`artifact:${a.stage}:${a.field}`, a.file)
+    }
     const res = await fetch('/api/v1/documents', { method: 'POST', body: fd })
     const json = await res.json()
     if (!res.ok) throw Object.assign(new Error(json.error ?? 'Upload failed'), { status: res.status, body: json })
@@ -214,6 +224,22 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content }),
+      signal,
+    }),
+
+  // decideConfirmation submits the user's approve/reject decision for a
+  // pending tool-call confirmation. The response body is an SSE stream
+  // (continuation on approve, single `done` event on reject).
+  decideConfirmation: (
+    chatId: string,
+    callId: string,
+    body: { confirmed: boolean; content?: string },
+    signal?: AbortSignal,
+  ): Promise<Response> =>
+    fetch(`/api/v1/chats/${chatId}/confirmations/${callId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
       signal,
     }),
 }

@@ -1,10 +1,9 @@
 // Package embed provides EmbedStoreCoordinator, which implements port.EmbedStore
-// by coordinating a Qdrant vector store and an Open WebUI knowledge base.
+// by delegating to a Qdrant vector store.
 package embed
 
 import (
 	"context"
-	"log/slog"
 
 	"github.com/fagerbergj/document-pipeline/server/core/port"
 )
@@ -18,54 +17,21 @@ type qdrantStore interface {
 	DeleteBySeries(ctx context.Context, series string) error
 }
 
-// webUIStore is the subset of openwebui.Client used here.
-type webUIStore interface {
-	Upsert(ctx context.Context, docID, title, text string, metadata map[string]any) error
-	Delete(ctx context.Context, docID string) error
-}
-
-// EmbedStoreCoordinator implements port.EmbedStore.
-// It writes embeddings to Qdrant and syncs document text to Open WebUI.
-// Open WebUI errors are logged but do not fail the operation.
+// EmbedStoreCoordinator implements port.EmbedStore over a Qdrant backend.
 type EmbedStoreCoordinator struct {
-	qdrant   qdrantStore
-	webUI    webUIStore
-	useWebUI bool
+	qdrant qdrantStore
 }
 
 var _ port.EmbedStore = (*EmbedStoreCoordinator)(nil)
 
-// New returns a coordinator backed by both Qdrant and Open WebUI.
-func New(qdrant qdrantStore, webUI webUIStore) *EmbedStoreCoordinator {
-	return &EmbedStoreCoordinator{qdrant: qdrant, webUI: webUI, useWebUI: true}
-}
-
-// NewQdrantOnly returns a coordinator backed only by Qdrant (no Open WebUI).
-func NewQdrantOnly(qdrant qdrantStore) *EmbedStoreCoordinator {
+// New returns a coordinator backed by Qdrant.
+func New(qdrant qdrantStore) *EmbedStoreCoordinator {
 	return &EmbedStoreCoordinator{qdrant: qdrant}
 }
 
-// Upsert stores the embedding in Qdrant and syncs the document to Open WebUI.
-// The payload may contain "title" and "text" keys used by Open WebUI.
+// Upsert stores the embedding in Qdrant.
 func (c *EmbedStoreCoordinator) Upsert(ctx context.Context, id string, textVector []float32, imageVector []float32, payload map[string]any) error {
-	if err := c.qdrant.Upsert(ctx, id, textVector, imageVector, payload); err != nil {
-		return err
-	}
-	if c.useWebUI {
-		title, _ := payload[port.PayloadTitle].(string)
-		text, _ := payload[port.PayloadText].(string)
-		meta := make(map[string]any, len(payload))
-		for k, v := range payload {
-			if k == port.PayloadTitle || k == port.PayloadText {
-				continue
-			}
-			meta[k] = v
-		}
-		if err := c.webUI.Upsert(ctx, id, title, text, meta); err != nil {
-			slog.Warn("open webui upsert failed (non-fatal)", "err", err, "doc_id", shortID(id))
-		}
-	}
-	return nil
+	return c.qdrant.Upsert(ctx, id, textVector, imageVector, payload)
 }
 
 // Search queries Qdrant for hybrid (dense + sparse BM25) matches when the
@@ -79,24 +45,9 @@ func (c *EmbedStoreCoordinator) GetByIDs(ctx context.Context, ids []string) ([]p
 	return c.qdrant.GetByIDs(ctx, ids)
 }
 
-func shortID(id string) string {
-	if len(id) > 8 {
-		return id[:8]
-	}
-	return id
-}
-
-// DeleteByDocID removes all chunk embeddings for a document from Qdrant and Open WebUI.
+// DeleteByDocID removes all chunk embeddings for a document from Qdrant.
 func (c *EmbedStoreCoordinator) DeleteByDocID(ctx context.Context, docID string) error {
-	if err := c.qdrant.DeleteByDocID(ctx, docID); err != nil {
-		return err
-	}
-	if c.useWebUI {
-		if err := c.webUI.Delete(ctx, docID); err != nil {
-			slog.Warn("open webui delete failed (non-fatal)", "err", err, "doc_id", shortID(docID))
-		}
-	}
-	return nil
+	return c.qdrant.DeleteByDocID(ctx, docID)
 }
 
 // DeleteBySeries removes all series corpus embeddings from Qdrant.

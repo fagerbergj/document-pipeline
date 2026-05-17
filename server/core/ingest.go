@@ -39,7 +39,8 @@ type IngestRequest struct {
 	AdditionalContext string
 	LinkedContexts    []string
 	Series            string
-	Meta              IngestMeta // stored in kv for worker use
+	Meta              IngestMeta     // stored in kv for worker use
+	SeedArtifacts     []SeedArtifact // optional user-supplied pre-existing stage outputs
 }
 
 // IngestStreamedRequest carries the inputs for a streamed ingest, where the
@@ -55,6 +56,7 @@ type IngestStreamedRequest struct {
 	LinkedContexts    []string
 	Series            string
 	Meta              IngestMeta
+	SeedArtifacts     []SeedArtifact
 }
 
 // IngestMeta is arbitrary metadata stored in kv for the worker to read at processing time.
@@ -64,6 +66,25 @@ type IngestMeta struct {
 	RawText            string         `json:"raw_text,omitempty"`
 	FileType           model.FileType `json:"file_type,omitempty"`
 }
+
+// SeedArtifact is a user-supplied pre-existing stage output attached at upload
+// time. The worker detects these via ArtifactRepo.GetByStageField and uses
+// them in place of running the stage. Filename, ContentType, and Bytes come
+// from the corresponding multipart part on the upload request.
+type SeedArtifact struct {
+	Stage       string
+	Field       string
+	Filename    string
+	ContentType string
+	Bytes       []byte
+}
+
+// ErrSeedValidation indicates a user-supplied seed artifact was rejected
+// because its stage or field doesn't exist in the pipeline. Handlers map this
+// to a 422 response.
+type ErrSeedValidation struct{ Msg string }
+
+func (e *ErrSeedValidation) Error() string { return e.Msg }
 
 // IngestService creates documents from incoming files.
 type IngestService struct {
@@ -75,6 +96,9 @@ type IngestService struct {
 	store     port.DocumentArtifactStore
 	pipeline  model.PipelineConfig
 	vaultPath string
+	// stageOutputs is a cached stage_name → set(output_field) lookup built from
+	// the pipeline config at construction. Used by validateSeedArtifacts.
+	stageOutputs map[string]map[string]bool
 }
 
 func NewIngestService(
@@ -87,7 +111,15 @@ func NewIngestService(
 	pipeline model.PipelineConfig,
 	vaultPath string,
 ) *IngestService {
-	return &IngestService{docs, jobs, artifacts, events, kv, store, pipeline, vaultPath}
+	stageOutputs := make(map[string]map[string]bool, len(pipeline.Stages))
+	for _, st := range pipeline.Stages {
+		fields := make(map[string]bool, len(st.Outputs))
+		for _, o := range st.Outputs {
+			fields[o.Field] = true
+		}
+		stageOutputs[st.Name] = fields
+	}
+	return &IngestService{docs, jobs, artifacts, events, kv, store, pipeline, vaultPath, stageOutputs}
 }
 
 // Ingest hashes the buffered bytes, checks for duplicates, saves the artifact,
@@ -122,7 +154,7 @@ func (s *IngestService) Ingest(ctx context.Context, req IngestRequest) (model.Jo
 		p := filepath.Join(s.vaultPath, "artifacts", sourceArtifactID, sourceArtifactFilename)
 		mediaPath = &p
 
-	case req.FileType.IsAudio():
+	case req.FileType.IsTranscribable():
 		sourceArtifactID = uuid.NewString()
 		sourceArtifactFilename = hash[:8] + "." + string(req.FileType)
 		sourceContentType = mimeForFileType(req.FileType)
@@ -141,6 +173,10 @@ func (s *IngestService) Ingest(ctx context.Context, req IngestRequest) (model.Jo
 		}
 	}
 
+	if err := s.validateSeedArtifacts(req.SeedArtifacts); err != nil {
+		return model.Job{}, false, err
+	}
+
 	return s.finalize(ctx, finalizeArgs{
 		Hash:              hash,
 		MediaPath:         mediaPath,
@@ -152,6 +188,7 @@ func (s *IngestService) Ingest(ctx context.Context, req IngestRequest) (model.Jo
 		LinkedContexts:    req.LinkedContexts,
 		Series:            req.Series,
 		Meta:              meta,
+		SeedArtifacts:     req.SeedArtifacts,
 		Now:               now,
 	})
 }
@@ -220,6 +257,10 @@ func (s *IngestService) IngestStreamed(ctx context.Context, req IngestStreamedRe
 		}
 	}
 
+	if err := s.validateSeedArtifacts(req.SeedArtifacts); err != nil {
+		return model.Job{}, false, err
+	}
+
 	return s.finalize(ctx, finalizeArgs{
 		Hash:              hash,
 		MediaPath:         &mediaPath,
@@ -231,6 +272,7 @@ func (s *IngestService) IngestStreamed(ctx context.Context, req IngestStreamedRe
 		LinkedContexts:    req.LinkedContexts,
 		Series:            req.Series,
 		Meta:              meta,
+		SeedArtifacts:     req.SeedArtifacts,
 		Now:               now,
 	})
 }
@@ -248,6 +290,7 @@ type finalizeArgs struct {
 	LinkedContexts    []string
 	Series            string
 	Meta              IngestMeta
+	SeedArtifacts     []SeedArtifact
 	Now               time.Time
 }
 
@@ -287,6 +330,12 @@ func (s *IngestService) finalize(ctx context.Context, a finalizeArgs) (model.Job
 		}
 		if err := s.artifacts.Insert(ctx, artifact); err != nil {
 			return model.Job{}, false, fmt.Errorf("insert artifact: %w", err)
+		}
+	}
+
+	for _, seed := range a.SeedArtifacts {
+		if err := s.saveSeedArtifact(ctx, doc.ID, seed, a.Now); err != nil {
+			return model.Job{}, false, err
 		}
 	}
 
@@ -354,6 +403,55 @@ func firstApplicableStage(stages []model.StageDefinition, fileType model.FileTyp
 	return model.StageDefinition{}, false
 }
 
+// validateSeedArtifacts checks each seed's (stage, field) against the pipeline
+// config. Returns *ErrSeedValidation on any mismatch.
+func (s *IngestService) validateSeedArtifacts(seeds []SeedArtifact) error {
+	for _, seed := range seeds {
+		fields, ok := s.stageOutputs[seed.Stage]
+		if !ok {
+			return &ErrSeedValidation{Msg: "unknown stage in seed artifact: " + seed.Stage}
+		}
+		if !fields[seed.Field] {
+			return &ErrSeedValidation{Msg: "stage " + seed.Stage + " has no output field " + seed.Field}
+		}
+		if len(seed.Bytes) == 0 {
+			return &ErrSeedValidation{Msg: "seed artifact " + seed.Stage + "/" + seed.Field + " has empty content"}
+		}
+	}
+	return nil
+}
+
+// saveSeedArtifact writes a user-supplied artifact's bytes to disk and inserts
+// the artifact row tagged with its stage and field. The worker later reads it
+// via ArtifactRepo.GetByStageField and uses it in place of running the stage.
+func (s *IngestService) saveSeedArtifact(ctx context.Context, docID string, seed SeedArtifact, now time.Time) error {
+	artifactID := uuid.NewString()
+	// Client-supplied filename — strip any directory components to prevent path
+	// traversal when joined into the artifact dir by store.Save.
+	filename := filepath.Base(seed.Filename)
+	if filename == "" || filename == "." || filename == "/" {
+		filename = seed.Field
+	}
+	if err := s.store.Save(s.vaultPath, artifactID, filename, seed.Bytes); err != nil {
+		return fmt.Errorf("save seed artifact: %w", err)
+	}
+	stage, field := seed.Stage, seed.Field
+	art := model.Artifact{
+		ID:          artifactID,
+		DocumentID:  docID,
+		Filename:    filename,
+		ContentType: seed.ContentType,
+		Stage:       &stage,
+		Field:       &field,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	if err := s.artifacts.Insert(ctx, art); err != nil {
+		return fmt.Errorf("insert seed artifact: %w", err)
+	}
+	return nil
+}
+
 func mimeForFileType(ft model.FileType) string {
 	switch ft {
 	case model.FileTypePNG:
@@ -376,6 +474,8 @@ func mimeForFileType(ft model.FileType) string {
 		return "audio/ogg"
 	case model.FileTypeFLAC:
 		return "audio/flac"
+	case model.FileTypeMP4:
+		return "video/mp4"
 	}
 	return "application/octet-stream"
 }

@@ -8,7 +8,9 @@ import { api } from '../api'
 import type { DocumentDetail, JobDetail, JobSummary, Run, Artifact } from '../types'
 import StatusBadge from '../components/StatusBadge'
 import LoadingSpinner from '../components/LoadingSpinner'
+import { AssistantParts, appendTextPart, appendToolCall, fillToolResult, type MessagePart } from '../components/AgentParts'
 import DocKebabMenu from '../components/DocKebabMenu'
+import EditableOutput from '../components/EditableOutput'
 
 export default function Document() {
   const { id } = useParams<{ id: string }>()
@@ -19,6 +21,10 @@ export default function Document() {
     queryKey: ['document', id],
     queryFn: () => api.document(id!),
     retry: 1,
+    refetchInterval: q => {
+      const d = q.state.data as DocumentDetail | undefined
+      return d?.current_job_id ? 2000 : false
+    },
   })
 
   const jobId = doc?.current_job_id ?? null
@@ -28,6 +34,10 @@ export default function Document() {
     queryFn: () => api.job(jobId!),
     enabled: !!jobId,
     retry: 1,
+    refetchInterval: q => {
+      const j = q.state.data as JobDetail | undefined
+      return j && (j.status === 'running' || j.status === 'pending') ? 2000 : false
+    },
   })
 
   const { data: allJobsPage } = useQuery({
@@ -109,7 +119,7 @@ export default function Document() {
           <h2 className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-widest">Jobs</h2>
           {job?.status === 'running' && <LiveLogSection jobId={job.id} onDone={refresh} />}
           {job?.status === 'waiting' && latestRun && (
-            <ReviewSection job={job} run={latestRun} onRefresh={refresh} />
+            <ReviewSection job={job} run={latestRun} docId={doc.id} onRefresh={refresh} />
           )}
           {job?.status === 'error' && (
             <ErrorSection job={job} onRefresh={refresh} />
@@ -240,10 +250,8 @@ function ContextSection({ doc, onRefresh }: { doc: DocumentDetail; onRefresh: ()
   const hasContext = !!(doc.additional_context || (doc.linked_contexts?.length ?? 0) > 0)
 
   useEffect(() => {
-    if (editing || hasContext) {
-      api.contexts().then(p => setEntries(p.data ?? [])).catch(() => {})
-    }
-  }, [editing, hasContext])
+    api.contexts().then(p => setEntries(p.data ?? [])).catch(() => {})
+  }, [])
 
   function openEdit() {
     setCtx(doc.additional_context ?? '')
@@ -528,35 +536,38 @@ function TextArtifact({ url, filename, raw, onToggleRaw }: {
 }
 
 function LiveLogSection({ jobId, onDone }: { jobId: string; onDone: () => void }) {
-  const logRef = useRef<HTMLPreElement>(null)
   const [status, setStatus] = useState('connecting…')
   const [statusMsg, setStatusMsg] = useState('')
-  const hasTokens = useRef(false)
+  const [parts, setParts] = useState<MessagePart[]>([])
+  const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    hasTokens.current = false
+    setParts([])
     setStatusMsg('')
     let errorCount = 0
+    let receivedTokens = false
     const es = new EventSource(`/api/v1/jobs/${jobId}/stream`)
     es.addEventListener('status', (e) => {
-      if (!hasTokens.current) {
+      if (!receivedTokens) {
         const data = JSON.parse((e as MessageEvent).data)
         setStatusMsg(data.text ?? '')
       }
     })
     es.addEventListener('token', (e) => {
       errorCount = 0
-      const data = JSON.parse((e as MessageEvent).data)
-      if (logRef.current) {
-        if (!hasTokens.current) {
-          hasTokens.current = true
-          setStatusMsg('')
-          logRef.current.textContent = ''
-        }
-        logRef.current.textContent = (logRef.current.textContent ?? '') + data.text
-        logRef.current.scrollTop = logRef.current.scrollHeight
-      }
+      receivedTokens = true
+      setStatusMsg('')
+      const data = JSON.parse((e as MessageEvent).data) as { text: string }
+      setParts(prev => appendTextPart(prev, data.text))
       setStatus('streaming…')
+    })
+    es.addEventListener('tool_call', (e) => {
+      const data = JSON.parse((e as MessageEvent).data) as { name: string; args?: Record<string, unknown> }
+      setParts(prev => appendToolCall(prev, data.name, data.args ?? {}))
+    })
+    es.addEventListener('tool_result', (e) => {
+      const data = JSON.parse((e as MessageEvent).data) as { name: string; result: unknown }
+      setParts(prev => fillToolResult(prev, data.name, data.result))
     })
     es.addEventListener('done', () => {
       es.close()
@@ -569,10 +580,13 @@ function LiveLogSection({ jobId, onDone }: { jobId: string; onDone: () => void }
         es.close()
         onDone()
       }
-      // otherwise let EventSource auto-reconnect silently
     }
     return () => es.close()
   }, [jobId, onDone])
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+  }, [parts])
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
@@ -580,31 +594,58 @@ function LiveLogSection({ jobId, onDone }: { jobId: string; onDone: () => void }
         <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">Live output</div>
         <span className="text-xs text-gray-400 dark:text-gray-500">{status}</span>
       </div>
-      {status === 'connecting…' && (
+      {parts.length === 0 && (
         <p className="text-xs text-gray-500 animate-pulse mb-2">{statusMsg || 'Waiting for model…'}</p>
       )}
-      <pre ref={logRef}
-        className="bg-gray-950 text-gray-100 rounded-lg p-3 text-xs min-h-24 max-h-96 overflow-y-auto whitespace-pre-wrap font-mono" />
+      {parts.length > 0 && (
+        <div ref={scrollRef} className="max-h-96 overflow-y-auto">
+          <AssistantParts parts={parts} showCursor={status === 'streaming…'} />
+        </div>
+      )}
     </div>
   )
 }
 
-function ReviewSection({ job, run, onRefresh }: {
+
+function ReviewSection({ job, run, docId, onRefresh }: {
   job: JobDetail
   run: Run
+  docId: string
   onRefresh: () => void
 }) {
   const [answers, setAnswers] = useState<Record<number, string>>({})
+  const [editing, setEditing] = useState(false)
+  // edits is keyed by output field name; only fields the user actually changed
+  // are sent on save.
+  const [edits, setEdits] = useState<Record<string, string>>({})
   const [mutError, setMutError] = useState<string | null>(null)
 
+  const editableOutputs = (run.outputs ?? []).filter(o => !!o.field)
+  const hasEdits = Object.keys(edits).length > 0
+
+  // saveEdits PATCHes any field-level edits to the run. Returns true when there
+  // were edits to save, false otherwise. Throws on failure so callers abort.
+  async function saveEdits() {
+    if (!hasEdits) return false
+    const outputs = Object.entries(edits).map(([field, content]) => ({ field, content }))
+    await api.patchRun(job.id, run.id, { outputs })
+    return true
+  }
+
   const approveMut = useMutation({
-    mutationFn: () => api.putJobStatus(job.id, 'done'),
-    onSuccess: () => { setMutError(null); onRefresh() },
+    mutationFn: async () => {
+      await saveEdits()
+      await api.putJobStatus(job.id, 'done')
+    },
+    onSuccess: () => { setMutError(null); setEditing(false); setEdits({}); onRefresh() },
     onError: (e: unknown) => setMutError(e instanceof Error ? e.message : String(e)),
   })
-  const rejectMut = useMutation({
-    mutationFn: () => api.putJobStatus(job.id, 'pending'),
-    onSuccess: () => { setMutError(null); onRefresh() },
+  const rerunMut = useMutation({
+    mutationFn: async () => {
+      await saveEdits()
+      await api.putJobStatus(job.id, 'pending')
+    },
+    onSuccess: () => { setMutError(null); setEditing(false); setEdits({}); onRefresh() },
     onError: (e: unknown) => setMutError(e instanceof Error ? e.message : String(e)),
   })
   const clarifyMut = useMutation({
@@ -622,7 +663,7 @@ function ReviewSection({ job, run, onRefresh }: {
     onError: (e: unknown) => setMutError(e instanceof Error ? e.message : String(e)),
   })
 
-  const busy = approveMut.isPending || rejectMut.isPending || clarifyMut.isPending
+  const busy = approveMut.isPending || rerunMut.isPending || clarifyMut.isPending
 
   const confidenceColor = run.confidence === 'high'
     ? 'bg-green-100 text-green-700'
@@ -640,13 +681,19 @@ function ReviewSection({ job, run, onRefresh }: {
         </div>
 
         {/* Outputs */}
-        {run.outputs?.length > 0 && (
-          <div className="mb-4">
-            {run.outputs.map((out, i) => (
-              <div key={i} className="mb-3">
-                {out.field && <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-1">{out.field}</div>}
-                <pre className="bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 text-gray-800 dark:text-gray-200 rounded-lg p-3 text-xs font-mono whitespace-pre-wrap max-h-80 overflow-y-auto">{out.preview}</pre>
-              </div>
+        {editableOutputs.length > 0 && (
+          <div className="mb-4 space-y-3">
+            {editableOutputs.map(out => (
+              <FetchedEditableOutput
+                key={out.field}
+                docId={docId}
+                field={out.field!}
+                artifactId={out.artifact_id}
+                preview={out.preview ?? ''}
+                editing={editing}
+                value={edits[out.field!]}
+                onChange={(text) => setEdits(prev => ({ ...prev, [out.field!]: text }))}
+              />
             ))}
           </div>
         )}
@@ -675,10 +722,10 @@ function ReviewSection({ job, run, onRefresh }: {
         {mutError && (
           <div className="mb-3 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 border border-red-100 dark:border-red-800 rounded-lg px-3 py-2">{mutError}</div>
         )}
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button onClick={() => approveMut.mutate()} disabled={busy}
             className="px-4 py-1.5 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
-            Approve
+            {hasEdits ? 'Save & approve' : 'Approve'}
           </button>
           {run.questions?.length > 0 && (
             <button onClick={() => clarifyMut.mutate()} disabled={busy}
@@ -686,10 +733,27 @@ function ReviewSection({ job, run, onRefresh }: {
               Re-run with answers
             </button>
           )}
-          <button onClick={() => rejectMut.mutate()} disabled={busy}
+          <button onClick={() => rerunMut.mutate()} disabled={busy}
             className="px-4 py-1.5 text-sm font-medium border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50">
-            Re-run
+            {hasEdits ? 'Save & re-run' : 'Re-run'}
           </button>
+          {editableOutputs.length > 0 && (
+            editing ? (
+              <button
+                onClick={() => { setEditing(false); setEdits({}) }}
+                disabled={busy}
+                className="px-4 py-1.5 text-sm font-medium border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50">
+                Cancel edits
+              </button>
+            ) : (
+              <button
+                onClick={() => setEditing(true)}
+                disabled={busy}
+                className="px-4 py-1.5 text-sm font-medium border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50">
+                Edit
+              </button>
+            )
+          )}
         </div>
       </div>
 
@@ -722,6 +786,43 @@ function ErrorSection({ job, onRefresh }: { job: JobDetail; onRefresh: () => voi
   )
 }
 
+
+// FetchedEditableOutput is the doc-page wrapper around the shared
+// EditableOutput. It fetches the full artifact text on mount (so view mode
+// can render the rich version instead of just the preview), then delegates
+// rendering to the shared component. The parent owns the `value` state for
+// edit mode and decides when to PATCH.
+function FetchedEditableOutput({ docId, field, artifactId, preview, editing, value, onChange }: {
+  docId: string
+  field: string
+  artifactId: string
+  preview: string
+  editing: boolean
+  value: string | undefined
+  onChange: (text: string) => void
+}) {
+  const [text, setText] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!artifactId) { setText(preview); return }
+    const url = `/api/v1/documents/${docId}/artifacts/${artifactId}`
+    fetch(url).then(r => r.text()).then(setText).catch(() => setText(preview))
+  }, [docId, artifactId, preview])
+
+  const fetched = text ?? preview
+  const display = value ?? fetched
+  const edited = editing && value !== undefined && value !== fetched
+
+  return (
+    <EditableOutput
+      field={field}
+      content={display}
+      editing={editing}
+      onChange={onChange}
+      edited={edited}
+    />
+  )
+}
 
 function OutputField({ docId, field, artifactId, preview }: { docId: string; field: string; artifactId: string; preview: string }) {
   const isMarkdown = field === 'clarified_text' || field === 'summary' || field === 'narrative_summary'

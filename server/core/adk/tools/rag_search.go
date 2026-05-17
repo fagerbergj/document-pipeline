@@ -3,7 +3,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -44,9 +43,18 @@ func NewRagSearchTool(store port.EmbedStore, embedFn EmbedFn, embedModel string,
 		maxSources = 5
 	}
 	return functiontool.New(functiontool.Config{
-		Name:        "rag_search",
-		Description: "Search the personal knowledge base for notes and documents relevant to a query. Use this when you need context about a topic, person, abbreviation, or event mentioned in the text.",
+		Name: "rag_search",
+		Description: "Semantic search across the personal knowledge base. " +
+			"Use for fuzzy / topical questions like \"what's been said about X?\" or when " +
+			"you need passages from many docs. " +
+			"Query must be PLAIN WORDS — no field:value syntax. " +
+			"If your query contains a colon (e.g. `series:foo`, `tags:bar`), use " +
+			"search_documents instead — this tool will match the colon literally and return junk. " +
+			"Never call with an empty query.",
 	}, func(tctx tool.Context, args RagSearchArgs) (RagSearchResult, error) {
+		if strings.TrimSpace(args.Query) == "" {
+			return RagSearchResult{}, fmt.Errorf("rag_search requires a non-empty query; pick a topic, name, or distinctive phrase and try again — do not call again with an empty query")
+		}
 		slog.Info("rag_search", "query", args.Query, "embed_model", embedModel, "k", maxSources, "min_score", minScore)
 		vec, err := embedFn(tctx, embedModel, args.Query)
 		if err != nil {
@@ -120,28 +128,6 @@ func NewRagSearchTool(store port.EmbedStore, embedFn EmbedFn, embedModel string,
 		}
 		return RagSearchResult{Results: chunks}, nil
 	})
-}
-
-// RagSourcesFromEvents extracts retrieved chunks from tool call results so the
-// caller can report them as sources. results is a slice of (query, result-JSON) pairs
-// accumulated during the agent loop.
-func RagSourcesFromPayloads(payloads []map[string]any) []RagChunk {
-	var all []RagChunk
-	for _, p := range payloads {
-		raw, ok := p["results"]
-		if !ok {
-			continue
-		}
-		b, err := json.Marshal(raw)
-		if err != nil {
-			continue
-		}
-		var chunks []RagChunk
-		if err := json.Unmarshal(b, &chunks); err == nil {
-			all = append(all, chunks...)
-		}
-	}
-	return all
 }
 
 func stringVal(m map[string]any, key string) string {

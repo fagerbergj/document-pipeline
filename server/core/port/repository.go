@@ -56,6 +56,10 @@ type ArtifactRepo interface {
 	Get(ctx context.Context, documentID, artifactID string) (model.Artifact, error)
 	ListForDocument(ctx context.Context, documentID string) ([]model.Artifact, error)
 	ListPaginated(ctx context.Context, filter ArtifactFilter, page model.PageRequest) (model.PageResult[model.Artifact], error)
+	// GetByStageField returns the artifact tagged with the given stage and field
+	// for the document, if any. Used by stages to detect user-seeded outputs.
+	// Returns (zero, false, nil) when no such artifact exists.
+	GetByStageField(ctx context.Context, documentID, stage, field string) (model.Artifact, bool, error)
 	// Delete removes the row by id. The file on disk is the caller's concern.
 	Delete(ctx context.Context, id string) error
 }

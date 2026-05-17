@@ -11,10 +11,6 @@ info:
     execution of a single stage. The frontend polls for state changes and streams live
     LLM output via Server-Sent Events.
 
-servers:
-  - url: http://localhost:8000
-    description: Local development
-
 security:
   - authentik: []
 
@@ -157,7 +153,17 @@ paths:
     post:
       tags: [Documents]
       summary: Upload a document
-      description: Upload a .txt, .md, or image file to create a new document. Text files skip the OCR stage.
+      description: |
+        Upload a .txt, .md, image, audio, or .mp4 file to create a new document.
+        Text files skip the OCR stage.
+
+        Any additional multipart file part named `artifact:<stage>:<field>`
+        (e.g. `artifact:transcribe:raw_text`) is attached to the document as a
+        pre-existing stage output. The named stage will detect the seeded
+        artifact at execution time and use its content in place of running.
+        Common case: upload an `.mp4` together with
+        `artifact:transcribe:raw_text=@transcript.txt` to bypass whisper.
+        Each seed artifact is capped at 1 MiB.
       operationId: uploadDocument
       requestBody:
         required: true
@@ -170,6 +176,9 @@ paths:
                 file:
                   type: string
                   format: binary
+                  description: |
+                    Source file. Accepted extensions: png, jpg, jpeg, txt, md,
+                    webm, wav, mp3, m4a, ogg, flac, mp4.
                 title:
                   type: string
                   nullable: true
@@ -186,6 +195,13 @@ paths:
                   type: string
                   nullable: true
                   description: Series name for grouping related documents into a shared embedding corpus.
+              additionalProperties:
+                type: string
+                format: binary
+                description: |
+                  Properties whose name matches `artifact:<stage>:<field>` are
+                  pre-seeded stage outputs. Filename and content-type come
+                  from the multipart part headers. See endpoint description.
       responses:
         '201':
           description: Document created. Returns initial job detail.
@@ -201,6 +217,15 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
           description: Duplicate file — document already exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: |
+            Validation failure (invalid multipart form, malformed
+            `artifact:*:*` field name, unknown stage or field, or seed
+            artifact exceeds the 1 MiB cap).
           content:
             application/json:
               schema:
@@ -633,6 +658,46 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /api/v1/chats/{chat_id}/confirmations/{call_id}:
+    post:
+      tags: [Chat]
+      summary: Approve or reject a pending tool-call confirmation from the agent
+      description: >
+        When the chat agent invokes a tool that requires human approval (e.g. update_document),
+        the SSE stream emits a `confirmation_request` event carrying a call_id. The client posts
+        the user's decision here. On approve, the agent loop resumes and a fresh SSE stream is
+        returned with the continuation. On reject, the rejection is persisted on the session
+        and no further model response is produced for this turn.
+      operationId: confirmChatToolCall
+      parameters:
+        - name: chat_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: call_id
+          in: path
+          required: true
+          description: The function call ID surfaced by the preceding `confirmation_request` event.
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmChatBody'
+      responses:
+        '200':
+          description: >
+            On approve, SSE stream of the resumed agent loop (token / tool_call / tool_result /
+            confirmation_request / done events). On reject, a single `done` event closes the stream.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+
 components:
 
   # ── Reusable parameters ───────────────────────────────────────────────────────
@@ -910,6 +975,17 @@ components:
           format: uuid
           nullable: true
           description: UUID of the job that created this artifact. Null for source artifacts created during ingest.
+        stage:
+          type: string
+          nullable: true
+          description: |
+            Pipeline stage this artifact represents an output for. Set on
+            user-seeded artifacts attached at upload time. Null on artifacts
+            created automatically by stage execution.
+        field:
+          type: string
+          nullable: true
+          description: Output field name this artifact represents (e.g. `raw_text`). Paired with `stage`.
         created_at:
           type: string
           format: date-time
@@ -1200,7 +1276,7 @@ components:
 
     PatchRunBody:
       type: object
-      description: Fields to update on an existing run. Typically used to record user answers to clarification questions.
+      description: Fields to update on an existing run. Used to record user answers to clarification questions or to overwrite a run's output content.
       properties:
         questions:
           type: array
@@ -1210,6 +1286,23 @@ components:
           description: Questions with updated `answer` values.
         suggestions:
           $ref: '#/components/schemas/RunSuggestions'
+        outputs:
+          type: array
+          nullable: true
+          description: |
+            Output edits. Each entry locates a run output by `field` and
+            overwrites its backing artifact's bytes with `content`. Size and
+            preview are recomputed.
+          items:
+            type: object
+            required: [field, content]
+            properties:
+              field:
+                type: string
+                description: Output field name to replace (e.g. `clarified_text`).
+              content:
+                type: string
+                description: New textual content for the artifact.
 
     PatchJobBody:
       type: object
@@ -1297,36 +1390,6 @@ components:
           default: 0.0
           description: Minimum similarity score for retrieved sources.
 
-    SourceDoc:
-      type: object
-      description: A document or series corpus chunk retrieved from the vector store as a RAG source.
-      required: [score]
-      properties:
-        document_id:
-          type: string
-          format: uuid
-          nullable: true
-          description: UUID of the source document. Null for series corpus chunks.
-        series_name:
-          type: string
-          nullable: true
-          description: Series name for corpus chunks that span multiple documents.
-        title:
-          type: string
-          description: Document title.
-        summary:
-          type: string
-          default: ''
-          description: Brief summary of the document's content.
-        date_month:
-          type: string
-          default: ''
-          description: YYYY-MM month label for the document.
-        score:
-          type: number
-          format: float
-          description: Vector similarity score.
-
     ChatMessage:
       type: object
       description: A single message turn in a chat.
@@ -1347,12 +1410,6 @@ components:
         content:
           type: string
           description: Message text.
-        sources:
-          type: array
-          nullable: true
-          items:
-            $ref: '#/components/schemas/SourceDoc'
-          description: Retrieved source documents (only set on assistant messages).
         created_at:
           type: string
           format: date-time
@@ -1444,6 +1501,22 @@ components:
         content:
           type: string
           description: The user's message text.
+
+    ConfirmChatBody:
+      type: object
+      description: User decision on a pending tool-call confirmation.
+      required: [confirmed]
+      properties:
+        confirmed:
+          type: boolean
+          description: True to approve and run the proposed action; false to reject.
+        content:
+          type: string
+          nullable: true
+          description: >
+            Optional user-edited content to apply instead of the model's original proposal. Only
+            meaningful for tools whose confirmation payload accepts a content override
+            (e.g. update_document). Ignored when `confirmed` is false.
 
   securitySchemes:
     authentik:

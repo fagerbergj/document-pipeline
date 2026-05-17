@@ -2,7 +2,7 @@
 
 import { type Client, formDataBodySerializer, type Options as Options2, type TDataShape } from './client';
 import { client } from './client.gen';
-import type { CreateChatData, CreateChatResponses, CreateContextData, CreateContextResponses, DeleteChatData, DeleteChatErrors, DeleteChatResponses, DeleteContextData, DeleteContextErrors, DeleteContextResponses, DeleteDocumentData, DeleteDocumentErrors, DeleteDocumentResponses, GetArtifactData, GetArtifactErrors, GetArtifactResponses, GetChatData, GetChatErrors, GetChatResponses, GetDocumentData, GetDocumentErrors, GetDocumentResponses, GetJobData, GetJobErrors, GetJobResponses, GetPipelineData, GetPipelineErrors, GetPipelineResponses, ListChatsData, ListChatsResponses, ListContextsData, ListContextsResponses, ListDocumentsData, ListDocumentsResponses, ListJobsData, ListJobsResponses, ListPipelinesData, ListPipelinesResponses, PatchChatData, PatchChatErrors, PatchChatResponses, PatchDocumentData, PatchDocumentErrors, PatchDocumentResponses, PatchJobData, PatchJobErrors, PatchJobResponses, PatchRunData, PatchRunErrors, PatchRunResponses, PutJobStatusData, PutJobStatusErrors, PutJobStatusResponses, ReceiveWebhookData, ReceiveWebhookResponses, SendChatMessageData, SendChatMessageErrors, SendChatMessageResponse, SendChatMessageResponses, StreamJobTokensData, StreamJobTokensErrors, StreamJobTokensResponse, StreamJobTokensResponses, UpdateContextData, UpdateContextErrors, UpdateContextResponses, UploadDocumentData, UploadDocumentErrors, UploadDocumentResponses } from './types.gen';
+import type { ConfirmChatToolCallData, ConfirmChatToolCallErrors, ConfirmChatToolCallResponse, ConfirmChatToolCallResponses, CreateChatData, CreateChatResponses, CreateContextData, CreateContextResponses, DeleteChatData, DeleteChatErrors, DeleteChatResponses, DeleteContextData, DeleteContextErrors, DeleteContextResponses, DeleteDocumentData, DeleteDocumentErrors, DeleteDocumentResponses, GetArtifactData, GetArtifactErrors, GetArtifactResponses, GetChatData, GetChatErrors, GetChatResponses, GetDocumentData, GetDocumentErrors, GetDocumentResponses, GetJobData, GetJobErrors, GetJobResponses, GetPipelineData, GetPipelineErrors, GetPipelineResponses, ListChatsData, ListChatsResponses, ListContextsData, ListContextsResponses, ListDocumentsData, ListDocumentsResponses, ListJobsData, ListJobsResponses, ListPipelinesData, ListPipelinesResponses, PatchChatData, PatchChatErrors, PatchChatResponses, PatchDocumentData, PatchDocumentErrors, PatchDocumentResponses, PatchJobData, PatchJobErrors, PatchJobResponses, PatchRunData, PatchRunErrors, PatchRunResponses, PutJobStatusData, PutJobStatusErrors, PutJobStatusResponses, ReceiveWebhookData, ReceiveWebhookResponses, SendChatMessageData, SendChatMessageErrors, SendChatMessageResponse, SendChatMessageResponses, StreamJobTokensData, StreamJobTokensErrors, StreamJobTokensResponse, StreamJobTokensResponses, UpdateContextData, UpdateContextErrors, UpdateContextResponses, UploadDocumentData, UploadDocumentErrors, UploadDocumentResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -77,7 +77,17 @@ export const listDocuments = <ThrowOnError extends boolean = false>(options?: Op
 /**
  * Upload a document
  *
- * Upload a .txt, .md, or image file to create a new document. Text files skip the OCR stage.
+ * Upload a .txt, .md, image, audio, or .mp4 file to create a new document.
+ * Text files skip the OCR stage.
+ *
+ * Any additional multipart file part named `artifact:<stage>:<field>`
+ * (e.g. `artifact:transcribe:raw_text`) is attached to the document as a
+ * pre-existing stage output. The named stage will detect the seeded
+ * artifact at execution time and use its content in place of running.
+ * Common case: upload an `.mp4` together with
+ * `artifact:transcribe:raw_text=@transcript.txt` to bypass whisper.
+ * Each seed artifact is capped at 1 MiB.
+ *
  */
 export const uploadDocument = <ThrowOnError extends boolean = false>(options: Options<UploadDocumentData, ThrowOnError>) => (options.client ?? client).post<UploadDocumentResponses, UploadDocumentErrors, ThrowOnError>({
     ...formDataBodySerializer,
@@ -353,6 +363,22 @@ export const patchChat = <ThrowOnError extends boolean = false>(options: Options
 export const sendChatMessage = <ThrowOnError extends boolean = false>(options: Options<SendChatMessageData, ThrowOnError, SendChatMessageResponse>) => (options.client ?? client).sse.post<SendChatMessageResponses, SendChatMessageErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/chats/{chat_id}/messages',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Approve or reject a pending tool-call confirmation from the agent
+ *
+ * When the chat agent invokes a tool that requires human approval (e.g. update_document), the SSE stream emits a `confirmation_request` event carrying a call_id. The client posts the user's decision here. On approve, the agent loop resumes and a fresh SSE stream is returned with the continuation. On reject, the rejection is persisted on the session and no further model response is produced for this turn.
+ *
+ */
+export const confirmChatToolCall = <ThrowOnError extends boolean = false>(options: Options<ConfirmChatToolCallData, ThrowOnError, ConfirmChatToolCallResponse>) => (options.client ?? client).sse.post<ConfirmChatToolCallResponses, ConfirmChatToolCallErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/chats/{chat_id}/confirmations/{call_id}',
     ...options,
     headers: {
         'Content-Type': 'application/json',

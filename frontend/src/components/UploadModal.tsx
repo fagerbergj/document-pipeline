@@ -7,10 +7,20 @@ interface Props {
   onClose: () => void
 }
 
+const AUDIO_EXTS = ['mp4', 'mp3', 'm4a', 'wav', 'webm', 'ogg', 'flac']
+
+function isTranscribable(f: File | null): boolean {
+  if (!f) return false
+  const m = f.name.match(/\.([^.]+)$/)
+  return !!m && AUDIO_EXTS.includes(m[1].toLowerCase())
+}
+
 export default function UploadModal({ onClose }: Props) {
   const navigate = useNavigate()
   const fileRef = useRef<HTMLInputElement>(null)
+  const transcriptRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
+  const [transcript, setTranscript] = useState<File | null>(null)
   const [title, setTitle] = useState('')
   const [series, setSeries] = useState('')
   const [additionalContext, setAdditionalContext] = useState('')
@@ -36,6 +46,7 @@ export default function UploadModal({ onClose }: Props) {
       ...(series.trim() ? { series: series.trim() } : {}),
       ...(additionalContext.trim() ? { additional_context: additionalContext.trim() } : {}),
       ...(linkedIds.length > 0 ? { linked_contexts: linkedIds } : {}),
+      ...(transcript ? { artifacts: [{ stage: 'transcribe', field: 'raw_text', file: transcript }] } : {}),
     }),
     onSuccess: (job) => {
       onClose()
@@ -49,6 +60,9 @@ export default function UploadModal({ onClose }: Props) {
   function handleFile(f: File | null) {
     setFile(f)
     setError(null)
+    // Reset the transcript when the media changes so a stale pick doesn't ride
+    // along with a different file (or with a non-transcribable file).
+    setTranscript(null)
     if (f && !title) {
       const stem = f.name.replace(/\.[^.]+$/, '')
       if (stem) setTitle(stem)
@@ -80,7 +94,7 @@ export default function UploadModal({ onClose }: Props) {
           <input
             ref={fileRef}
             type="file"
-            accept=".txt,.md,.png,.jpg,.jpeg,.webm,.wav,.mp3,.m4a,.ogg,.flac"
+            accept=".txt,.md,.png,.jpg,.jpeg,.webm,.wav,.mp3,.m4a,.ogg,.flac,.mp4"
             className="hidden"
             onChange={e => handleFile(e.target.files?.[0] ?? null)}
           />
@@ -92,10 +106,37 @@ export default function UploadModal({ onClose }: Props) {
           ) : (
             <div>
               <div className="text-sm text-gray-500 dark:text-gray-400">Click to choose a file</div>
-              <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">.txt · .md · .png · .jpg · audio (.webm/.wav/.mp3/.m4a/.ogg/.flac)</div>
+              <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">.txt · .md · .png · .jpg · audio (.webm/.wav/.mp3/.m4a/.ogg/.flac/.mp4)</div>
             </div>
           )}
         </div>
+
+        {isTranscribable(file) && (
+          <div className="mb-4">
+            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Transcript file (optional)</label>
+            <input
+              ref={transcriptRef}
+              type="file"
+              accept=".txt,.md,.vtt,.srt,text/*"
+              className="hidden"
+              onChange={e => setTranscript(e.target.files?.[0] ?? null)}
+            />
+            {transcript ? (
+              <div className="flex items-center justify-between text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 dark:bg-gray-700 dark:text-gray-100">
+                <span className="truncate">{transcript.name} <span className="text-xs text-gray-400 dark:text-gray-500">({(transcript.size / 1024).toFixed(1)} KB)</span></span>
+                <button
+                  onClick={() => { setTranscript(null); if (transcriptRef.current) transcriptRef.current.value = '' }}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-sm ml-2"
+                >Remove</button>
+              </div>
+            ) : (
+              <button
+                onClick={() => transcriptRef.current?.click()}
+                className="w-full text-sm text-gray-500 dark:text-gray-400 border border-dashed border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 hover:border-gray-300 dark:hover:border-gray-500"
+              >Choose transcript file — skips whisper</button>
+            )}
+          </div>
+        )}
 
         <div className="mb-4">
           <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Title (optional)</label>

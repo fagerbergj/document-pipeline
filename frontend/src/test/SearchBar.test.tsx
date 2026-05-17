@@ -46,7 +46,7 @@ function renderSearchBar(initialPath = '/') {
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={[initialPath]}>
         <Routes>
-          <Route path="/" element={<SearchBar stages={['ocr', 'clarify', 'classify', 'embed']} />} />
+          <Route path="/" element={<SearchBar stages={['ocr', 'clarify', 'classify', 'embed']} series={['Secret Campaign', 'Daily Notes']} />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>

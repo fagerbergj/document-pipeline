@@ -24,7 +24,6 @@ import (
 	"github.com/fagerbergj/document-pipeline/server/store/filesystem"
 	"github.com/fagerbergj/document-pipeline/server/store/ollama"
 	storeopensearch "github.com/fagerbergj/document-pipeline/server/store/opensearch"
-	"github.com/fagerbergj/document-pipeline/server/store/openwebui"
 	"github.com/fagerbergj/document-pipeline/server/store/postgres"
 	"github.com/fagerbergj/document-pipeline/server/store/prompts"
 	"github.com/fagerbergj/document-pipeline/server/store/qdrant"
@@ -45,9 +44,6 @@ func main() {
 	qdrantURL := flag.String("qdrant", envOr("QDRANT_URL", ""), "Qdrant base URL (empty = skip)")
 	qdrantCollection := flag.String("qdrant-collection", envOr("QDRANT_COLLECTION", "documents"), "Qdrant collection name")
 	qdrantKey := flag.String("qdrant-key", envOr("QDRANT_API_KEY", ""), "Qdrant API key")
-	webUIURL := flag.String("webui", envOr("OPEN_WEBUI_URL", ""), "Open WebUI base URL (empty = skip)")
-	webUIKey := flag.String("webui-key", envOr("OPEN_WEBUI_API_KEY", ""), "Open WebUI API key")
-	webUIKnowledge := flag.String("webui-knowledge", envOr("OPEN_WEBUI_KNOWLEDGE_ID", ""), "Open WebUI knowledge base ID")
 	opensearchURL := flag.String("opensearch", envOr("OPENSEARCH_URL", ""), "OpenSearch base URL (empty = skip)")
 	opensearchIndex := flag.String("opensearch-index", envOr("OPENSEARCH_INDEX", "documents"), "OpenSearch index name")
 	flag.Parse()
@@ -95,14 +91,8 @@ func main() {
 	var embedStore port.EmbedStore
 	if *qdrantURL != "" {
 		q := qdrant.New(*qdrantURL, *qdrantCollection, *qdrantKey)
-		if *webUIURL != "" && *webUIKey != "" && *webUIKnowledge != "" {
-			w := openwebui.New(*webUIURL, *webUIKey, *webUIKnowledge)
-			embedStore = storeembed.New(q, w)
-			log.Info("embed store: Qdrant + Open WebUI")
-		} else {
-			embedStore = storeembed.NewQdrantOnly(q)
-			log.Info("embed store: Qdrant only")
-		}
+		embedStore = storeembed.New(q)
+		log.Info("embed store: Qdrant")
 	} else {
 		embedStore = storeembed.NewNoop()
 		log.Warn("embed store: disabled (no --qdrant URL)")

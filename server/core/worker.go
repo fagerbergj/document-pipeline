@@ -369,7 +369,7 @@ func (w *WorkerService) runTranscribe(
 
 	// Skip non-audio inputs (image + text). Mirrors the OCR text-skip flow:
 	// emit a no-op skipped event so downstream stages still advance.
-	if meta == nil || !meta.FileType.IsAudio() || isSkipFileType(stage, meta.FileType) {
+	if meta == nil || !meta.FileType.IsTranscribable() || isSkipFileType(stage, meta.FileType) {
 		_ = w.jobs.UpdateStatus(ctx, job.ID, string(model.JobStatusDone), now)
 		_ = w.events.Append(ctx, model.StageEvent{DocumentID: doc.ID, Stage: stage.Name, EventType: model.EventSkipped, Timestamp: now})
 		_ = w.advancePipeline(ctx, job, now)
@@ -380,6 +380,22 @@ func (w *WorkerService) runTranscribe(
 	if doc.MediaPath == nil {
 		return fmt.Errorf("no media path on document %s", doc.ID[:8])
 	}
+
+	// User-seeded transcript artifact: if the doc has an artifact tagged with
+	// this stage's name and raw_text field, consume its content as the output
+	// and skip whisper + the Ollama-unload churn.
+	seed, hasSeed, err := w.artifacts.GetByStageField(ctx, doc.ID, stage.Name, "raw_text")
+	if err != nil {
+		return fmt.Errorf("lookup seed artifact: %w", err)
+	}
+	if hasSeed {
+		text, err := readArtifactText(w.store, w.vaultPath, seed)
+		if err != nil {
+			return fmt.Errorf("read seed artifact: %w", err)
+		}
+		return w.finishTranscribe(ctx, doc, job, stage, meta, "(user-supplied transcript)", text)
+	}
+
 	if w.transcriber == nil {
 		return fmt.Errorf("transcribe stage configured but no transcriber wired")
 	}
@@ -414,32 +430,30 @@ func (w *WorkerService) runTranscribe(
 		return nil
 	}
 
+	return w.finishTranscribe(ctx, doc, job, stage, meta, "(audio)", text)
+}
+
+// finishTranscribe writes the transcribe run, applies the title fallback, marks
+// the job done, and advances the pipeline. Shared by the whisper and
+// user-supplied-transcript paths.
+func (w *WorkerService) finishTranscribe(
+	ctx context.Context, doc model.Document, job model.Job,
+	stage model.StageDefinition, meta *IngestMeta,
+	sourceLabel, text string,
+) error {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		text = "(no speech recognised)"
 	}
-	slog.Info("transcribe complete", "doc_id", doc.ID[:8], "chars", len(text))
 
 	outputField := "raw_text"
 	if len(stage.Outputs) > 0 {
 		outputField = stage.Outputs[0].Field
 	}
-	inputs := []fieldDraft{txtField("source", "(audio)")}
+	inputs := []fieldDraft{txtField("source", sourceLabel)}
 	outputs := []fieldDraft{mdField(outputField, text)}
 
-	freshDoc, _ := w.docs.Get(ctx, doc.ID)
-	title := ""
-	if freshDoc.Title != nil && *freshDoc.Title != "" {
-		title = *freshDoc.Title
-	} else if doc.Title != nil {
-		title = *doc.Title
-	} else if meta != nil {
-		title = titleFromText(meta.AttachmentFilename, text)
-	} else {
-		title = titleFromText("", text)
-	}
-
-	now = time.Now().UTC()
+	now := time.Now().UTC()
 	run, err := w.persistRun(ctx, job, inputs, outputs, model.ConfidenceHigh, nil)
 	if err != nil {
 		return err
@@ -447,15 +461,29 @@ func (w *WorkerService) runTranscribe(
 	if err := w.jobs.UpdateRuns(ctx, job.ID, appendRun(job.Runs, run), now); err != nil {
 		return err
 	}
-	if title != "" && (freshDoc.Title == nil || *freshDoc.Title == "") {
-		freshDoc.Title = &title
-		freshDoc.UpdatedAt = now
-		_ = w.docs.Update(ctx, freshDoc)
+
+	freshDoc, _ := w.docs.Get(ctx, doc.ID)
+	if freshDoc.Title == nil || *freshDoc.Title == "" {
+		var newTitle string
+		switch {
+		case doc.Title != nil && *doc.Title != "":
+			newTitle = *doc.Title
+		case meta != nil:
+			newTitle = titleFromText(meta.AttachmentFilename, text)
+		default:
+			newTitle = titleFromText("", text)
+		}
+		if newTitle != "" {
+			freshDoc.Title = &newTitle
+			freshDoc.UpdatedAt = now
+			_ = w.docs.Update(ctx, freshDoc)
+		}
 	}
+
 	_ = w.jobs.UpdateStatus(ctx, job.ID, string(model.JobStatusDone), now)
 	_ = w.events.Append(ctx, model.StageEvent{DocumentID: doc.ID, Stage: stage.Name, EventType: model.EventCompleted, Timestamp: now})
 	_ = w.advancePipeline(ctx, job, now)
-	slog.Info("transcribe done", "doc_id", doc.ID[:8], "stage", stage.Name)
+	slog.Info("transcribe done", "doc_id", doc.ID[:8], "stage", stage.Name, "source", sourceLabel, "chars", len(text))
 	return nil
 }
 
@@ -504,12 +532,27 @@ func (w *WorkerService) runLLMText(
 
 	// input_size_lt_kb: skip the stage when its input is shorter than the
 	// configured threshold (used by `summarize` for already-short documents).
+	// When the stage has a single Output field configured, pass the input
+	// through as that output so downstream stages still find the field they
+	// expect (e.g. clarify reading `narrative_summary` works regardless of
+	// whether summarize actually ran).
 	if isSkipBySize(stage, inputText) {
 		now = time.Now().UTC()
+		if stage.Output != "" {
+			inputs := []fieldDraft{txtField("source", "(passthrough — input below size threshold)")}
+			outputs := []fieldDraft{mdField(stage.Output, inputText)}
+			run, err := w.persistRun(ctx, job, inputs, outputs, model.ConfidenceHigh, nil)
+			if err != nil {
+				return err
+			}
+			if err := w.jobs.UpdateRuns(ctx, job.ID, appendRun(job.Runs, run), now); err != nil {
+				return err
+			}
+		}
 		_ = w.jobs.UpdateStatus(ctx, job.ID, string(model.JobStatusDone), now)
 		_ = w.events.Append(ctx, model.StageEvent{DocumentID: doc.ID, Stage: stage.Name, EventType: model.EventSkipped, Timestamp: now})
 		_ = w.advancePipeline(ctx, job, now)
-		slog.Info("doc skipped (input below size threshold)", "doc_id", doc.ID[:8], "stage", stage.Name, "bytes", len(inputText))
+		slog.Info("doc skipped (input below size threshold)", "doc_id", doc.ID[:8], "stage", stage.Name, "bytes", len(inputText), "passthrough", stage.Output != "")
 		return nil
 	}
 
@@ -566,8 +609,22 @@ func (w *WorkerService) runLLMText(
 	}
 
 	mdl := adk.NewPortLLMModel(w.llm, stage.Model)
-	result, genErr := adk.RunAgent(ctx, mdl, []tool.Tool{w.ragTool}, promptText, userParts, w.sessionSvc, job.ID, func(token string) {
-		w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventToken, Data: token})
+	result, genErr := adk.RunAgent(ctx, mdl, []tool.Tool{w.ragTool}, promptText, userParts, w.sessionSvc, job.ID, func(ev adk.StreamEvent) {
+		// Token events skip JSON-encoding for the live-log stream — that
+		// consumer treats Data as the raw text, not a JSON envelope.
+		if ev.Kind == adk.StreamEventToken {
+			w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventToken, Data: ev.Text})
+			return
+		}
+		eventType := ev.SSEEventType()
+		if eventType == "" {
+			return
+		}
+		payload, err := ev.JSONPayload()
+		if err != nil {
+			return
+		}
+		w.streams.Publish(job.ID, port.StreamEvent{Type: eventType, Data: string(payload)})
 	})
 	if genErr != nil {
 		w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventDone})
@@ -617,8 +674,15 @@ const defaultChunkSize = 1500
 const defaultChunkOverlap = 200
 
 // chunkText splits text into overlapping character-based chunks.
+// Empty/whitespace-only fragments (which can appear at tail boundaries when
+// the input ends in a run of whitespace) are dropped — downstream stores
+// reject blank content, and embedding blanks is wasted work either way.
 func chunkText(text string, size, overlap int) []string {
+	keep := func(c string) bool { return strings.TrimSpace(c) != "" }
 	if len(text) <= size {
+		if !keep(text) {
+			return nil
+		}
 		return []string{text}
 	}
 	step := size - overlap
@@ -631,12 +695,35 @@ func chunkText(text string, size, overlap int) []string {
 		if end > len(text) {
 			end = len(text)
 		}
-		chunks = append(chunks, text[i:end])
+		if c := text[i:end]; keep(c) {
+			chunks = append(chunks, c)
+		}
 		if end == len(text) {
 			break
 		}
 	}
 	return chunks
+}
+
+// contextualizeChunk asks the embed stage's contextual LLM for a 1-2 sentence
+// situating context that locates the chunk inside the document. The document
+// is sent FIRST so any prompt-prefix caching the runtime supports can be
+// reused across chunks. Returns the trimmed text or an error.
+func (w *WorkerService) contextualizeChunk(ctx context.Context, stage model.StageDefinition, document, chunk string) (string, error) {
+	prompt, err := w.prompts.Render(stage.ContextualPrompt, map[string]any{
+		"Document": document,
+		"Chunk":    chunk,
+	})
+	if err != nil {
+		return "", fmt.Errorf("render contextual prompt: %w", err)
+	}
+	var buf strings.Builder
+	if err := w.llm.GenerateText(ctx, stage.ContextualModel, prompt, func(c string) {
+		buf.WriteString(c)
+	}); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(buf.String()), nil
 }
 
 func (w *WorkerService) runEmbed(
@@ -715,7 +802,23 @@ func (w *WorkerService) runEmbed(
 			chunkPayload[port.PayloadNextChunk] = fmt.Sprintf("%s-%04d", doc.ID, i+1)
 		}
 
-		vec, err := w.llm.GenerateEmbed(ctx, stage.Model, chunk)
+		// Contextual embeddings: ask the small LLM to produce a 1-2 sentence
+		// situating context for this chunk, prepend it to the chunk before
+		// embedding, and store the context separately on the payload so
+		// retrieval results can show both. Failure falls back to raw-chunk
+		// embedding rather than failing the whole stage.
+		embedText := chunk
+		if stage.ContextualModel != "" {
+			ctxText, err := w.contextualizeChunk(ctx, stage, inputText, chunk)
+			if err != nil {
+				slog.Warn("contextual embed: falling back to raw chunk", "doc_id", doc.ID[:8], "chunk_index", i, "err", err)
+			} else if ctxText != "" {
+				chunkPayload[port.PayloadContext] = ctxText
+				embedText = ctxText + "\n\n" + chunk
+			}
+		}
+
+		vec, err := w.llm.GenerateEmbed(ctx, stage.Model, embedText)
 		if err != nil {
 			return fmt.Errorf("chunk %d embed: %w", i, err)
 		}
@@ -755,6 +858,12 @@ func (w *WorkerService) runEmbed(
 	return nil
 }
 
+// kvSeriesCorpusHashPrefix is the KV key prefix for the SHA256 of the last
+// successfully-embedded corpus for a series. Used by rebuildSeriesCorpus to
+// short-circuit when nothing has changed since the previous rebuild — without
+// this guard, queueing embed on N docs in a series fires N identical rebuilds.
+const kvSeriesCorpusHashPrefix = "series_corpus_hash:"
+
 // rebuildSeriesCorpus concatenates all docs in the series, chunks, and re-embeds the corpus.
 func (w *WorkerService) rebuildSeriesCorpus(
 	ctx context.Context, doc model.Document, job model.Job, stage model.StageDefinition,
@@ -784,6 +893,20 @@ func (w *WorkerService) rebuildSeriesCorpus(
 		return fmt.Errorf("series %q: no text found across %d docs", series, len(seriesDocs))
 	}
 	combined := strings.Join(parts, "\n\n---\n\n")
+
+	// Skip the rebuild entirely if the corpus hash matches the last successful
+	// rebuild. Embed-replay on every doc in a series would otherwise produce N
+	// identical rebuilds, each hammering qdrant with the same chunks.
+	corpusHash := ContentHash([]byte(combined))
+	hashKey := kvSeriesCorpusHashPrefix + series
+	if prev, ok, err := w.kv.Get(ctx, hashKey); err == nil && ok && prev == corpusHash {
+		now := time.Now().UTC()
+		_ = w.jobs.UpdateStatus(ctx, job.ID, string(model.JobStatusDone), now)
+		_ = w.events.Append(ctx, model.StageEvent{DocumentID: doc.ID, Stage: stage.Name, EventType: model.EventSkipped, Timestamp: now})
+		_ = w.advancePipeline(ctx, job, now)
+		slog.Info("series corpus rebuild skipped — content unchanged", "series", series, "doc_id", doc.ID[:8])
+		return nil
+	}
 
 	chunkSize := stage.ChunkSize
 	if chunkSize <= 0 {
@@ -838,6 +961,9 @@ func (w *WorkerService) rebuildSeriesCorpus(
 	_ = w.jobs.UpdateStatus(ctx, job.ID, string(model.JobStatusDone), now)
 	_ = w.events.Append(ctx, model.StageEvent{DocumentID: doc.ID, Stage: stage.Name, EventType: model.EventCompleted, Timestamp: now})
 	_ = w.advancePipeline(ctx, job, now)
+	// Persist the corpus hash so subsequent embed-replays on other docs in the
+	// series can short-circuit when nothing has changed.
+	_ = w.kv.Set(ctx, hashKey, corpusHash)
 	slog.Info("series corpus rebuilt", "series", series, "docs", len(seriesDocs), "chunks", len(chunks))
 	return nil
 }

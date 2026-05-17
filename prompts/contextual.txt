@@ -1,0 +1,15 @@
+<document>
+{{.Document}}
+</document>
+
+Here is the chunk we want to situate within the whole document:
+<chunk>
+{{.Chunk}}
+</chunk>
+
+Provide a short, succinct context (1-2 sentences) that situates this
+chunk within the overall document, for the purpose of improving search
+retrieval. Identify what this chunk is about, where it fits in the
+document's structure, and what makes it distinct.
+
+Answer with only the context. No preamble, no quotes, no labels.

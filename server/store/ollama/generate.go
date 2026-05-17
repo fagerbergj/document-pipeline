@@ -102,6 +102,7 @@ func (c *Client) ChatWithTools(ctx context.Context, model string, messages []por
 	var resp struct {
 		Message struct {
 			Content   string `json:"content"`
+			Thinking  string `json:"thinking"`
 			ToolCalls []struct {
 				Function struct {
 					Name      string         `json:"name"`
@@ -125,7 +126,18 @@ func (c *Client) ChatWithTools(ctx context.Context, model string, messages []por
 		}
 		return "", calls, nil
 	}
-	return resp.Message.Content, nil, nil
+	return wrapThinking(resp.Message.Thinking, resp.Message.Content), nil, nil
+}
+
+// wrapThinking re-attaches Ollama's separate thinking field as a <think> block
+// in front of the content so downstream renderers (the chat UI) can show it
+// collapsed. Reasoning models like qwen3 return reasoning out-of-band; without
+// this it's silently dropped.
+func wrapThinking(thinking, content string) string {
+	if thinking == "" {
+		return content
+	}
+	return "<think>" + thinking + "</think>\n\n" + content
 }
 
 // msgsToOllama converts port.LLMMessage slice to the Ollama API message format.

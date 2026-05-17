@@ -193,6 +193,17 @@ func (m *mockArtifactRepo) Delete(_ context.Context, id string) error {
 	delete(m.artifacts, id)
 	return nil
 }
+func (m *mockArtifactRepo) GetByStageField(_ context.Context, documentID, stage, field string) (model.Artifact, bool, error) {
+	for _, a := range m.artifacts {
+		if a.DocumentID != documentID || a.Stage == nil || a.Field == nil {
+			continue
+		}
+		if *a.Stage == stage && *a.Field == field {
+			return a, true, nil
+		}
+	}
+	return model.Artifact{}, false, nil
+}
 
 type mockContextRepo struct {
 	entries map[string]model.Context
@@ -723,6 +734,82 @@ func TestPatchRun(t *testing.T) {
 	q := qs[0].(map[string]any)
 	if q["answer"] != "A greeting" {
 		t.Errorf("answer: got %v", q["answer"])
+	}
+}
+
+// TestPatchRun_Outputs: PATCHing a run with an outputs edit overwrites the
+// backing artifact and refreshes the run's preview + size.
+func TestPatchRun_Outputs(t *testing.T) {
+	h, _, jobs := newTestHandler(t)
+	now := time.Now().UTC()
+
+	// Insert an artifact row so patchRun's h.artifacts.Get lookup succeeds.
+	stage, field := "clarify", "clarified_text"
+	h.artifacts.Insert(context.Background(), model.Artifact{
+		ID:          "art-out",
+		DocumentID:  testDocID,
+		Filename:    "clarified_text.md",
+		ContentType: "text/markdown",
+		Stage:       &stage,
+		Field:       &field,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	})
+
+	jobs.Upsert(context.Background(), model.Job{
+		ID:         testJobID,
+		DocumentID: testDocID,
+		Stage:      "clarify",
+		Status:     model.JobStatusWaiting,
+		Runs: []model.Run{{
+			ID:         "run-1",
+			Outputs:    []model.Field{{Field: "clarified_text", ArtifactID: "art-out", Size: 11, Preview: "hello world"}},
+			Confidence: model.ConfidenceLow,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		}},
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
+
+	rr := doRequest(t, h, http.MethodPatch, "/api/v1/jobs/"+testJobID+"/runs/run-1", map[string]any{
+		"outputs": []map[string]string{
+			{"field": "clarified_text", "content": "hand-edited replacement text"},
+		},
+	})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rr.Code, rr.Body.String())
+	}
+	var resp map[string]any
+	decodeResponse(t, rr, &resp)
+	outputs := resp["outputs"].([]any)
+	out := outputs[0].(map[string]any)
+	if out["preview"] != "hand-edited replacement text" {
+		t.Errorf("preview not refreshed: got %v", out["preview"])
+	}
+	if out["size"].(float64) != float64(len("hand-edited replacement text")) {
+		t.Errorf("size not refreshed: got %v", out["size"])
+	}
+}
+
+// TestPatchRun_Outputs_UnknownField: editing a field that's not on the run
+// returns 422.
+func TestPatchRun_Outputs_UnknownField(t *testing.T) {
+	h, _, jobs := newTestHandler(t)
+	now := time.Now().UTC()
+	jobs.Upsert(context.Background(), model.Job{
+		ID: testJobID, DocumentID: testDocID, Stage: "clarify", Status: model.JobStatusWaiting,
+		Runs: []model.Run{{
+			ID: "run-1", Outputs: []model.Field{{Field: "clarified_text", ArtifactID: "art-out"}},
+			Confidence: model.ConfidenceLow, CreatedAt: now, UpdatedAt: now,
+		}},
+		CreatedAt: now, UpdatedAt: now,
+	})
+	rr := doRequest(t, h, http.MethodPatch, "/api/v1/jobs/"+testJobID+"/runs/run-1", map[string]any{
+		"outputs": []map[string]string{{"field": "nope", "content": "x"}},
+	})
+	if rr.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status %d: %s", rr.Code, rr.Body.String())
 	}
 }
 
