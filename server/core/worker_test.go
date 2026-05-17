@@ -72,6 +72,21 @@ func (m *mockDocRepo) ListBySeries(ctx context.Context, series string) ([]model.
 	}
 	return out, nil
 }
+func (m *mockDocRepo) ListDistinctSeries(ctx context.Context) ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	seen := map[string]struct{}{}
+	for _, d := range m.docs {
+		if d.Series != nil && *d.Series != "" {
+			seen[*d.Series] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for s := range seen {
+		out = append(out, s)
+	}
+	return out, nil
+}
 
 type mockJobRepo struct {
 	mu       sync.Mutex

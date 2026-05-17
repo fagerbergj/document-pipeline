@@ -233,6 +233,16 @@ export type PaginatedDocuments = {
 };
 
 /**
+ * List of distinct series names currently assigned to documents.
+ */
+export type DocumentSeriesList = {
+    /**
+     * Sorted distinct non-empty series values.
+     */
+    data: Array<string>;
+};
+
+/**
  * Fields to update on a document. Only present fields are applied.
  */
 export type PatchDocumentBody = {
@@ -882,6 +892,22 @@ export type UploadDocumentResponses = {
 };
 
 export type UploadDocumentResponse = UploadDocumentResponses[keyof UploadDocumentResponses];
+
+export type ListDocumentSeriesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/documents/series';
+};
+
+export type ListDocumentSeriesResponses = {
+    /**
+     * Sorted list of distinct series names.
+     */
+    200: DocumentSeriesList;
+};
+
+export type ListDocumentSeriesResponse = ListDocumentSeriesResponses[keyof ListDocumentSeriesResponses];
 
 export type DeleteDocumentData = {
     body?: never;
