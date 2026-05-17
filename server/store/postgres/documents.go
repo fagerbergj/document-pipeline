@@ -140,6 +140,23 @@ func (r *DocumentRepo) ListBySeries(ctx context.Context, series string) ([]model
 	return scanDocuments(rows)
 }
 
+func (r *DocumentRepo) ListDistinctSeries(ctx context.Context) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx, "SELECT DISTINCT series FROM documents WHERE series IS NOT NULL AND series <> '' ORDER BY series ASC")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
 // ── scan helpers ──────────────────────────────────────────────────────────────
 
 type rowScanner interface {

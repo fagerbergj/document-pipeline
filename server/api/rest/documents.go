@@ -129,6 +129,19 @@ func (h *handler) listDocuments(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *handler) listDocumentSeries(w http.ResponseWriter, r *http.Request) {
+	series, err := h.docs.ListDistinctSeries(r.Context())
+	if err != nil {
+		slog.Error("list distinct series", "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if series == nil {
+		series = []string{}
+	}
+	writeJSON(w, http.StatusOK, schema.DocumentSeriesList{Data: series})
+}
+
 func (h *handler) uploadDocument(w http.ResponseWriter, r *http.Request) {
 	// Hard ceiling on total upload body. ParseMultipartForm's maxMemory arg only
 	// controls memory-vs-disk spillover; without MaxBytesReader a malicious form

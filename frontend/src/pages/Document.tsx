@@ -180,8 +180,7 @@ function SeriesSection({ doc, onRefresh }: { doc: DocumentDetail; onRefresh: () 
   function startEdit() {
     setValue(doc.series ?? '')
     setEditing(true)
-    api.documents({ page_size: 200 }).then(p => {
-      const list = [...new Set((p.data ?? []).map((d: { series?: string | null }) => d.series).filter((s: string | null | undefined): s is string => !!s))]
+    api.documentSeries().then(list => {
       setSeriesList(list)
       setOpen(true)
     }).catch(() => {})

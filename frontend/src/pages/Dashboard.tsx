@@ -70,15 +70,12 @@ export default function Dashboard() {
   const docs = page?.data ?? []
   const jobIds = docs.map(d => d.current_job_id).filter(Boolean).join(',')
 
-  // All distinct series across the corpus, for the series filter dropdown and
-  // the inline series picker. Page size is the cheap upper bound; we don't
-  // currently have a dedicated aggregation endpoint.
-  const { data: allDocsPage } = useQuery({
-    queryKey: ['documents-series-options'],
-    queryFn: () => api.documents({ page_size: 500 }),
+  const { data: seriesData } = useQuery({
+    queryKey: ['document-series'],
+    queryFn: () => api.documentSeries(),
     staleTime: 60_000,
   })
-  const seriesList = [...new Set((allDocsPage?.data ?? []).map(d => d.series).filter((v): v is string => !!v))].sort()
+  const seriesList = seriesData ?? []
 
   const { data: jobsPage } = useQuery({
     queryKey: ['jobs-for-page', jobIds],
