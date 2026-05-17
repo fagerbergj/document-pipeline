@@ -545,36 +545,6 @@ export type RagRetrieval = {
 };
 
 /**
- * A document or series corpus chunk retrieved from the vector store as a RAG source.
- */
-export type SourceDoc = {
-    /**
-     * UUID of the source document. Null for series corpus chunks.
-     */
-    document_id?: string;
-    /**
-     * Series name for corpus chunks that span multiple documents.
-     */
-    series_name?: string;
-    /**
-     * Document title.
-     */
-    title?: string;
-    /**
-     * Brief summary of the document's content.
-     */
-    summary?: string;
-    /**
-     * YYYY-MM month label for the document.
-     */
-    date_month?: string;
-    /**
-     * Vector similarity score.
-     */
-    score: number;
-};
-
-/**
  * A single message turn in a chat.
  */
 export type ChatMessage = {
@@ -594,10 +564,6 @@ export type ChatMessage = {
      * Message text.
      */
     content: string;
-    /**
-     * Retrieved source documents (only set on assistant messages).
-     */
-    sources?: Array<SourceDoc>;
     /**
      * ISO 8601 creation timestamp.
      */

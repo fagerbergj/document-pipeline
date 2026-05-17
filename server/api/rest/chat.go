@@ -536,22 +536,18 @@ func messagesFromSession(sess session.Session) []schema.ChatMessage {
 	for _, id := range order {
 		t := turns[id]
 		if t.userContent != "" {
-			emptyDocs := []schema.SourceDoc{}
 			msgs = append(msgs, schema.ChatMessage{
 				Id:        toUUID(t.userEventID),
 				Role:      schema.User,
 				Content:   t.userContent,
-				Sources:   &emptyDocs,
 				CreatedAt: t.userTimestamp,
 			})
 		}
 		if t.modelContent != "" {
-			emptyDocs := []schema.SourceDoc{}
 			msgs = append(msgs, schema.ChatMessage{
 				Id:        toUUID(t.modelEventID),
 				Role:      schema.Assistant,
 				Content:   t.modelContent,
-				Sources:   &emptyDocs,
 				CreatedAt: t.modelTimestamp,
 			})
 		}

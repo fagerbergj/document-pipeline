@@ -58,20 +58,11 @@ export interface DocSummary {
 }
 
 // Chat types (generator returns unknown for these responses)
-export interface SourceDoc {
-  document_id: string
-  title: string | null
-  summary: string | null
-  date_month: string | null
-  score: number
-}
-
 export interface ChatMessage {
   id: string
   external_id?: string | null
   role: 'user' | 'assistant'
   content: string
-  sources?: SourceDoc[] | null
   created_at: string
 }
 

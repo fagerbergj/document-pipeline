@@ -219,25 +219,6 @@ func toRagRetrieval(r model.RAGConfig) schema.RagRetrieval {
 	}
 }
 
-func toSourceDocs(refs []model.SourceRef) []schema.SourceDoc {
-	out := make([]schema.SourceDoc, 0, len(refs))
-	for _, r := range refs {
-		doc := schema.SourceDoc{
-			DocumentId: toUUIDPtr(&r.DocumentID),
-			SeriesName: strPtr(r.SeriesName),
-			Title:      strPtr(r.Title),
-			Summary:    strPtr(r.Summary),
-			DateMonth:  strPtr(r.DateMonth),
-			Score:      float32(r.Score),
-		}
-		if r.DocumentID == "" {
-			doc.DocumentId = nil
-		}
-		out = append(out, doc)
-	}
-	return out
-}
-
 // ── Pipelines ─────────────────────────────────────────────────────────────────
 
 func toPipeline(cfg model.PipelineConfig) schema.Pipeline {

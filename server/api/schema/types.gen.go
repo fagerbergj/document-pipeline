@@ -254,9 +254,6 @@ type ChatMessage struct {
 
 	// Role Message author.
 	Role ChatMessageRole `json:"role"`
-
-	// Sources Retrieved source documents (only set on assistant messages).
-	Sources *[]SourceDoc `json:"sources,omitempty"`
 }
 
 // ChatMessageRole Message author.
@@ -664,27 +661,6 @@ type RunSuggestions struct {
 type SendMessageBody struct {
 	// Content The user's message text.
 	Content string `json:"content"`
-}
-
-// SourceDoc A document or series corpus chunk retrieved from the vector store as a RAG source.
-type SourceDoc struct {
-	// DateMonth YYYY-MM month label for the document.
-	DateMonth *string `json:"date_month,omitempty"`
-
-	// DocumentId UUID of the source document. Null for series corpus chunks.
-	DocumentId *openapi_types.UUID `json:"document_id,omitempty"`
-
-	// Score Vector similarity score.
-	Score float32 `json:"score"`
-
-	// SeriesName Series name for corpus chunks that span multiple documents.
-	SeriesName *string `json:"series_name,omitempty"`
-
-	// Summary Brief summary of the document's content.
-	Summary *string `json:"summary,omitempty"`
-
-	// Title Document title.
-	Title *string `json:"title,omitempty"`
 }
 
 // StageDetail defines model for StageDetail.
