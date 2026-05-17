@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
@@ -33,8 +34,9 @@ func NewGetDocumentTool(getDoc DocLookupFn, stageData StageDataFn) (tool.Tool, e
 	return functiontool.New(functiontool.Config{
 		Name: "get_document",
 		Description: "Fetch the full polished text (clarified_text) of a specific document by its UUID. " +
-			"Use after search_documents has returned a candidate, or when the user references a doc by " +
-			"an ID you already have. Also returns the doc's summary, tags, and date.",
+			"Use after search_documents returns a candidate id, or when the user references a doc " +
+			"by an id you already have. Also returns the doc's summary, tags, and date. " +
+			"Never call with an empty id — run search_documents first to find one.",
 	}, func(tctx tool.Context, args GetDocumentArgs) (GetDocumentResult, error) {
 		return runGetDocument(tctx, getDoc, stageData, args)
 	})
@@ -43,6 +45,9 @@ func NewGetDocumentTool(getDoc DocLookupFn, stageData StageDataFn) (tool.Tool, e
 // runGetDocument is the tool's inner handler, factored out so it can be
 // invoked from tests without constructing an ADK tool.Context.
 func runGetDocument(ctx context.Context, getDoc DocLookupFn, stageData StageDataFn, args GetDocumentArgs) (GetDocumentResult, error) {
+	if strings.TrimSpace(args.ID) == "" {
+		return GetDocumentResult{}, fmt.Errorf("get_document requires an id; call search_documents first to find a candidate id, then pass it here — do not call again with an empty id")
+	}
 	slog.Info("get_document", "id", args.ID)
 	doc, err := getDoc(ctx, args.ID)
 	if err != nil {

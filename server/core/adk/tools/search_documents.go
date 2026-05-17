@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
@@ -65,12 +66,15 @@ func NewSearchDocumentsTool(
 	}
 	return functiontool.New(functiontool.Config{
 		Name: "search_documents",
-		Description: "Search the personal knowledge base for documents by title, tag, content, date, or series. " +
-			"Returns lean summaries — use get_document to fetch a specific doc's full text. " +
-			"Query syntax is Lucene: bare words are full-text; `title:foo` / `tags:invoice` / " +
-			"`series:notebooks` / `date_month:2026-05` / `stage:done` filter to specific fields; " +
-			"combine with `AND` / `OR`. Use this when the user mentions a specific document by " +
-			"name, date, or topic that lives in one place.",
+		Description: "Lucene search for specific documents by title, tag, content, date, or series. " +
+			"Returns lean summaries (id, title, tags, date) — call get_document on a result's id " +
+			"to fetch its full text. " +
+			"Use whenever the user names a specific document, date, tag, or series, or whenever " +
+			"your query has a colon (`title:foo`, `tags:invoice`, `series:notebooks`, " +
+			"`date_month:2026-05`, `stage:done`). Bare words search full text; combine with " +
+			"AND / OR. " +
+			"For fuzzy or cross-doc topical questions use rag_search instead. " +
+			"Never call with an empty query.",
 	}, func(tctx tool.Context, args SearchDocumentsArgs) (SearchDocumentsResult, error) {
 		return runSearchDocuments(tctx, indexer, getDocs, stageDataBatch, maxResults, args)
 	})
@@ -86,6 +90,9 @@ func runSearchDocuments(
 	maxResults int,
 	args SearchDocumentsArgs,
 ) (SearchDocumentsResult, error) {
+	if strings.TrimSpace(args.Query) == "" {
+		return SearchDocumentsResult{}, fmt.Errorf("search_documents requires a non-empty query; pick a title fragment, tag, date, or series name and try again — do not call again with an empty query")
+	}
 	slog.Info("search_documents", "query", args.Query, "size", maxResults)
 	ids, total, err := indexer.Search(ctx, args.Query, 0, maxResults)
 	if err != nil {
