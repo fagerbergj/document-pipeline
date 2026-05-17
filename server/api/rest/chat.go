@@ -400,19 +400,17 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	result, runErr := adk.RunAgent(r.Context(), mdl, []tool.Tool{ragTool, searchDocsTool, getDocTool}, instruction, userParts, h.sessionSvc, chatID, func(ev adk.StreamEvent) {
+		eventType := ev.SSEEventType()
+		if eventType == "" {
+			return
+		}
+		payload, err := ev.JSONPayload()
+		if err != nil {
+			return
+		}
 		writeMu.Lock()
 		defer writeMu.Unlock()
-		switch ev.Kind {
-		case adk.StreamEventToken:
-			b, _ := json.Marshal(map[string]string{port.EventFieldText: ev.Text})
-			writeSSEEvent(w, port.EventToken, string(b))
-		case adk.StreamEventToolCall:
-			b, _ := json.Marshal(map[string]any{"name": ev.ToolName, "args": ev.ToolArgs})
-			writeSSEEvent(w, port.EventToolCall, string(b))
-		case adk.StreamEventToolResult:
-			b, _ := json.Marshal(map[string]any{"name": ev.ToolName, "result": ev.Result})
-			writeSSEEvent(w, port.EventToolResult, string(b))
-		}
+		writeSSEEvent(w, eventType, string(payload))
 		flusher.Flush()
 	})
 	stopKeepalive()

@@ -610,16 +610,21 @@ func (w *WorkerService) runLLMText(
 
 	mdl := adk.NewPortLLMModel(w.llm, stage.Model)
 	result, genErr := adk.RunAgent(ctx, mdl, []tool.Tool{w.ragTool}, promptText, userParts, w.sessionSvc, job.ID, func(ev adk.StreamEvent) {
-		switch ev.Kind {
-		case adk.StreamEventToken:
+		// Token events skip JSON-encoding for the live-log stream — that
+		// consumer treats Data as the raw text, not a JSON envelope.
+		if ev.Kind == adk.StreamEventToken {
 			w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventToken, Data: ev.Text})
-		case adk.StreamEventToolCall:
-			b, _ := json.Marshal(map[string]any{"name": ev.ToolName, "args": ev.ToolArgs})
-			w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventToolCall, Data: string(b)})
-		case adk.StreamEventToolResult:
-			b, _ := json.Marshal(map[string]any{"name": ev.ToolName, "result": ev.Result})
-			w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventToolResult, Data: string(b)})
+			return
 		}
+		eventType := ev.SSEEventType()
+		if eventType == "" {
+			return
+		}
+		payload, err := ev.JSONPayload()
+		if err != nil {
+			return
+		}
+		w.streams.Publish(job.ID, port.StreamEvent{Type: eventType, Data: string(payload)})
 	})
 	if genErr != nil {
 		w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventDone})

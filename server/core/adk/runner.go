@@ -2,6 +2,7 @@ package adk
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -53,6 +54,33 @@ type StreamEvent struct {
 	ToolName string         // tool_call / tool_result
 	ToolArgs map[string]any // tool_call
 	Result   map[string]any // tool_result
+}
+
+// JSONPayload returns the JSON object that should land in the SSE event's
+// data: field. Centralizes the wire format so chat and worker stay aligned.
+func (e StreamEvent) JSONPayload() ([]byte, error) {
+	switch e.Kind {
+	case StreamEventToken:
+		return json.Marshal(map[string]string{"text": e.Text})
+	case StreamEventToolCall:
+		return json.Marshal(map[string]any{"name": e.ToolName, "args": e.ToolArgs})
+	case StreamEventToolResult:
+		return json.Marshal(map[string]any{"name": e.ToolName, "result": e.Result})
+	}
+	return []byte("{}"), nil
+}
+
+// SSEEventType returns the SSE `event:` type name for this event kind.
+func (e StreamEvent) SSEEventType() string {
+	switch e.Kind {
+	case StreamEventToken:
+		return "token"
+	case StreamEventToolCall:
+		return "tool_call"
+	case StreamEventToolResult:
+		return "tool_result"
+	}
+	return ""
 }
 
 // RunAgent runs an ADK agent loop against a persistent session identified by

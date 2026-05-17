@@ -8,7 +8,7 @@ import { api } from '../api'
 import type { DocumentDetail, JobDetail, JobSummary, Run, Artifact } from '../types'
 import StatusBadge from '../components/StatusBadge'
 import LoadingSpinner from '../components/LoadingSpinner'
-import { AssistantParts, type MessagePart } from '../components/AgentParts'
+import { AssistantParts, appendTextPart, appendToolCall, fillToolResult, type MessagePart } from '../components/AgentParts'
 import DocKebabMenu from '../components/DocKebabMenu'
 
 export default function Document() {
@@ -556,7 +556,7 @@ function LiveLogSection({ jobId, onDone }: { jobId: string; onDone: () => void }
     })
     es.addEventListener('tool_call', (e) => {
       const data = JSON.parse((e as MessageEvent).data) as { name: string; args?: Record<string, unknown> }
-      setParts(prev => [...prev, { kind: 'tool_call', name: data.name, args: data.args ?? {} }])
+      setParts(prev => appendToolCall(prev, data.name, data.args ?? {}))
     })
     es.addEventListener('tool_result', (e) => {
       const data = JSON.parse((e as MessageEvent).data) as { name: string; result: unknown }
@@ -599,28 +599,6 @@ function LiveLogSection({ jobId, onDone }: { jobId: string; onDone: () => void }
   )
 }
 
-function appendTextPart(parts: MessagePart[], text: string): MessagePart[] {
-  const next = [...parts]
-  const last = next[next.length - 1]
-  if (last && last.kind === 'text') {
-    next[next.length - 1] = { ...last, text: last.text + text }
-  } else {
-    next.push({ kind: 'text', text })
-  }
-  return next
-}
-
-function fillToolResult(parts: MessagePart[], name: string, result: unknown): MessagePart[] {
-  const next = [...parts]
-  for (let i = next.length - 1; i >= 0; i--) {
-    const p = next[i]
-    if (p.kind === 'tool_call' && p.name === name && p.result === undefined) {
-      next[i] = { ...p, result }
-      return next
-    }
-  }
-  return next
-}
 
 function ReviewSection({ job, run, docId, onRefresh }: {
   job: JobDetail

@@ -2,12 +2,20 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api, type ChatSummary } from '../api'
-import { AssistantParts, type MessagePart } from '../components/AgentParts'
+import {
+  AssistantParts,
+  appendTextPart,
+  appendToolCall,
+  fillToolResult,
+  partsToText,
+  type MessagePart,
+} from '../components/AgentParts'
 
 interface Message {
   role: 'user' | 'assistant'
-  // For user messages, just plain text. For assistant messages, an ordered
-  // sequence of text segments and tool calls reconstructed from the SSE stream.
+  // User messages carry plain content. Assistant messages carry an ordered
+  // parts array (text segments + tool calls) reconstructed from the SSE
+  // stream; their plain content is derived from the text parts on demand.
   content: string
   parts?: MessagePart[]
 }
@@ -46,67 +54,38 @@ async function readAgentStream(
       try { parsed = JSON.parse(raw) } catch { continue }
       switch (currentEvent) {
         case 'token':
-          if (isTokenPayload(parsed)) handlers.onToken(parsed.text)
+          if (hasStringField(parsed, 'text')) handlers.onToken(parsed.text)
           break
         case 'tool_call':
-          if (isToolCallPayload(parsed)) handlers.onToolCall(parsed.name, parsed.args ?? {})
+          if (hasStringField(parsed, 'name')) {
+            const args = (parsed as { args?: Record<string, unknown> }).args ?? {}
+            handlers.onToolCall(parsed.name, args)
+          }
           break
         case 'tool_result':
-          if (isToolResultPayload(parsed)) handlers.onToolResult(parsed.name, parsed.result)
+          if (hasStringField(parsed, 'name')) {
+            const result = (parsed as unknown as { result: unknown }).result
+            handlers.onToolResult(parsed.name, result)
+          }
           break
         case 'error':
-          if (isErrorPayload(parsed)) handlers.onError(parsed.error)
+          if (hasStringField(parsed, 'error')) handlers.onError(parsed.error)
           break
       }
     }
   }
 }
 
-function isTokenPayload(v: unknown): v is { text: string } {
-  return typeof v === 'object' && v !== null && typeof (v as { text?: unknown }).text === 'string'
-}
-function isToolCallPayload(v: unknown): v is { name: string; args?: Record<string, unknown> } {
-  return typeof v === 'object' && v !== null && typeof (v as { name?: unknown }).name === 'string'
-}
-function isToolResultPayload(v: unknown): v is { name: string; result: unknown } {
-  return typeof v === 'object' && v !== null && typeof (v as { name?: unknown }).name === 'string'
-}
-function isErrorPayload(v: unknown): v is { error: string } {
-  return typeof v === 'object' && v !== null && typeof (v as { error?: unknown }).error === 'string'
+// hasStringField is a type guard for "the JSON payload has a non-empty
+// string field of this name." Used to discriminate SSE event payloads.
+function hasStringField<K extends string>(v: unknown, field: K): v is Record<K, string> {
+  return typeof v === 'object' && v !== null && typeof (v as Record<string, unknown>)[field] === 'string'
 }
 
-// appendText appends streamed text to the last text part of the parts array,
-// creating one if the last part is a tool_call (or the array is empty).
-function appendText(parts: MessagePart[] | undefined, text: string): MessagePart[] {
-  const next = parts ? [...parts] : []
-  const last = next[next.length - 1]
-  if (last && last.kind === 'text') {
-    next[next.length - 1] = { ...last, text: last.text + text }
-  } else {
-    next.push({ kind: 'text', text })
-  }
-  return next
-}
-
-function appendToolCall(parts: MessagePart[] | undefined, name: string, args: Record<string, unknown>): MessagePart[] {
-  return [...(parts ?? []), { kind: 'tool_call', name, args }]
-}
-
-// fillToolResult finds the most recent tool_call part with a matching name
-// that doesn't yet have a result, and attaches the result to it. Searches
-// backward to handle interleaved concurrent tool calls (unlikely today but
-// future-proof).
-function fillToolResult(parts: MessagePart[] | undefined, name: string, result: unknown): MessagePart[] {
-  if (!parts) return []
-  const next = [...parts]
-  for (let i = next.length - 1; i >= 0; i--) {
-    const p = next[i]
-    if (p.kind === 'tool_call' && p.name === name && p.result === undefined) {
-      next[i] = { ...p, result }
-      return next
-    }
-  }
-  return next
+// withParts updates a message's parts and keeps content in sync as the
+// plain-text rendering of the text parts (for copy/download).
+function withParts(m: Message, parts: MessagePart[]): Message {
+  return { ...m, parts, content: partsToText(parts) }
 }
 
 function relativeDate(iso: string): string {
@@ -319,17 +298,17 @@ export default function Chat() {
       await readAgentStream(res.body!, {
         onToken: (text) => {
           setMessages(prev => prev.map((m, i) =>
-            i === assistantIdx ? { ...m, content: m.content + text, parts: appendText(m.parts, text) } : m
+            i === assistantIdx ? withParts(m, appendTextPart(m.parts ?? [], text)) : m
           ))
         },
         onToolCall: (name, args) => {
           setMessages(prev => prev.map((m, i) =>
-            i === assistantIdx ? { ...m, parts: appendToolCall(m.parts, name, args) } : m
+            i === assistantIdx ? withParts(m, appendToolCall(m.parts ?? [], name, args)) : m
           ))
         },
         onToolResult: (name, result) => {
           setMessages(prev => prev.map((m, i) =>
-            i === assistantIdx ? { ...m, parts: fillToolResult(m.parts, name, result) } : m
+            i === assistantIdx ? withParts(m, fillToolResult(m.parts ?? [], name, result)) : m
           ))
         },
         onError: (msg) => setError(msg),

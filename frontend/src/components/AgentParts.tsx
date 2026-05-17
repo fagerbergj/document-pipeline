@@ -25,6 +25,10 @@ export interface ToolCallPart {
 // via AssistantText (which intercepts <think> tags), tool_call parts via
 // ToolBlock. Used by the chat page and document live log.
 export function AssistantParts({ parts, showCursor }: { parts: MessagePart[]; showCursor?: boolean }) {
+  const last = parts[parts.length - 1]
+  // Only show the blinking cursor when streaming text. Rendering it after
+  // a collapsed tool block looks orphaned.
+  const cursorAfterText = showCursor && last?.kind === 'text'
   return (
     <>
       {parts.map((p, i) => {
@@ -33,11 +37,49 @@ export function AssistantParts({ parts, showCursor }: { parts: MessagePart[]; sh
         }
         return <ToolBlock key={i} part={p} />
       })}
-      {showCursor && (
+      {cursorAfterText && (
         <span className="inline-block w-1.5 h-4 bg-gray-400 animate-pulse ml-0.5 align-middle" />
       )}
     </>
   )
+}
+
+// appendTextPart appends streamed text to the last text part, creating a new
+// text part if the last part is a tool_call (or the array is empty).
+export function appendTextPart(parts: MessagePart[], text: string): MessagePart[] {
+  const next = [...parts]
+  const last = next[next.length - 1]
+  if (last && last.kind === 'text') {
+    next[next.length - 1] = { ...last, text: last.text + text }
+  } else {
+    next.push({ kind: 'text', text })
+  }
+  return next
+}
+
+// appendToolCall pushes a new tool_call part with no result yet.
+export function appendToolCall(parts: MessagePart[], name: string, args: Record<string, unknown>): MessagePart[] {
+  return [...parts, { kind: 'tool_call', name, args }]
+}
+
+// fillToolResult finds the most recent tool_call part with a matching name
+// that doesn't yet have a result, and attaches the result to it.
+export function fillToolResult(parts: MessagePart[], name: string, result: unknown): MessagePart[] {
+  const next = [...parts]
+  for (let i = next.length - 1; i >= 0; i--) {
+    const p = next[i]
+    if (p.kind === 'tool_call' && p.name === name && p.result === undefined) {
+      next[i] = { ...p, result }
+      return next
+    }
+  }
+  return next
+}
+
+// partsToText concatenates all text parts into a plain-text rendition,
+// suitable for copy/download. Tool call payloads are omitted.
+export function partsToText(parts: MessagePart[]): string {
+  return parts.filter(p => p.kind === 'text').map(p => (p as TextPart).text).join('')
 }
 
 // AssistantText renders model-emitted text with markdown, intercepting
