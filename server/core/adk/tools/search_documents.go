@@ -129,4 +129,3 @@ func runSearchDocuments(
 	}
 	return SearchDocumentsResult{Results: hits}, nil
 }
-

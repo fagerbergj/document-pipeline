@@ -111,7 +111,6 @@ func TestSearchDocuments_StageDataErrorDegrades(t *testing.T) {
 	}
 }
 
-
 func TestGetDocument_HappyPath(t *testing.T) {
 	getDoc := func(_ context.Context, id string) (model.Document, error) {
 		return model.Document{ID: id, Title: strPtr("Hello"), DateMonth: strPtr("2026-05")}, nil
