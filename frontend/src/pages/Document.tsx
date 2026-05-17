@@ -20,6 +20,10 @@ export default function Document() {
     queryKey: ['document', id],
     queryFn: () => api.document(id!),
     retry: 1,
+    refetchInterval: q => {
+      const d = q.state.data as DocumentDetail | undefined
+      return d?.current_job_id ? 2000 : false
+    },
   })
 
   const jobId = doc?.current_job_id ?? null
@@ -29,6 +33,10 @@ export default function Document() {
     queryFn: () => api.job(jobId!),
     enabled: !!jobId,
     retry: 1,
+    refetchInterval: q => {
+      const j = q.state.data as JobDetail | undefined
+      return j && (j.status === 'running' || j.status === 'pending') ? 2000 : false
+    },
   })
 
   const { data: allJobsPage } = useQuery({
@@ -241,10 +249,8 @@ function ContextSection({ doc, onRefresh }: { doc: DocumentDetail; onRefresh: ()
   const hasContext = !!(doc.additional_context || (doc.linked_contexts?.length ?? 0) > 0)
 
   useEffect(() => {
-    if (editing || hasContext) {
-      api.contexts().then(p => setEntries(p.data ?? [])).catch(() => {})
-    }
-  }, [editing, hasContext])
+    api.contexts().then(p => setEntries(p.data ?? [])).catch(() => {})
+  }, [])
 
   function openEdit() {
     setCtx(doc.additional_context ?? '')
