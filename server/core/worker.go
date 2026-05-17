@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -835,6 +837,12 @@ func (w *WorkerService) runEmbed(
 	return nil
 }
 
+// kvSeriesCorpusHashPrefix is the KV key prefix for the SHA256 of the last
+// successfully-embedded corpus for a series. Used by rebuildSeriesCorpus to
+// short-circuit when nothing has changed since the previous rebuild — without
+// this guard, queueing embed on N docs in a series fires N identical rebuilds.
+const kvSeriesCorpusHashPrefix = "series_corpus_hash:"
+
 // rebuildSeriesCorpus concatenates all docs in the series, chunks, and re-embeds the corpus.
 func (w *WorkerService) rebuildSeriesCorpus(
 	ctx context.Context, doc model.Document, job model.Job, stage model.StageDefinition,
@@ -865,6 +873,22 @@ func (w *WorkerService) rebuildSeriesCorpus(
 	}
 	combined := strings.Join(parts, "\n\n---\n\n")
 
+	// Skip the rebuild entirely if the corpus hash matches the last successful
+	// rebuild. Embed-replay on every doc in a series would otherwise produce N
+	// identical rebuilds, each hammering qdrant and Open WebUI with the same
+	// chunks.
+	hashBytes := sha256.Sum256([]byte(combined))
+	corpusHash := hex.EncodeToString(hashBytes[:])
+	hashKey := kvSeriesCorpusHashPrefix + series
+	if prev, ok, err := w.kv.Get(ctx, hashKey); err == nil && ok && prev == corpusHash {
+		now := time.Now().UTC()
+		_ = w.jobs.UpdateStatus(ctx, job.ID, string(model.JobStatusDone), now)
+		_ = w.events.Append(ctx, model.StageEvent{DocumentID: doc.ID, Stage: stage.Name, EventType: model.EventSkipped, Timestamp: now})
+		_ = w.advancePipeline(ctx, job, now)
+		slog.Info("series corpus rebuild skipped — content unchanged", "series", series, "doc_id", doc.ID[:8])
+		return nil
+	}
+
 	chunkSize := stage.ChunkSize
 	if chunkSize <= 0 {
 		chunkSize = defaultChunkSize
@@ -873,7 +897,17 @@ func (w *WorkerService) rebuildSeriesCorpus(
 	if chunkOverlap <= 0 {
 		chunkOverlap = defaultChunkOverlap
 	}
-	chunks := chunkText(combined, chunkSize, chunkOverlap)
+	rawChunks := chunkText(combined, chunkSize, chunkOverlap)
+	// Drop empty / whitespace-only chunks. Open WebUI's KB upload rejects
+	// blank content with HTTP 400, leaving an orphan file in the system; the
+	// chunker can produce such fragments at tail boundaries.
+	chunks := make([]string, 0, len(rawChunks))
+	for _, c := range rawChunks {
+		if strings.TrimSpace(c) == "" {
+			continue
+		}
+		chunks = append(chunks, c)
+	}
 
 	// Delete old series corpus before rebuilding.
 	if err := w.embed.DeleteBySeries(ctx, series); err != nil {
@@ -918,6 +952,9 @@ func (w *WorkerService) rebuildSeriesCorpus(
 	_ = w.jobs.UpdateStatus(ctx, job.ID, string(model.JobStatusDone), now)
 	_ = w.events.Append(ctx, model.StageEvent{DocumentID: doc.ID, Stage: stage.Name, EventType: model.EventCompleted, Timestamp: now})
 	_ = w.advancePipeline(ctx, job, now)
+	// Persist the corpus hash so subsequent embed-replays on other docs in the
+	// series can short-circuit when nothing has changed.
+	_ = w.kv.Set(ctx, hashKey, corpusHash)
 	slog.Info("series corpus rebuilt", "series", series, "docs", len(seriesDocs), "chunks", len(chunks))
 	return nil
 }
