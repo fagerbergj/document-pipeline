@@ -1,16 +1,112 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import rehypeRaw from 'rehype-raw'
-import { api, type ChatSummary, type SourceDoc } from '../api'
+import { api, type ChatSummary } from '../api'
+import { AssistantParts, type MessagePart } from '../components/AgentParts'
 
 interface Message {
   role: 'user' | 'assistant'
+  // For user messages, just plain text. For assistant messages, an ordered
+  // sequence of text segments and tool calls reconstructed from the SSE stream.
   content: string
-  sources?: SourceDoc[]
-  sourcesOpen?: boolean
+  parts?: MessagePart[]
+}
+
+// readAgentStream parses a server-sent agent event stream into ordered tokens,
+// tool calls, and tool results. It tracks the `event:` line so handlers can
+// dispatch by typed event rather than guessing from payload shape.
+async function readAgentStream(
+  body: ReadableStream<Uint8Array>,
+  handlers: {
+    onToken: (text: string) => void
+    onToolCall: (name: string, args: Record<string, unknown>) => void
+    onToolResult: (name: string, result: unknown) => void
+    onError: (msg: string) => void
+  },
+): Promise<void> {
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  let currentEvent = 'message'
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    const lines = buf.split('\n')
+    buf = lines.pop()!
+    for (const line of lines) {
+      if (line.startsWith('event: ')) {
+        currentEvent = line.slice(7).trim()
+        continue
+      }
+      if (!line.startsWith('data: ')) continue
+      const raw = line.slice(6).trim()
+      if (!raw) continue
+      let parsed: unknown
+      try { parsed = JSON.parse(raw) } catch { continue }
+      switch (currentEvent) {
+        case 'token':
+          if (isTokenPayload(parsed)) handlers.onToken(parsed.text)
+          break
+        case 'tool_call':
+          if (isToolCallPayload(parsed)) handlers.onToolCall(parsed.name, parsed.args ?? {})
+          break
+        case 'tool_result':
+          if (isToolResultPayload(parsed)) handlers.onToolResult(parsed.name, parsed.result)
+          break
+        case 'error':
+          if (isErrorPayload(parsed)) handlers.onError(parsed.error)
+          break
+      }
+    }
+  }
+}
+
+function isTokenPayload(v: unknown): v is { text: string } {
+  return typeof v === 'object' && v !== null && typeof (v as { text?: unknown }).text === 'string'
+}
+function isToolCallPayload(v: unknown): v is { name: string; args?: Record<string, unknown> } {
+  return typeof v === 'object' && v !== null && typeof (v as { name?: unknown }).name === 'string'
+}
+function isToolResultPayload(v: unknown): v is { name: string; result: unknown } {
+  return typeof v === 'object' && v !== null && typeof (v as { name?: unknown }).name === 'string'
+}
+function isErrorPayload(v: unknown): v is { error: string } {
+  return typeof v === 'object' && v !== null && typeof (v as { error?: unknown }).error === 'string'
+}
+
+// appendText appends streamed text to the last text part of the parts array,
+// creating one if the last part is a tool_call (or the array is empty).
+function appendText(parts: MessagePart[] | undefined, text: string): MessagePart[] {
+  const next = parts ? [...parts] : []
+  const last = next[next.length - 1]
+  if (last && last.kind === 'text') {
+    next[next.length - 1] = { ...last, text: last.text + text }
+  } else {
+    next.push({ kind: 'text', text })
+  }
+  return next
+}
+
+function appendToolCall(parts: MessagePart[] | undefined, name: string, args: Record<string, unknown>): MessagePart[] {
+  return [...(parts ?? []), { kind: 'tool_call', name, args }]
+}
+
+// fillToolResult finds the most recent tool_call part with a matching name
+// that doesn't yet have a result, and attaches the result to it. Searches
+// backward to handle interleaved concurrent tool calls (unlikely today but
+// future-proof).
+function fillToolResult(parts: MessagePart[] | undefined, name: string, result: unknown): MessagePart[] {
+  if (!parts) return []
+  const next = [...parts]
+  for (let i = next.length - 1; i >= 0; i--) {
+    const p = next[i]
+    if (p.kind === 'tool_call' && p.name === name && p.result === undefined) {
+      next[i] = { ...p, result }
+      return next
+    }
+  }
+  return next
 }
 
 function relativeDate(iso: string): string {
@@ -91,8 +187,9 @@ export default function Chat() {
         detail.messages.map(m => ({
           role: m.role as 'user' | 'assistant',
           content: m.content,
-          sources: m.sources ?? undefined,
-          sourcesOpen: false,
+          // Historical messages only have the persisted text; tool calls
+          // from past turns aren't reconstructed.
+          parts: m.role === 'assistant' ? [{ kind: 'text', text: m.content }] : undefined,
         }))
       )
       setChats(prev => {
@@ -170,12 +267,6 @@ export default function Chat() {
     scheduleSettingsPatch(systemPrompt, maxSources, val)
   }
 
-  function toggleSources(idx: number) {
-    setMessages(prev => prev.map((m, i) =>
-      i === idx ? { ...m, sourcesOpen: !m.sourcesOpen } : m
-    ))
-  }
-
   function handleCopy(idx: number, content: string) {
     navigator.clipboard.writeText(content)
     setCopied(idx)
@@ -211,7 +302,7 @@ export default function Chat() {
     setStreaming(true)
 
     const assistantIdx = baseMessages.length
-    setMessages(prev => [...prev, { role: 'assistant', content: '', sources: [], sourcesOpen: false }])
+    setMessages(prev => [...prev, { role: 'assistant', content: '', parts: [] }])
 
     abortRef.current?.abort()
     const abort = new AbortController()
@@ -225,39 +316,24 @@ export default function Chat() {
         throw new Error((data as { error?: string }).error || `${res.status} ${res.statusText}`)
       }
 
-      const reader = res.body!.getReader()
-      const decoder = new TextDecoder()
-      let buf = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buf += decoder.decode(value, { stream: true })
-        const lines = buf.split('\n')
-        buf = lines.pop()!
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue
-          const raw = line.slice(6).trim()
-          if (!raw || raw === '{}') continue
-          try {
-            const parsed = JSON.parse(raw)
-            if (Array.isArray(parsed)) {
-              setMessages(prev => prev.map((m, i) =>
-                i === assistantIdx ? { ...m, sources: parsed } : m
-              ))
-            } else if (parsed.text !== undefined) {
-              setMessages(prev => prev.map((m, i) =>
-                i === assistantIdx ? { ...m, content: m.content + parsed.text } : m
-              ))
-            } else if (parsed.error) {
-              setError(parsed.error)
-            }
-          } catch {
-            // ignore
-          }
-        }
-      }
+      await readAgentStream(res.body!, {
+        onToken: (text) => {
+          setMessages(prev => prev.map((m, i) =>
+            i === assistantIdx ? { ...m, content: m.content + text, parts: appendText(m.parts, text) } : m
+          ))
+        },
+        onToolCall: (name, args) => {
+          setMessages(prev => prev.map((m, i) =>
+            i === assistantIdx ? { ...m, parts: appendToolCall(m.parts, name, args) } : m
+          ))
+        },
+        onToolResult: (name, result) => {
+          setMessages(prev => prev.map((m, i) =>
+            i === assistantIdx ? { ...m, parts: fillToolResult(m.parts, name, result) } : m
+          ))
+        },
+        onError: (msg) => setError(msg),
+      })
 
       await loadChats().then(data => setChats(data))
     } catch (err: unknown) {
@@ -452,15 +528,8 @@ export default function Chat() {
                 ) : (
                   <div>
                     <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl rounded-tl-sm px-5 py-4">
-                      {msg.content ? (
-                        <div className="prose prose-sm dark:prose-invert max-w-none">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
-                            {msg.content}
-                          </ReactMarkdown>
-                          {streaming && idx === messages.length - 1 && (
-                            <span className="inline-block w-1.5 h-4 bg-gray-400 animate-pulse ml-0.5 align-middle" />
-                          )}
-                        </div>
+                      {msg.parts && msg.parts.length > 0 ? (
+                        <AssistantParts parts={msg.parts} showCursor={streaming && idx === messages.length - 1} />
                       ) : (
                         <span className="flex items-center gap-1 h-5">
                           <span className="w-2 h-2 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.3s]" />
@@ -484,33 +553,6 @@ export default function Chat() {
                         >
                           Download
                         </button>
-                        {msg.sources && msg.sources.length > 0 && (
-                          <button
-                            onClick={() => toggleSources(idx)}
-                            className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors ml-auto"
-                          >
-                            {msg.sourcesOpen ? '▾' : '▸'} {msg.sources.length} source{msg.sources.length !== 1 ? 's' : ''}
-                          </button>
-                        )}
-                      </div>
-                    )}
-
-                    {msg.sourcesOpen && msg.sources && msg.sources.length > 0 && (
-                      <div className="mt-2 space-y-1.5">
-                        {msg.sources.map((s, si) => (
-                          <Link
-                            key={si}
-                            to={`/documents/${s.document_id}`}
-                            className="block rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-2.5 hover:border-blue-300 dark:hover:border-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <span className="text-sm font-medium text-gray-800 dark:text-gray-100">{s.title}</span>
-                              <span className="text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">score {s.score.toFixed(3)}</span>
-                            </div>
-                            {s.date_month && <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{s.date_month}</div>}
-                            {s.summary && <div className="text-xs text-gray-600 dark:text-gray-300 mt-1 line-clamp-2">{s.summary}</div>}
-                          </Link>
-                        ))}
                       </div>
                     )}
                   </div>

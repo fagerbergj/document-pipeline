@@ -30,15 +30,40 @@ type RunResult struct {
 	ToolResponses []map[string]any
 }
 
+// StreamEventKind discriminates StreamEvent variants.
+type StreamEventKind string
+
+const (
+	// StreamEventToken is a chunk of model-generated text. Concatenate to
+	// rebuild the model's natural output.
+	StreamEventToken StreamEventKind = "token"
+	// StreamEventToolCall fires when the model dispatches a tool. Args
+	// carries the model-supplied arguments.
+	StreamEventToolCall StreamEventKind = "tool_call"
+	// StreamEventToolResult fires when a tool returns. Result carries the
+	// tool's response payload.
+	StreamEventToolResult StreamEventKind = "tool_result"
+)
+
+// StreamEvent is a single discrete event emitted during an agent loop. Only
+// the fields relevant to the Kind are populated.
+type StreamEvent struct {
+	Kind     StreamEventKind
+	Text     string         // StreamEventToken
+	ToolName string         // tool_call / tool_result
+	ToolArgs map[string]any // tool_call
+	Result   map[string]any // tool_result
+}
+
 // RunAgent runs an ADK agent loop against a persistent session identified by
 // sessionID. The session is created if it does not already exist.
 //
 // sessionSvc must be a database-backed session.Service so sessions persist
 // across calls. Each call to RunAgent appends new events to the session,
 // giving the model full conversation history without any manual replay.
-// RunAgent runs an ADK agent loop. onToken is called with each streamed chunk
-// as it becomes available — tool-call announcements and final text. Pass nil to
-// discard intermediate output.
+// onEvent is called with each streamed StreamEvent as it becomes available —
+// model tokens, tool calls, and tool results, in the order they happen. Pass
+// nil to discard intermediate output.
 func RunAgent(
 	ctx context.Context,
 	mdl adkmodel.LLM,
@@ -47,7 +72,7 @@ func RunAgent(
 	userParts []*genai.Part,
 	sessionSvc session.Service,
 	sessionID string,
-	onToken func(string),
+	onEvent func(StreamEvent),
 ) (RunResult, error) {
 	ag, err := llmagent.New(llmagent.Config{
 		Name:        "pipeline_agent",
@@ -92,25 +117,27 @@ func RunAgent(
 			continue
 		}
 		for _, p := range event.Content.Parts {
-			if p.FunctionCall != nil && onToken != nil {
-				// Tool name disambiguates rag_search (semantic) vs
-				// search_documents (Lucene) vs get_document (by-id) etc.
-				// "arg" is whichever single string arg the tool accepts.
-				arg := ""
-				if q, ok := p.FunctionCall.Args["query"].(string); ok {
-					arg = q
-				} else if id, ok := p.FunctionCall.Args["id"].(string); ok {
-					arg = id
-				}
-				onToken(fmt.Sprintf("*`%s` %q…*\n\n", p.FunctionCall.Name, arg))
+			if p.FunctionCall != nil && onEvent != nil {
+				onEvent(StreamEvent{
+					Kind:     StreamEventToolCall,
+					ToolName: p.FunctionCall.Name,
+					ToolArgs: p.FunctionCall.Args,
+				})
 			}
 			if p.FunctionResponse != nil && p.FunctionResponse.Response != nil {
 				toolResponses = append(toolResponses, p.FunctionResponse.Response)
+				if onEvent != nil {
+					onEvent(StreamEvent{
+						Kind:     StreamEventToolResult,
+						ToolName: p.FunctionResponse.Name,
+						Result:   p.FunctionResponse.Response,
+					})
+				}
 			}
 			if event.IsFinalResponse() && p.Text != "" {
 				finalText.WriteString(p.Text)
-				if onToken != nil {
-					onToken(p.Text)
+				if onEvent != nil {
+					onEvent(StreamEvent{Kind: StreamEventToken, Text: p.Text})
 				}
 			}
 		}

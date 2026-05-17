@@ -367,7 +367,10 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 		"Search multiple times with different queries — start broad, follow up on names and " +
 		"terms you encounter. Only stop when results stop adding new information. " +
 		"If a search returns no results, try one broader variant; if still empty, tell the user " +
-		"you couldn't find anything rather than spamming more searches."
+		"you couldn't find anything rather than spamming more searches.\n\n" +
+		"Wrap any planning or reasoning between tool calls in <think>...</think>. The user sees " +
+		"these blocks collapsed and can expand them — write them like you're talking through " +
+		"the problem out loud. Keep the final answer outside the <think> tags."
 	if systemPrompt != "" {
 		instruction += "\n\nAdditional context:\n" + systemPrompt
 	}
@@ -396,12 +399,21 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	result, runErr := adk.RunAgent(r.Context(), mdl, []tool.Tool{ragTool, searchDocsTool, getDocTool}, instruction, userParts, h.sessionSvc, chatID, func(token string) {
-		b, _ := json.Marshal(map[string]string{port.EventFieldText: token})
+	result, runErr := adk.RunAgent(r.Context(), mdl, []tool.Tool{ragTool, searchDocsTool, getDocTool}, instruction, userParts, h.sessionSvc, chatID, func(ev adk.StreamEvent) {
 		writeMu.Lock()
-		writeSSEEvent(w, port.EventToken, string(b))
+		defer writeMu.Unlock()
+		switch ev.Kind {
+		case adk.StreamEventToken:
+			b, _ := json.Marshal(map[string]string{port.EventFieldText: ev.Text})
+			writeSSEEvent(w, port.EventToken, string(b))
+		case adk.StreamEventToolCall:
+			b, _ := json.Marshal(map[string]any{"name": ev.ToolName, "args": ev.ToolArgs})
+			writeSSEEvent(w, port.EventToolCall, string(b))
+		case adk.StreamEventToolResult:
+			b, _ := json.Marshal(map[string]any{"name": ev.ToolName, "result": ev.Result})
+			writeSSEEvent(w, port.EventToolResult, string(b))
+		}
 		flusher.Flush()
-		writeMu.Unlock()
 	})
 	stopKeepalive()
 	writeMu.Lock()
@@ -423,21 +435,6 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = adk.AppendStateEvent(r.Context(), h.sessionSvc, chatID, map[string]any{stateKeyTitle: strings.TrimSpace(title)})
 	}
-
-	retrievedChunks := adktools.RagSourcesFromPayloads(result.ToolResponses)
-	sources := make([]model.SourceRef, 0, len(retrievedChunks))
-	for _, c := range retrievedChunks {
-		sources = append(sources, model.SourceRef{
-			Title:     c.Title,
-			Text:      c.Text,
-			DateMonth: c.DateMonth,
-			Score:     c.Score,
-		})
-	}
-
-	sourceBytes, _ := json.Marshal(toSourceDocs(sources))
-	writeSSEEvent(w, "sources", string(sourceBytes))
-	flusher.Flush()
 
 	writeSSEEvent(w, port.EventDone, "{}")
 	flusher.Flush()
@@ -551,22 +548,12 @@ func messagesFromSession(sess session.Session) []schema.ChatMessage {
 			})
 		}
 		if t.modelContent != "" {
-			chunks := adktools.RagSourcesFromPayloads(t.toolResponses)
-			sources := make([]model.SourceRef, 0, len(chunks))
-			for _, c := range chunks {
-				sources = append(sources, model.SourceRef{
-					Title:     c.Title,
-					Text:      c.Text,
-					DateMonth: c.DateMonth,
-					Score:     c.Score,
-				})
-			}
-			sdocs := toSourceDocs(sources)
+			emptyDocs := []schema.SourceDoc{}
 			msgs = append(msgs, schema.ChatMessage{
 				Id:        toUUID(t.modelEventID),
 				Role:      schema.Assistant,
 				Content:   t.modelContent,
-				Sources:   &sdocs,
+				Sources:   &emptyDocs,
 				CreatedAt: t.modelTimestamp,
 			})
 		}
