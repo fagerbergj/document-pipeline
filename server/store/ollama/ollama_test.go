@@ -196,4 +196,3 @@ func TestGenerateEmbed_EmptyInput(t *testing.T) {
 	c := newClient(t, mux)
 	c.GenerateEmbed(context.Background(), "nomic-embed-text", "")
 }
-
