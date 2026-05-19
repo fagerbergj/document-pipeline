@@ -19,7 +19,7 @@ Orientation for anyone (human or agent) working in this repo.
 
 ```
 openapi.yaml              source of truth for the HTTP API
-docker-compose.yml        local stack (Ollama, Postgres, Qdrant, faster-whisper)
+docker-compose.yml        local stack (llm-swap, Postgres, Qdrant, faster-whisper)
 Makefile                  build / test / generate / lint entrypoints
 
 server/
@@ -34,7 +34,7 @@ server/
     worker.go             pipeline job executor
     ingest.go             document upload + dedupe
   store/                  implementations of core/port interfaces
-    ollama/  postgres/  qdrant/  filesystem/  stream/  whisper/  …
+    openai/  postgres/  qdrant/  filesystem/  stream/  whisper/  …
   web/                    embedded SPA bundle (//go:embed)
 
 frontend/

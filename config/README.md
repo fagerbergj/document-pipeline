@@ -19,7 +19,7 @@ Pipeline configuration. Everything about what stages run, in what order, with wh
 |---|---|---|---|---|
 | `name` | string | yes | all | Unique stage identifier. Used as key in `stage_data` and in `stage_events`. |
 | `type` | string | yes | all | `computer_vision` \| `llm_text` \| `embed` |
-| `model` | string | `computer_vision`, `llm_text`, `embed` | — | Ollama model name. Supports `${VAR}` substitution. |
+| `model` | string | `computer_vision`, `llm_text`, `embed` | — | Model name (resolved by the LLM backend, e.g. an llm-swap key). Supports `${VAR}` substitution. |
 | `prompt` | string | `computer_vision`, `llm_text` | — | Path to prompt file (relative to repo root). |
 | `input` | string | `llm_text`, `embed` | — | Field name in `stage_data` to use as input text. |
 | `output` | string | `llm_text` | — | Field name in `stage_data` to write result to. Use when there is a single text output. |
@@ -58,11 +58,13 @@ Values in `pipeline.yaml` can reference environment variables using `${VAR}` syn
 
 | Variable | Phase | Stage | Description |
 |---|---|---|---|
-| `OCR_MODEL` | 2 | `ocr` | Ollama model for OCR (e.g. `qwen3-vl:30b`) |
-| `OLLAMA_URL` | 2 | all LLM stages | Ollama endpoint (e.g. `http://ollama:11434`) |
-| `CLARIFY_MODEL` | 3 | `clarify` | Ollama model for OCR cleanup (e.g. `gemma4:31b`) |
-| `CLASSIFY_MODEL` | 4 | `classify` | Ollama model for classification (e.g. `gemma4-26b:latest`) |
-| `EMBED_MODEL` | 5 | `embed` | Ollama embedding model (e.g. `nomic-embed-text:v1.5`) |
+| `LLM_URL` | 2 | all LLM stages | OpenAI-compatible LLM endpoint (e.g. `http://llm-swap:11436`) |
+| `LLM_API_KEY` | 2 | all LLM stages | Optional API key for the LLM endpoint |
+| `OCR_MODEL` | 2 | `ocr` | Vision model name (resolved by the LLM backend) |
+| `CLARIFY_MODEL` | 3 | `clarify` | Chat model used for OCR cleanup |
+| `CLASSIFY_MODEL` | 4 | `classify` | Chat model used for classification |
+| `SUMMARIZE_MODEL` | 4 | `summarize` | Chat model used for summarization |
+| `EMBED_MODEL` | 5 | `embed` | Embedding model (e.g. `qwen3-embed`) |
 | `QDRANT_URL` | 5 | `embed` | Qdrant base URL (e.g. `http://qdrant:6333`) |
 | `QDRANT_COLLECTION` | 5 | `embed` | Qdrant collection name (e.g. `remarkable`) |
 | `QDRANT_API_KEY` | 5 | `embed` | Optional Qdrant API key |

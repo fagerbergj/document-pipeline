@@ -22,7 +22,7 @@ import (
 	"github.com/fagerbergj/document-pipeline/server/store/config"
 	storeembed "github.com/fagerbergj/document-pipeline/server/store/embed"
 	"github.com/fagerbergj/document-pipeline/server/store/filesystem"
-	"github.com/fagerbergj/document-pipeline/server/store/ollama"
+	"github.com/fagerbergj/document-pipeline/server/store/openai"
 	storeopensearch "github.com/fagerbergj/document-pipeline/server/store/opensearch"
 	"github.com/fagerbergj/document-pipeline/server/store/postgres"
 	"github.com/fagerbergj/document-pipeline/server/store/prompts"
@@ -39,7 +39,7 @@ func main() {
 	vault := flag.String("vault", envOr("VAULT_PATH", "/data/vault"), "Artifact vault path")
 	pipelineCfg := flag.String("pipeline", envOr("PIPELINE_CONFIG", "config/pipeline.yaml"), "Pipeline YAML config path")
 	addr := flag.String("addr", envOr("LISTEN_ADDR", ":8000"), "HTTP listen address")
-	ollamaURL := flag.String("ollama", envOr("OLLAMA_URL", "http://localhost:11434"), "Ollama base URL")
+	llmURL := flag.String("llm-url", envOr("LLM_URL", "http://llm-swap:11436"), "OpenAI-compatible LLM base URL")
 	whisperURL := flag.String("whisper", envOr("WHISPER_URL", "http://faster-whisper:8000"), "Whisper base URL")
 	qdrantURL := flag.String("qdrant", envOr("QDRANT_URL", ""), "Qdrant base URL (empty = skip)")
 	qdrantCollection := flag.String("qdrant-collection", envOr("QDRANT_COLLECTION", "documents"), "Qdrant collection name")
@@ -82,7 +82,7 @@ func main() {
 	log.Info("pipeline loaded", "stages", len(pipeline.Stages))
 
 	// --- adapters ---
-	llm := ollama.New(*ollamaURL)
+	llm := openai.New(*llmURL, envOr("LLM_API_KEY", ""))
 	transcriber := whisper.New(*whisperURL)
 	fs := filesystem.New()
 	sm := stream.New()

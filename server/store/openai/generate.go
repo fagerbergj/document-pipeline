@@ -45,22 +45,13 @@ func (c *Client) ChatWithTools(ctx context.Context, model string, messages []por
 		payload["tool_choice"] = "auto"
 	}
 
-	body, err := c.jsonPost(ctx, "/v1/chat/completions", payload)
+	msg, err := c.postChatCompletion(ctx, payload, "chat-with-tools")
 	if err != nil {
 		if b, jerr := json.Marshal(payload); jerr == nil {
 			slog.Debug("openai chat-with-tools failed", "payload", string(b))
 		}
-		return port.LLMChatResponse{}, fmt.Errorf("openai chat-with-tools: %w", err)
+		return port.LLMChatResponse{}, err
 	}
-
-	var resp chatCompletionResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return port.LLMChatResponse{}, fmt.Errorf("openai chat-with-tools decode: %w", err)
-	}
-	if len(resp.Choices) == 0 {
-		return port.LLMChatResponse{}, errors.New("openai chat-with-tools: empty choices")
-	}
-	msg := resp.Choices[0].Message
 
 	out := port.LLMChatResponse{
 		Text:     msg.Content,
@@ -139,19 +130,12 @@ func (c *Client) GenerateVision(ctx context.Context, model, prompt string, image
 		"stream": false,
 	}
 
-	body, err := c.jsonPost(ctx, "/v1/chat/completions", payload)
+	msg, err := c.postChatCompletion(ctx, payload, "generate vision")
 	if err != nil {
-		return fmt.Errorf("openai generate vision: %w", err)
+		return err
 	}
-	var resp chatCompletionResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return fmt.Errorf("openai generate vision decode: %w", err)
-	}
-	if len(resp.Choices) == 0 {
-		return errors.New("openai generate vision: empty choices")
-	}
-	if onChunk != nil && resp.Choices[0].Message.Content != "" {
-		onChunk(resp.Choices[0].Message.Content)
+	if onChunk != nil && msg.Content != "" {
+		onChunk(msg.Content)
 	}
 	return nil
 }
@@ -178,6 +162,24 @@ func (c *Client) GenerateEmbed(ctx context.Context, model, text string) ([]float
 		return nil, errors.New("openai generate embed: empty embedding")
 	}
 	return resp.Data[0].Embedding, nil
+}
+
+// postChatCompletion POSTs payload to /v1/chat/completions and returns the
+// first choice's assistant message. op tags the error context (e.g.
+// "chat-with-tools", "generate vision").
+func (c *Client) postChatCompletion(ctx context.Context, payload map[string]any, op string) (chatMessage, error) {
+	body, err := c.jsonPost(ctx, "/v1/chat/completions", payload)
+	if err != nil {
+		return chatMessage{}, fmt.Errorf("openai %s: %w", op, err)
+	}
+	var resp chatCompletionResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return chatMessage{}, fmt.Errorf("openai %s decode: %w", op, err)
+	}
+	if len(resp.Choices) == 0 {
+		return chatMessage{}, fmt.Errorf("openai %s: empty choices", op)
+	}
+	return resp.Choices[0].Message, nil
 }
 
 // ── wire types ───────────────────────────────────────────────────────────────
@@ -276,9 +278,10 @@ func msgsToOpenAI(messages []port.LLMMessage) []map[string]any {
 	return out
 }
 
-// parseToolArguments handles OpenAI's stringified-JSON arguments field. Some
-// backends occasionally double-encode arrays — tolerate that by attempting a
-// second decode when the first yields a string that looks like JSON.
+// parseToolArguments handles OpenAI's stringified-JSON arguments field.
+// AWQ Llama-3 (and a few other quants) occasionally double-encode array
+// arguments as a JSON string nested inside the args object — transparently
+// unwrap so callers receive the natural shape.
 func parseToolArguments(s string) (map[string]any, error) {
 	if strings.TrimSpace(s) == "" {
 		return map[string]any{}, nil
@@ -319,7 +322,7 @@ func (c *Client) jsonPost(ctx context.Context, path string, payload map[string]a
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
 
-	resp, err := c.httpLong.Do(req)
+	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -347,7 +350,7 @@ func (c *Client) streamSSE(ctx context.Context, path string, payload map[string]
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
 
-	resp, err := c.httpLong.Do(req)
+	resp, err := c.http.Do(req)
 	if err != nil {
 		return err
 	}
