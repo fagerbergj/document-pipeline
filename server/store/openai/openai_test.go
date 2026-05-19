@@ -356,3 +356,34 @@ func TestGenerateEmbed_EmptyData(t *testing.T) {
 		t.Fatal("expected error on empty data")
 	}
 }
+
+func TestGenerateEmbed_HTTPError(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/embeddings", func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "model not found", http.StatusNotFound)
+	})
+	c := newClient(t, mux)
+	if _, err := c.GenerateEmbed(context.Background(), "missing", "x"); err == nil {
+		t.Fatal("expected error on HTTP 404")
+	}
+}
+
+func TestGenerateEmbed_SubstitutesEmptyInput(t *testing.T) {
+	var seenInput any
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/embeddings", func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		seenInput = req["input"]
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": []map[string]any{{"embedding": []float32{0.0}}},
+		})
+	})
+	c := newClient(t, mux)
+	if _, err := c.GenerateEmbed(context.Background(), "m", ""); err != nil {
+		t.Fatal(err)
+	}
+	if seenInput != " " {
+		t.Errorf("empty input not substituted: got %q", seenInput)
+	}
+}

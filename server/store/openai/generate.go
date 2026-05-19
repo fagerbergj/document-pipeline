@@ -160,6 +160,9 @@ func (c *Client) GenerateVision(ctx context.Context, model, prompt string, image
 // passed as a single string (the OpenAI API also accepts an array, but
 // callers ask one at a time so we keep the contract simple).
 func (c *Client) GenerateEmbed(ctx context.Context, model, text string) ([]float32, error) {
+	if text == "" {
+		text = " " // most servers reject empty input
+	}
 	body, err := c.jsonPost(ctx, "/v1/embeddings", map[string]any{
 		"model": model,
 		"input": text,
