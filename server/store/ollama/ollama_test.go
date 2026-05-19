@@ -196,39 +196,3 @@ func TestGenerateEmbed_EmptyInput(t *testing.T) {
 	c := newClient(t, mux)
 	c.GenerateEmbed(context.Background(), "nomic-embed-text", "")
 }
-
-// ── Unload ────────────────────────────────────────────────────────────────────
-
-func TestUnload(t *testing.T) {
-	called := false
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/generate", func(w http.ResponseWriter, r *http.Request) {
-		var req map[string]any
-		json.NewDecoder(r.Body).Decode(&req)
-		if req["keep_alive"] == nil {
-			t.Error("missing keep_alive")
-		}
-		called = true
-		w.WriteHeader(http.StatusOK)
-	})
-
-	c := newClient(t, mux)
-	if err := c.Unload(context.Background(), "mistral"); err != nil {
-		t.Fatal(err)
-	}
-	if !called {
-		t.Error("unload did not call /api/generate")
-	}
-}
-
-func TestUnload_ErrorIsIgnored(t *testing.T) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/generate", func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "gpu gone", http.StatusInternalServerError)
-	})
-	c := newClient(t, mux)
-	// Should not return an error even when the server fails.
-	if err := c.Unload(context.Background(), "mistral"); err != nil {
-		t.Errorf("Unload should swallow errors, got: %v", err)
-	}
-}

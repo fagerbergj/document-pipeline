@@ -1,4 +1,4 @@
-package vllm_test
+package openai_test
 
 import (
 	"context"
@@ -11,14 +11,14 @@ import (
 	"testing"
 
 	"github.com/fagerbergj/document-pipeline/server/core/port"
-	"github.com/fagerbergj/document-pipeline/server/store/vllm"
+	"github.com/fagerbergj/document-pipeline/server/store/openai"
 )
 
-func newClient(t *testing.T, mux *http.ServeMux) *vllm.Client {
+func newClient(t *testing.T, mux *http.ServeMux) *openai.Client {
 	t.Helper()
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	return vllm.New(srv.URL, "")
+	return openai.New(srv.URL, "")
 }
 
 // ── ChatWithTools ────────────────────────────────────────────────────────────
@@ -229,7 +229,7 @@ func TestChatWithTools_APIKey(t *testing.T) {
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	c := vllm.New(srv.URL, "secret-token")
+	c := openai.New(srv.URL, "secret-token")
 	_, _ = c.ChatWithTools(context.Background(), "m", []port.LLMMessage{{Role: "user", Content: "hi"}}, nil)
 	if seenAuth != "Bearer secret-token" {
 		t.Errorf("auth header = %q", seenAuth)
@@ -316,19 +316,74 @@ func TestGenerateVision_SendsMultimodalContent(t *testing.T) {
 	}
 }
 
-// ── unsupported ──────────────────────────────────────────────────────────────
+// ── embeddings ───────────────────────────────────────────────────────────────
 
-func TestGenerateEmbed_ReturnsError(t *testing.T) {
-	c := vllm.New("http://unused", "")
-	_, err := c.GenerateEmbed(context.Background(), "any", "text")
-	if err == nil {
-		t.Fatal("expected error")
+func TestGenerateEmbed(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/embeddings", func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if req["model"] != "qwen3-embed" {
+			t.Errorf("model: got %v", req["model"])
+		}
+		if req["input"] != "hello world" {
+			t.Errorf("input: got %v", req["input"])
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": []map[string]any{{
+				"embedding": []float32{0.1, 0.2, 0.3, 0.4},
+			}},
+		})
+	})
+
+	c := newClient(t, mux)
+	vec, err := c.GenerateEmbed(context.Background(), "qwen3-embed", "hello world")
+	if err != nil {
+		t.Fatalf("GenerateEmbed: %v", err)
+	}
+	if len(vec) != 4 || vec[0] != 0.1 {
+		t.Errorf("unexpected vector: %v", vec)
 	}
 }
 
-func TestUnload_NoOp(t *testing.T) {
-	c := vllm.New("http://unused", "")
-	if err := c.Unload(context.Background(), "m"); err != nil {
-		t.Errorf("Unload should be a no-op, got %v", err)
+func TestGenerateEmbed_EmptyData(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/embeddings", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{}})
+	})
+	c := newClient(t, mux)
+	if _, err := c.GenerateEmbed(context.Background(), "m", "x"); err == nil {
+		t.Fatal("expected error on empty data")
+	}
+}
+
+func TestGenerateEmbed_HTTPError(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/embeddings", func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "model not found", http.StatusNotFound)
+	})
+	c := newClient(t, mux)
+	if _, err := c.GenerateEmbed(context.Background(), "missing", "x"); err == nil {
+		t.Fatal("expected error on HTTP 404")
+	}
+}
+
+func TestGenerateEmbed_SubstitutesEmptyInput(t *testing.T) {
+	var seenInput any
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/embeddings", func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		seenInput = req["input"]
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": []map[string]any{{"embedding": []float32{0.0}}},
+		})
+	})
+	c := newClient(t, mux)
+	if _, err := c.GenerateEmbed(context.Background(), "m", ""); err != nil {
+		t.Fatal(err)
+	}
+	if seenInput != " " {
+		t.Errorf("empty input not substituted: got %q", seenInput)
 	}
 }

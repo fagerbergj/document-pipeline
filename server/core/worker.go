@@ -162,13 +162,7 @@ func (w *WorkerService) runOnce(ctx context.Context) (bool, error) {
 		}
 		_ = eg.Wait()
 
-		// Only Ollama-backed stages need an unload; the transcribe stage uses
-		// faster-whisper and Ollama 404s on its model name.
-		if stage.Model != "" && stage.Type != model.StageTypeTranscribe {
-			if err := w.llm.Unload(ctx, stage.Model); err != nil {
-				slog.Warn("failed to unload model", "model", stage.Model, "err", err)
-			}
-		}
+		// llm-swap unloads idle models on its own TTL; no explicit unload call.
 
 		return true, nil // restart from earliest stage each iteration
 	}
@@ -407,19 +401,8 @@ func (w *WorkerService) runTranscribe(
 
 	w.streams.Publish(job.ID, port.StreamEvent{Type: port.EventStatus, Data: `{"text":"Transcribing…"}`})
 
-	// Free GPU before transcribe — whisper and Ollama share one card. Per-stage
-	// unloads only fire on the stage that just ran, so a model from an earlier
-	// doc (or stage further down the pipeline) can still be resident, leaving
-	// no room for ctranslate2's ~3GB whisper allocation. Unload every
-	// Ollama-backed model the pipeline knows about before calling the
-	// transcriber. Errors are deliberately swallowed: 404s on already-unloaded
-	// models are normal here.
-	for _, s := range w.pipeline.Stages {
-		if s.Type == model.StageTypeTranscribe || s.Model == "" {
-			continue
-		}
-		_ = w.llm.Unload(ctx, s.Model)
-	}
+	// llm-swap evicts idle models on its own TTL, so whisper (ctranslate2,
+	// separate process) gets the GPU back without us forcing an unload here.
 
 	text, err := w.transcriber.Transcribe(ctx, stage.Model, audioBytes, filepathBase(*doc.MediaPath))
 	if err != nil {

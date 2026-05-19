@@ -294,7 +294,6 @@ func (m *mockLLM) ChatStream(_ context.Context, _ string, _ []port.LLMMessage, _
 func (m *mockLLM) GenerateEmbed(_ context.Context, _, _ string) ([]float32, error) {
 	return []float32{0.1, 0.2}, nil
 }
-func (m *mockLLM) Unload(_ context.Context, _ string) error { return nil }
 
 type mockEmbedStore struct{}
 
