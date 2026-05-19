@@ -345,7 +345,6 @@ func (m *mockLLM) GenerateEmbed(ctx context.Context, model_, text string) ([]flo
 	m.embedInputs = append(m.embedInputs, text)
 	return m.embedVector, m.err
 }
-func (m *mockLLM) Unload(ctx context.Context, model_ string) error { return nil }
 
 type mockEmbedStore struct {
 	upsertCount  int
