@@ -27,7 +27,6 @@ func (f *fakeLLM) ChatStream(_ context.Context, _ string, _ []port.LLMMessage, _
 func (f *fakeLLM) GenerateEmbed(_ context.Context, _, _ string) ([]float32, error) {
 	return nil, nil
 }
-func (f *fakeLLM) Unload(_ context.Context, _ string) error { return nil }
 
 // When the LLM returns out-of-band Thinking, RunAgent must surface it as a
 // StreamEventThinking — not folded into the token stream or finalText.

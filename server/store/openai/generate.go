@@ -1,4 +1,4 @@
-package vllm
+package openai
 
 import (
 	"bufio"
@@ -26,9 +26,9 @@ func (c *Client) ChatWithTools(ctx context.Context, model string, messages []por
 		"model":    model,
 		"messages": msgsToOpenAI(messages),
 		"stream":   false,
-		// AWQ-Llama3 parallel tool calls silently drop the second call in
-		// vllm's llama3_json parser. Most agent loops also handle one call at
-		// a time, so opt out across the board.
+		// Some llama 3.x tool parsers silently drop parallel calls in the
+		// second slot. Force serial routing to match what most agent loops
+		// handle, and to keep behaviour consistent across backends.
 		"parallel_tool_calls": false,
 	}
 	if len(tools) > 0 {
@@ -50,17 +50,17 @@ func (c *Client) ChatWithTools(ctx context.Context, model string, messages []por
 	body, err := c.jsonPost(ctx, "/v1/chat/completions", payload)
 	if err != nil {
 		if b, jerr := json.Marshal(payload); jerr == nil {
-			slog.Debug("vllm chat-with-tools failed", "payload", string(b))
+			slog.Debug("openai chat-with-tools failed", "payload", string(b))
 		}
-		return port.LLMChatResponse{}, fmt.Errorf("vllm chat-with-tools: %w", err)
+		return port.LLMChatResponse{}, fmt.Errorf("openai chat-with-tools: %w", err)
 	}
 
 	var resp chatCompletionResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
-		return port.LLMChatResponse{}, fmt.Errorf("vllm chat-with-tools decode: %w", err)
+		return port.LLMChatResponse{}, fmt.Errorf("openai chat-with-tools decode: %w", err)
 	}
 	if len(resp.Choices) == 0 {
-		return port.LLMChatResponse{}, errors.New("vllm chat-with-tools: empty choices")
+		return port.LLMChatResponse{}, errors.New("openai chat-with-tools: empty choices")
 	}
 	msg := resp.Choices[0].Message
 
@@ -73,7 +73,7 @@ func (c *Client) ChatWithTools(ctx context.Context, model string, messages []por
 		for i, tc := range msg.ToolCalls {
 			args, perr := parseToolArguments(tc.Function.Arguments)
 			if perr != nil {
-				slog.Warn("vllm tool-call args not valid JSON; passing as raw string", "name", tc.Function.Name, "err", perr)
+				slog.Warn("openai tool-call args not valid JSON; passing as raw string", "name", tc.Function.Name, "err", perr)
 				args = map[string]any{"_raw": tc.Function.Arguments}
 			}
 			id := tc.ID
@@ -114,10 +114,10 @@ func (c *Client) ChatStream(ctx context.Context, model string, messages []port.L
 	})
 }
 
-// GenerateText sends prompt as a single user message to /v1/chat/completions
-// (vLLM's /v1/completions exists but uses legacy completion semantics most
-// modern instruction models aren't tuned for; chat with a one-shot user
-// message is the better default).
+// GenerateText sends prompt as a single user message to /v1/chat/completions.
+// /v1/completions exists but uses legacy completion semantics most modern
+// instruction models aren't tuned for; chat with a one-shot user message is
+// the better default.
 func (c *Client) GenerateText(ctx context.Context, model, prompt string, onChunk func(string)) error {
 	return c.ChatStream(ctx, model, []port.LLMMessage{
 		{Role: "user", Content: prompt},
@@ -143,14 +143,14 @@ func (c *Client) GenerateVision(ctx context.Context, model, prompt string, image
 
 	body, err := c.jsonPost(ctx, "/v1/chat/completions", payload)
 	if err != nil {
-		return fmt.Errorf("vllm generate vision: %w", err)
+		return fmt.Errorf("openai generate vision: %w", err)
 	}
 	var resp chatCompletionResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
-		return fmt.Errorf("vllm generate vision decode: %w", err)
+		return fmt.Errorf("openai generate vision decode: %w", err)
 	}
 	if len(resp.Choices) == 0 {
-		return errors.New("vllm generate vision: empty choices")
+		return errors.New("openai generate vision: empty choices")
 	}
 	if onChunk != nil && resp.Choices[0].Message.Content != "" {
 		onChunk(resp.Choices[0].Message.Content)
@@ -158,17 +158,26 @@ func (c *Client) GenerateVision(ctx context.Context, model, prompt string, image
 	return nil
 }
 
-// GenerateEmbed is not supported. vLLM serves one model per process; the
-// chat process cannot also produce embeddings. Run a separate embedding
-// service (a second vllm process with --task embed, or keep ollama for
-// embeddings) and route /embed calls there.
-func (c *Client) GenerateEmbed(_ context.Context, _, _ string) ([]float32, error) {
-	return nil, errors.New("vllm backend does not support embeddings; use a dedicated embedding service")
+// GenerateEmbed calls /v1/embeddings and returns the first vector. Inputs are
+// passed as a single string (the OpenAI API also accepts an array, but
+// callers ask one at a time so we keep the contract simple).
+func (c *Client) GenerateEmbed(ctx context.Context, model, text string) ([]float32, error) {
+	body, err := c.jsonPost(ctx, "/v1/embeddings", map[string]any{
+		"model": model,
+		"input": text,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("openai generate embed: %w", err)
+	}
+	var resp embeddingsResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("openai generate embed decode: %w", err)
+	}
+	if len(resp.Data) == 0 || len(resp.Data[0].Embedding) == 0 {
+		return nil, errors.New("openai generate embed: empty embedding")
+	}
+	return resp.Data[0].Embedding, nil
 }
-
-// Unload is a no-op. vLLM holds its model in VRAM for the lifetime of the
-// process; there is no per-request load/unload knob.
-func (c *Client) Unload(_ context.Context, _ string) error { return nil }
 
 // ── wire types ───────────────────────────────────────────────────────────────
 
@@ -182,13 +191,13 @@ type chatMessage struct {
 	Role             string         `json:"role"`
 	Content          string         `json:"content"`
 	Reasoning        string         `json:"reasoning"`
-	ReasoningContent string         `json:"reasoning_content"` // legacy field name in older vllm builds
+	ReasoningContent string         `json:"reasoning_content"` // older builds use this field name
 	ToolCalls        []chatToolCall `json:"tool_calls"`
 }
 
-// reasoning returns whichever reasoning field the server populated. vLLM
-// renamed reasoning_content → reasoning at some point; both still appear in
-// the wild depending on server version.
+// reasoning returns whichever reasoning field the server populated. Some
+// builds rename reasoning_content → reasoning; both still appear in the wild
+// depending on server version.
 func (m chatMessage) reasoning() string {
 	if m.Reasoning != "" {
 		return m.Reasoning
@@ -211,6 +220,12 @@ type chatCompletionChunk struct {
 			Content string `json:"content"`
 		} `json:"delta"`
 	} `json:"choices"`
+}
+
+type embeddingsResponse struct {
+	Data []struct {
+		Embedding []float32 `json:"embedding"`
+	} `json:"data"`
 }
 
 // ── message conversion ───────────────────────────────────────────────────────
@@ -260,9 +275,9 @@ func msgsToOpenAI(messages []port.LLMMessage) []map[string]any {
 	return out
 }
 
-// parseToolArguments handles OpenAI's stringified-JSON arguments field. AWQ
-// llama-3 occasionally double-encodes arrays — tolerate that by attempting a
-// second decode when the first yields a string.
+// parseToolArguments handles OpenAI's stringified-JSON arguments field. Some
+// backends occasionally double-encode arrays — tolerate that by attempting a
+// second decode when the first yields a string that looks like JSON.
 func parseToolArguments(s string) (map[string]any, error) {
 	if strings.TrimSpace(s) == "" {
 		return map[string]any{}, nil
@@ -311,8 +326,8 @@ func (c *Client) jsonPost(ctx context.Context, path string, payload map[string]a
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {
-		slog.Error("vllm error", "status", resp.StatusCode, "body", string(body[:min(len(body), 512)]))
-		return nil, fmt.Errorf("vllm HTTP %d", resp.StatusCode)
+		slog.Error("openai error", "status", resp.StatusCode, "body", string(body[:min(len(body), 512)]))
+		return nil, fmt.Errorf("openai HTTP %d", resp.StatusCode)
 	}
 	return body, nil
 }
@@ -339,8 +354,8 @@ func (c *Client) streamSSE(ctx context.Context, path string, payload map[string]
 
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		slog.Error("vllm error", "status", resp.StatusCode, "body", string(body))
-		return fmt.Errorf("vllm HTTP %d", resp.StatusCode)
+		slog.Error("openai error", "status", resp.StatusCode, "body", string(body))
+		return fmt.Errorf("openai HTTP %d", resp.StatusCode)
 	}
 
 	scanner := bufio.NewScanner(resp.Body)

@@ -2,8 +2,10 @@ package port
 
 import "context"
 
-// LLMInference drives vision, text generation, embedding, and model unloading.
-// Implemented by store/ollama.
+// LLMInference drives vision, text generation, embedding, and chat. Model
+// lifecycle (load / swap / unload) is handled upstream by the inference
+// server (llama-swap routes per-model and unloads on its own TTL) — there is
+// no Unload method here.
 type LLMInference interface {
 	GenerateVision(ctx context.Context, model, prompt string, imageBytes []byte, onChunk func(string)) error
 	GenerateText(ctx context.Context, model, prompt string, onChunk func(string)) error
@@ -15,7 +17,6 @@ type LLMInference interface {
 	ChatWithTools(ctx context.Context, model string, messages []LLMMessage, tools []LLMTool) (LLMChatResponse, error)
 	ChatStream(ctx context.Context, model string, messages []LLMMessage, onChunk func(string)) error
 	GenerateEmbed(ctx context.Context, model, text string) ([]float32, error)
-	Unload(ctx context.Context, model string) error
 }
 
 // LLMMessage is a single turn in a chat-style LLM call.
