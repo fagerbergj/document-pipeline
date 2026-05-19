@@ -1,8 +1,5 @@
 // Package openai implements port.LLMInference against any OpenAI-compatible
-// HTTP server (llama.cpp / llama-swap, vLLM, LM Studio, etc.). It is the
-// single LLM backend for chat, vision, plain-text generation, and embeddings;
-// model selection per stage is done via per-request `model` fields rather
-// than per-server.
+// HTTP server (llama-swap, vLLM, LM Studio, etc.).
 package openai
 
 import (
@@ -12,12 +9,7 @@ import (
 	"github.com/fagerbergj/document-pipeline/server/core/port"
 )
 
-// Client implements port.LLMInference against an OpenAI-compatible API.
-//
-// All surfaces ride through the standard endpoints: /v1/chat/completions for
-// chat and vision, /v1/embeddings for embeddings. Model swapping is handled
-// upstream (llama-swap routes by model name to per-model llama-server
-// instances).
+// Client implements port.LLMInference against an OpenAI-compatible HTTP API.
 type Client struct {
 	baseURL  string // e.g. "http://llm-swap:11436"
 	apiKey   string // optional; sent as "Authorization: Bearer <key>"
@@ -26,9 +18,9 @@ type Client struct {
 
 var _ port.LLMInference = (*Client)(nil)
 
-// New returns an OpenAI-compatible client targeting baseURL (no trailing
-// slash, no /v1 suffix — that's added per-request). apiKey is optional; pass
-// "" for servers without auth (e.g. local llama-swap).
+// New returns a client targeting baseURL (no trailing slash, no /v1 suffix —
+// that's added per-request). Pass "" for apiKey when the server doesn't
+// require auth.
 func New(baseURL, apiKey string) *Client {
 	return &Client{
 		baseURL:  baseURL,

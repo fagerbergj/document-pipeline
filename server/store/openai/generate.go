@@ -26,9 +26,7 @@ func (c *Client) ChatWithTools(ctx context.Context, model string, messages []por
 		"model":    model,
 		"messages": msgsToOpenAI(messages),
 		"stream":   false,
-		// Some llama 3.x tool parsers silently drop parallel calls in the
-		// second slot. Force serial routing to match what most agent loops
-		// handle, and to keep behaviour consistent across backends.
+		// Force serial tool calls — some llama-3.x parsers drop the second.
 		"parallel_tool_calls": false,
 	}
 	if len(tools) > 0 {
