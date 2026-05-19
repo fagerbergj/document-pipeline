@@ -1,5 +1,5 @@
 // Package integration runs end-to-end tests against the full wired server:
-// real Postgres (testcontainers), real filesystem, mock Ollama, no-op EmbedStore.
+// real Postgres (testcontainers), real filesystem, mock LLM, no-op EmbedStore.
 package integration_test
 
 import (
@@ -30,7 +30,7 @@ import (
 	"github.com/fagerbergj/document-pipeline/server/core/model"
 	"github.com/fagerbergj/document-pipeline/server/core/port"
 	"github.com/fagerbergj/document-pipeline/server/store/filesystem"
-	"github.com/fagerbergj/document-pipeline/server/store/ollama"
+	"github.com/fagerbergj/document-pipeline/server/store/openai"
 	"github.com/fagerbergj/document-pipeline/server/store/postgres"
 	"github.com/fagerbergj/document-pipeline/server/store/prompts"
 	"github.com/fagerbergj/document-pipeline/server/store/stream"
@@ -84,64 +84,47 @@ func (n *noopTranscriber) Transcribe(_ context.Context, _ string, _ []byte, _ st
 	return n.response, nil
 }
 
-// --- mock Ollama server ---
+// --- mock LLM server (OpenAI-compatible) ---
 
-// mockOllamaServer returns an httptest.Server that handles Ollama API calls.
-// generate returns a fixed LLM response; embed returns a 4-dim zero vector;
-// unload (keep_alive=0) returns success.
-func mockOllamaServer(t *testing.T, generateResponse string) *httptest.Server {
+// mockLLMServer returns an httptest.Server that handles /v1/chat/completions
+// (streaming + non-streaming, content only — no tool_calls; ChatWithTools is
+// covered at the unit level in store/openai) and /v1/embeddings (returns a
+// fixed 4-dim vector).
+func mockLLMServer(t *testing.T, generateResponse string) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/generate":
-			body, _ := io.ReadAll(r.Body)
-			var req struct {
-				Stream    bool `json:"stream"`
-				KeepAlive int  `json:"keep_alive"`
-			}
-			json.Unmarshal(body, &req)
-
-			if req.KeepAlive == 0 {
-				// Unload request — just acknowledge.
-				json.NewEncoder(w).Encode(map[string]any{"done": true})
-				return
-			}
-			if req.Stream {
-				// Streaming NDJSON
-				for _, tok := range strings.Fields(generateResponse) {
-					json.NewEncoder(w).Encode(map[string]any{"response": tok + " ", "done": false})
-				}
-				json.NewEncoder(w).Encode(map[string]any{"response": "", "done": true})
-			} else {
-				json.NewEncoder(w).Encode(map[string]any{"response": generateResponse})
-			}
-		case "/api/chat":
-			// Tool-use and chat endpoint — return fixed response as plain text (no tool calls).
+		case "/v1/chat/completions":
 			body, _ := io.ReadAll(r.Body)
 			var req struct {
 				Stream bool `json:"stream"`
 			}
 			json.Unmarshal(body, &req)
 			if req.Stream {
+				flusher, _ := w.(http.Flusher)
 				for _, tok := range strings.Fields(generateResponse) {
-					json.NewEncoder(w).Encode(map[string]any{
-						"message": map[string]any{"role": "assistant", "content": tok + " "},
-						"done":    false,
-					})
+					chunk := map[string]any{
+						"choices": []map[string]any{{
+							"delta": map[string]any{"content": tok + " "},
+						}},
+					}
+					b, _ := json.Marshal(chunk)
+					fmt.Fprintf(w, "data: %s\n\n", b)
+					if flusher != nil {
+						flusher.Flush()
+					}
 				}
-				json.NewEncoder(w).Encode(map[string]any{
-					"message": map[string]any{"role": "assistant", "content": ""},
-					"done":    true,
-				})
+				fmt.Fprint(w, "data: [DONE]\n\n")
 			} else {
 				json.NewEncoder(w).Encode(map[string]any{
-					"message": map[string]any{"role": "assistant", "content": generateResponse},
-					"done":    true,
+					"choices": []map[string]any{{
+						"message": map[string]any{"role": "assistant", "content": generateResponse},
+					}},
 				})
 			}
-		case "/api/embed":
+		case "/v1/embeddings":
 			json.NewEncoder(w).Encode(map[string]any{
-				"embeddings": [][]float32{{0.1, 0.2, 0.3, 0.4}},
+				"data": []map[string]any{{"embedding": []float32{0.1, 0.2, 0.3, 0.4}}},
 			})
 		default:
 			http.NotFound(w, r)
@@ -297,16 +280,16 @@ type audioTestEnv struct {
 	whisper *whisperMock
 }
 
-func newAudioTestEnv(t *testing.T, ollamaResp, transcript string) *audioTestEnv {
+func newAudioTestEnv(t *testing.T, llmResp, transcript string) *audioTestEnv {
 	t.Helper()
 	whisperSrv := mockWhisperServer(t, transcript)
 	t.Cleanup(whisperSrv.Close)
-	env := newTestEnvWith(t, ollamaResp, makeAudioPipeline(testPromptFile(t)), whisperSrv.URL)
+	env := newTestEnvWith(t, llmResp, makeAudioPipeline(testPromptFile(t)), whisperSrv.URL)
 	return &audioTestEnv{testEnv: env, whisper: whisperSrv}
 }
 
 // newTestEnvWith builds the server stack with a custom pipeline + whisper URL.
-func newTestEnvWith(t *testing.T, ollamaResp string, pipeline model.PipelineConfig, whisperURL string) *testEnv {
+func newTestEnvWith(t *testing.T, llmResp string, pipeline model.PipelineConfig, whisperURL string) *testEnv {
 	t.Helper()
 	base := ensureSharedPostgres(t)
 	schema := fmt.Sprintf("test_%d_%d", time.Now().UnixNano(), rand.Intn(1<<16))
@@ -330,8 +313,8 @@ func newTestEnvWith(t *testing.T, ollamaResp string, pipeline model.PipelineConf
 		_, _ = admin.ExecContext(context.Background(), "DROP SCHEMA IF EXISTS "+schema+" CASCADE")
 	})
 
-	ollamaSrv := mockOllamaServer(t, ollamaResp)
-	t.Cleanup(ollamaSrv.Close)
+	llmSrv := mockLLMServer(t, llmResp)
+	t.Cleanup(llmSrv.Close)
 
 	docs := db.Documents()
 	jobs := db.Jobs()
@@ -341,7 +324,7 @@ func newTestEnvWith(t *testing.T, ollamaResp string, pipeline model.PipelineConf
 	kv := db.KeyValues()
 	fs := filesystem.New()
 	sm := stream.New()
-	llm := ollama.New(ollamaSrv.URL)
+	llm := openai.New(llmSrv.URL, "")
 	embed := &noopEmbed{}
 	renderer := &prompts.FilePromptRenderer{}
 	sessionSvc := session.InMemoryService()
@@ -374,8 +357,8 @@ func newTestEnvWith(t *testing.T, ollamaResp string, pipeline model.PipelineConf
 	return &testEnv{srv: srv, db: db, worker: worker, vault: vault}
 }
 
-// newTestEnv wires the full server stack with an in-process mock Ollama.
-func newTestEnv(t *testing.T, ollamaResp string) *testEnv {
+// newTestEnv wires the full server stack with an in-process mock LLM.
+func newTestEnv(t *testing.T, llmResp string) *testEnv {
 	t.Helper()
 
 	base := ensureSharedPostgres(t)
@@ -402,8 +385,8 @@ func newTestEnv(t *testing.T, ollamaResp string) *testEnv {
 		_, _ = admin.ExecContext(context.Background(), "DROP SCHEMA IF EXISTS "+schema+" CASCADE")
 	})
 
-	ollamaSrv := mockOllamaServer(t, ollamaResp)
-	t.Cleanup(ollamaSrv.Close)
+	llmSrv := mockLLMServer(t, llmResp)
+	t.Cleanup(llmSrv.Close)
 
 	pipeline := makePipeline(testPromptFile(t))
 
@@ -415,7 +398,7 @@ func newTestEnv(t *testing.T, ollamaResp string) *testEnv {
 	kv := db.KeyValues()
 	fs := filesystem.New()
 	sm := stream.New()
-	llm := ollama.New(ollamaSrv.URL)
+	llm := openai.New(llmSrv.URL, "")
 	embed := &noopEmbed{}
 	renderer := &prompts.FilePromptRenderer{}
 
@@ -561,7 +544,7 @@ func (e *testEnv) waitForJobStatus(t *testing.T, docID string, want ...string) m
 // TestIngestAndProcess uploads a text document, runs the worker once, and
 // verifies the job reaches "done" or "waiting" (no context provided).
 func TestIngestAndProcess(t *testing.T) {
-	// Ollama responds with a plausible classify response.
+	// LLM responds with a plausible classify response.
 	resp := `<output><tags>["test","integration"]</tags><summary>An integration test document.</summary><confidence>high</confidence></output>`
 	env := newTestEnv(t, resp)
 	defer env.Close()

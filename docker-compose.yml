@@ -14,15 +14,18 @@ services:
       - VAULT_PATH=/vault
       - PIPELINE_CONFIG=/config/pipeline.yaml
       - LISTEN_ADDR=:8000
-      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
+      - LLM_URL=${LLM_URL:-http://llm-swap:11436}
+      - LLM_API_KEY=${LLM_API_KEY:-}
       - WHISPER_URL=${WHISPER_URL:-http://faster-whisper:8000}
       - WHISPER_MODEL=${WHISPER_MODEL:-Systran/faster-whisper-large-v3}
-      - OCR_MODEL=${OCR_MODEL:-qwen3-vl:30b}
-      - CLARIFY_MODEL=${CLARIFY_MODEL:-gemma4:31b}
+      # Per-stage model names — values resolved by llm-swap at request time.
+      # Fill these in from your llm-swap.yaml model keys.
+      - OCR_MODEL=${OCR_MODEL:-}
+      - CLARIFY_MODEL=${CLARIFY_MODEL:-}
       - CHAT_MODEL=${CHAT_MODEL:-}
-      - CLASSIFY_MODEL=${CLASSIFY_MODEL:-gemma4-26b:latest}
-      - SUMMARIZE_MODEL=${SUMMARIZE_MODEL:-gemma4:31b}
-      - CONTEXTUAL_MODEL=${CONTEXTUAL_MODEL:-${CLASSIFY_MODEL:-gemma4-26b:latest}}
+      - CLASSIFY_MODEL=${CLASSIFY_MODEL:-}
+      - SUMMARIZE_MODEL=${SUMMARIZE_MODEL:-}
+      - CONTEXTUAL_MODEL=${CONTEXTUAL_MODEL:-}
       - EMBED_MODEL=${EMBED_MODEL:-}
       - QDRANT_URL=${QDRANT_URL:-}
       - QDRANT_COLLECTION=${QDRANT_COLLECTION:-documents}

@@ -11,9 +11,9 @@ import (
 
 // Client implements port.LLMInference against an OpenAI-compatible HTTP API.
 type Client struct {
-	baseURL  string // e.g. "http://llm-swap:11436"
-	apiKey   string // optional; sent as "Authorization: Bearer <key>"
-	httpLong *http.Client
+	baseURL string // e.g. "http://llm-swap:11436"
+	apiKey  string // optional; sent as "Authorization: Bearer <key>"
+	http    *http.Client
 }
 
 var _ port.LLMInference = (*Client)(nil)
@@ -23,8 +23,8 @@ var _ port.LLMInference = (*Client)(nil)
 // require auth.
 func New(baseURL, apiKey string) *Client {
 	return &Client{
-		baseURL:  baseURL,
-		apiKey:   apiKey,
-		httpLong: &http.Client{Timeout: 600 * time.Second},
+		baseURL: baseURL,
+		apiKey:  apiKey,
+		http:    &http.Client{Timeout: 600 * time.Second},
 	}
 }

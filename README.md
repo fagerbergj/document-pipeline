@@ -6,7 +6,7 @@ A config-driven, multi-stage document ingestion pipeline. Upload handwritten reM
 
 ```
 Upload (PNG / JPG / TXT / MD)
-  → OCR (computer vision model via Ollama)
+  → OCR (computer vision model via llm-swap)
   → Clarify (LLM cleanup + Q&A clarification loop)
       [parks for human review if confidence < high]
   → Classify (tags + summary)
@@ -50,7 +50,7 @@ Reusable context snippets can be attached to documents at ingest or during revie
 ### Prerequisites
 
 - Docker + Docker Compose
-- The `llm` stack from `home-server` running (Ollama + Open WebUI + Qdrant)
+- The `llm` stack from `home-server` running (llm-swap + Open WebUI + Qdrant)
 
 ### Environment variables
 
@@ -58,11 +58,13 @@ Copy from `home-server/.env`. Required variables per pipeline phase:
 
 | Variable | Phase | Description |
 |---|---|---|
-| `OLLAMA_URL` | 2 | Ollama endpoint (e.g. `http://ollama:11434`) |
-| `OCR_MODEL` | 2 | Ollama model for OCR (e.g. `qwen3-vl:30b`) |
-| `CLARIFY_MODEL` | 3 | Ollama model for clarification (e.g. `gemma4:31b`) |
-| `CLASSIFY_MODEL` | 4 | Ollama model for classification (e.g. `gemma4-26b:latest`) |
-| `EMBED_MODEL` | 5 | Ollama embedding model (e.g. `nomic-embed-text:v1.5`) |
+| `LLM_URL` | 2 | OpenAI-compatible LLM endpoint (e.g. `http://llm-swap:11436`) |
+| `LLM_API_KEY` | 2 | Optional API key for the LLM endpoint |
+| `OCR_MODEL` | 2 | Vision model name (resolved by llm-swap) |
+| `CLARIFY_MODEL` | 3 | Chat model used for clarification |
+| `CLASSIFY_MODEL` | 4 | Chat model used for classification |
+| `SUMMARIZE_MODEL` | 4 | Chat model used for summarization |
+| `EMBED_MODEL` | 5 | Embedding model (e.g. `qwen3-embed`) |
 | `QDRANT_URL` | 5 | Qdrant endpoint (e.g. `http://qdrant:6333`) |
 | `QDRANT_COLLECTION` | 5 | Collection name (e.g. `remarkable`) |
 | `QDRANT_API_KEY` | 5 | Optional Qdrant API key |
@@ -100,7 +102,7 @@ document-pipeline/
 │   ├── main.go        Entry point — flags, dependency wiring, graceful shutdown
 │   ├── api/rest/      HTTP handlers (chi router)
 │   ├── core/          Domain services (ingest, worker) + port interfaces + models
-│   ├── store/         Outbound adapters: sqlite, ollama, qdrant, openwebui,
+│   ├── store/         Outbound adapters: sqlite, openai, qdrant, openwebui,
 │   │                  opensearch, filesystem, stream, prompts, config, embed (coordinator)
 │   ├── web/           Embedded frontend bundle (//go:embed all:dist)
 │   └── test/          Integration tests
@@ -116,7 +118,7 @@ document-pipeline/
 
 ```
 server/api/rest/  →  server/core/  →  server/store/
-  (chi handlers)     (ingest,           (sqlite, ollama, qdrant,
+  (chi handlers)     (ingest,           (sqlite, openai, qdrant,
                       worker)            openwebui, filesystem, ...)
                          ↑
                     server/core/port/
