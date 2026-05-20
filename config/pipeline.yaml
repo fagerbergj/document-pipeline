@@ -78,11 +78,8 @@ stages:
     contextual_prompt: prompts/contextual.txt
     input: clarified_text
     metadata_fields: [title, tags, summary, narrative_summary, date_month, series]
-    # Sized so chunk + prepended contextual prefix stays under qwen3-embed's
-    # 512-token physical batch. ~500 chars = ~125 tokens, leaves room for a
-    # ~300-token context prefix.
-    chunk_size: 500
-    chunk_overlap: 100
+    chunk_size: 800
+    chunk_overlap: 150
     destinations:
       - type: qdrant
         url: ${QDRANT_URL}
