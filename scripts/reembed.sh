@@ -60,6 +60,21 @@ if [[ "$MODE" == "auto" ]]; then
   fi
 fi
 
+# Clear the per-series content-hash cache so the worker's "content unchanged"
+# short-circuit doesn't immediately skip every replayed job. The hash is keyed
+# on the corpus content, not the embed model — so when this script is run
+# after an embed-model swap, the cached hashes still match and replays no-op.
+# Wiping the cache forces a real rebuild on the first pass.
+if container_running "$PG_CONTAINER"; then
+  echo "Clearing series_corpus_hash:* from $PG_SCHEMA.key_value..."
+  docker exec -i "$PG_CONTAINER" psql -U "$PG_USER" "$PG_DB" -v ON_ERROR_STOP=1 \
+    -c "DELETE FROM ${PG_SCHEMA}.key_value WHERE key LIKE 'series_corpus_hash:%';"
+else
+  echo "warning: $PG_CONTAINER not running — skipped series_corpus_hash cache wipe." >&2
+  echo "         If the worker reports 'series corpus rebuild skipped — content unchanged'," >&2
+  echo "         clear it manually: DELETE FROM ${PG_SCHEMA}.key_value WHERE key LIKE 'series_corpus_hash:%';" >&2
+fi
+
 echo "Re-queuing all done embed jobs (mode=$MODE)..."
 
 # Inner loop runs verbatim in either host shell or sidecar shell — `$1` is the
