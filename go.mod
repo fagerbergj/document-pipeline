@@ -7,7 +7,7 @@ require (
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.9.2
-	github.com/oapi-codegen/runtime v1.4.0
+	github.com/oapi-codegen/runtime v1.4.1
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.42.0
 	golang.org/x/sync v0.20.0
 	google.golang.org/adk v1.2.0
