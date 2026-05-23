@@ -140,3 +140,49 @@ func TestStreamEvent_SSEEventType_UsesPortConstants(t *testing.T) {
 		}
 	}
 }
+
+// RequestedConfirmationPayload must recover the request-time payload (e.g. the
+// resolved stage/field) from the pending confirmation FunctionCall in the
+// session, so confirmChatToolCall can echo it into the user's response — ADK
+// otherwise drops it on resume.
+func TestRequestedConfirmationPayload_RecoversStageField(t *testing.T) {
+	ctx := context.Background()
+	svc := session.InMemoryService()
+	resp, err := svc.Create(ctx, &session.CreateRequest{AppName: AppName, UserID: UserID, SessionID: "s1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess := resp.Session
+
+	payload := map[string]any{"field": "clarified_text", "stage": "clarify", "before": "x", "after": "y"}
+	ev := session.NewEvent("ev-1")
+	ev.Author = "model"
+	ev.Content = &genai.Content{
+		Role: genai.RoleModel,
+		Parts: []*genai.Part{{
+			FunctionCall: &genai.FunctionCall{
+				ID:   "call-1",
+				Name: toolconfirmation.FunctionCallName,
+				Args: map[string]any{"toolConfirmation": toolconfirmation.ToolConfirmation{Hint: "h", Payload: payload}},
+			},
+		}},
+	}
+	if err := svc.AppendEvent(ctx, sess, ev); err != nil {
+		t.Fatal(err)
+	}
+
+	got, ok := RequestedConfirmationPayload(sess, "call-1")
+	if !ok {
+		t.Fatal("expected to recover the request payload")
+	}
+	if got["stage"] != "clarify" || got["field"] != "clarified_text" {
+		t.Errorf("recovered payload = %v, want stage=clarify field=clarified_text", got)
+	}
+
+	if _, ok := RequestedConfirmationPayload(sess, "no-such-call"); ok {
+		t.Error("expected (nil, false) for an unknown call id")
+	}
+	if _, ok := RequestedConfirmationPayload(nil, "call-1"); ok {
+		t.Error("expected (nil, false) for a nil session")
+	}
+}

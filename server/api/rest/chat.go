@@ -474,9 +474,27 @@ func (h *handler) confirmChatToolCall(w http.ResponseWriter, r *http.Request) {
 
 	// Persist the decision so RequestConfirmationRequestProcessor can pair it
 	// with the original tool call on the next runner.Run call.
-	var payload map[string]any
+	//
+	// ADK rebuilds the resumed ToolConfirmation purely from this response and
+	// discards the original request payload, so any request-time context the
+	// tool needs at apply time must be echoed back here. For update_document
+	// that's the resolved stage+field the user actually reviewed: re-attaching
+	// them lets the apply write that exact field instead of re-resolving the
+	// canonical body fresh (which could have shifted between request and approval).
+	payload := map[string]any{}
 	if body.Content != nil {
-		payload = map[string]any{"content": *body.Content}
+		payload["content"] = *body.Content
+	}
+	if reqPayload, ok := adk.RequestedConfirmationPayload(sess, callID); ok {
+		if stage, ok := reqPayload["stage"].(string); ok && stage != "" {
+			payload["stage"] = stage
+		}
+		if field, ok := reqPayload["field"].(string); ok && field != "" {
+			payload["field"] = field
+		}
+	}
+	if len(payload) == 0 {
+		payload = nil
 	}
 	if err := adk.AppendConfirmationResponse(r.Context(), h.sessionSvc, chatID, callID, body.Confirmed, payload); err != nil {
 		slog.Error("confirmChatToolCall AppendConfirmationResponse", "chat_id", chatID, "call_id", callID, "err", err)

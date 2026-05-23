@@ -352,29 +352,34 @@ function ContextSection({ doc, onRefresh }: { doc: DocumentDetail; onRefresh: ()
 
 function ArtifactsSection({ doc }: { doc: DocumentDetail }) {
   const artifacts = doc.artifacts ?? []
-  // Track the active tab by filename, not artifact id: a stage re-run mints a
-  // fresh artifact UUID for the same filename, so keying by id would snap the
-  // user off the tab they're reading on the 2s poll. Filenames are unique in
-  // the deduped list. Default to the canonical "final product" (clarified_text),
-  // falling back to the first artifact when none is canonical (clarify skipped).
-  const canonicalName = artifacts.find(a => a.is_canonical)?.filename
-  const [activeName, setActiveName] = useState(canonicalName ?? artifacts[0]?.filename ?? '')
-  // If the active tab's filename is gone (e.g. a doc with different artifacts),
-  // fall back to the canonical/first.
+  // Select by id (so two artifacts that happen to share a filename are each
+  // selectable), but remember the shown filename so a re-fetch can follow the
+  // same tab: a stage re-run mints a fresh artifact id for that filename, and
+  // keying purely by id would snap the user off the tab they're reading on the
+  // 2s poll. Default to the canonical "final product" (clarified_text), falling
+  // back to the first artifact when none is canonical (clarify skipped).
+  const canonicalId = artifacts.find(a => a.is_canonical)?.id
+  const [activeId, setActiveId] = useState(canonicalId ?? artifacts[0]?.id ?? '')
+  const activeArtifact = artifacts.find(a => a.id === activeId)
+  const lastFilename = useRef<string | undefined>(activeArtifact?.filename)
   useEffect(() => {
-    if (!artifacts.some(a => a.filename === activeName)) {
-      setActiveName(canonicalName ?? artifacts[0]?.filename ?? '')
-    }
-  }, [artifacts, activeName, canonicalName])
-  const activeArtifact = artifacts.find(a => a.filename === activeName)
+    if (activeArtifact) lastFilename.current = activeArtifact.filename
+  }, [activeArtifact])
+  useEffect(() => {
+    if (artifacts.some(a => a.id === activeId)) return
+    const sameName = lastFilename.current
+      ? artifacts.find(a => a.filename === lastFilename.current)?.id
+      : undefined
+    setActiveId(sameName ?? canonicalId ?? artifacts[0]?.id ?? '')
+  }, [artifacts, activeId, canonicalId])
   if (!artifacts.length) return null
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
       <div className="flex border-b border-gray-100 dark:border-gray-700 overflow-x-auto">
         {artifacts.map(a => (
-          <button key={a.id} onClick={() => setActiveName(a.filename)}
+          <button key={a.id} onClick={() => setActiveId(a.id)}
             className={`px-4 py-2.5 text-xs font-medium whitespace-nowrap transition-colors border-b-2 -mb-px ${
-              activeName === a.filename
+              activeId === a.id
                 ? 'border-gray-900 dark:border-gray-100 text-gray-900 dark:text-white'
                 : 'border-transparent text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'
             }`}>

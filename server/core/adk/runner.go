@@ -297,6 +297,37 @@ func buildConfirmationRequest(fc *genai.FunctionCall) StreamEvent {
 	return ev
 }
 
+// RequestedConfirmationPayload returns the payload a tool attached when it
+// called ctx.RequestConfirmation, by locating the pending
+// adk_request_confirmation FunctionCall with the given callID in the session.
+// Returns (nil, false) if not found or the payload is not an object.
+//
+// ADK builds the resumed ToolConfirmation solely from the user's
+// FunctionResponse and does NOT merge the original request payload, so callers
+// that need request-time context (e.g. the resolved stage/field the user
+// actually reviewed) must recover it here and echo it back into the response.
+func RequestedConfirmationPayload(sess session.Session, callID string) (map[string]any, bool) {
+	if sess == nil {
+		return nil, false
+	}
+	for e := range sess.Events().All() {
+		if e == nil || e.Content == nil {
+			continue
+		}
+		for _, p := range e.Content.Parts {
+			fc := p.FunctionCall
+			if fc == nil || fc.Name != toolconfirmation.FunctionCallName || fc.ID != callID {
+				continue
+			}
+			if m, ok := buildConfirmationRequest(fc).Payload.(map[string]any); ok {
+				return m, true
+			}
+			return nil, false
+		}
+	}
+	return nil, false
+}
+
 // AppendConfirmationResponse persists the user's decision on a pending tool
 // confirmation back into the session. The next RunAgent call (with no new
 // user message) will detect the response and re-invoke the original tool
