@@ -424,6 +424,47 @@ func TestArtifactRepo(t *testing.T) {
 	}
 }
 
+// GetByStageField must return only user-seeded artifacts (created_job_id IS
+// NULL). Worker stage outputs carry the same stage/field tags but a
+// created_job_id, and must be excluded so a stage re-run never consumes its own
+// prior output as a seed.
+func TestArtifactRepo_GetByStageFieldExcludesWorkerOutputs(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	seedDoc(t, db.Documents(), "doc-1")
+	repo := db.Artifacts()
+	stage, field := "transcribe", "raw_text"
+
+	// Worker output: tagged the same way but with a creating job → excluded.
+	jobID := "job-1"
+	if err := repo.Insert(ctx, model.Artifact{
+		ID: "worker-out", DocumentID: "doc-1", Filename: "raw_text.md", ContentType: "text/markdown",
+		CreatedJobID: &jobID, Stage: &stage, Field: &field, CreatedAt: ts(), UpdatedAt: ts(),
+	}); err != nil {
+		t.Fatalf("insert worker output: %v", err)
+	}
+
+	if _, ok, err := repo.GetByStageField(ctx, "doc-1", stage, field); err != nil || ok {
+		t.Fatalf("worker output must not be returned as a seed: ok=%v err=%v", ok, err)
+	}
+
+	// User seed: same tags, no creating job → returned.
+	if err := repo.Insert(ctx, model.Artifact{
+		ID: "user-seed", DocumentID: "doc-1", Filename: "raw_text.txt", ContentType: "text/plain",
+		Stage: &stage, Field: &field, CreatedAt: ts(), UpdatedAt: ts(),
+	}); err != nil {
+		t.Fatalf("insert user seed: %v", err)
+	}
+
+	got, ok, err := repo.GetByStageField(ctx, "doc-1", stage, field)
+	if err != nil || !ok {
+		t.Fatalf("user seed should be found: ok=%v err=%v", ok, err)
+	}
+	if got.ID != "user-seed" {
+		t.Errorf("GetByStageField returned %q, want the user seed", got.ID)
+	}
+}
+
 // ── StageEvent tests ──────────────────────────────────────────────────────────
 
 func TestStageEventRepo(t *testing.T) {

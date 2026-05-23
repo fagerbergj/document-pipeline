@@ -162,13 +162,13 @@ func toDocSummary(doc model.Document, currentJob *model.Job) schema.DocumentSumm
 	}
 }
 
-func toDocDetail(doc model.Document, currentJob *model.Job, artifacts []model.Artifact) schema.DocumentDetail {
+func toDocDetail(doc model.Document, currentJob *model.Job, artifacts []model.Artifact, canonicalArtifactID string) schema.DocumentDetail {
 	var currentJobID *openapi_types.UUID
 	if currentJob != nil {
 		id := toUUID(currentJob.ID)
 		currentJobID = &id
 	}
-	arts := toArtifacts(artifacts)
+	arts := toArtifacts(artifacts, canonicalArtifactID)
 	return schema.DocumentDetail{
 		Id:                toUUID(doc.ID),
 		Title:             doc.Title,
@@ -182,9 +182,10 @@ func toDocDetail(doc model.Document, currentJob *model.Job, artifacts []model.Ar
 	}
 }
 
-func toArtifacts(arts []model.Artifact) []schema.Artifact {
+func toArtifacts(arts []model.Artifact, canonicalArtifactID string) []schema.Artifact {
 	out := make([]schema.Artifact, 0, len(arts))
 	for _, a := range arts {
+		isCanonical := canonicalArtifactID != "" && a.ID == canonicalArtifactID
 		out = append(out, schema.Artifact{
 			Id:           toUUID(a.ID),
 			Filename:     a.Filename,
@@ -192,6 +193,7 @@ func toArtifacts(arts []model.Artifact) []schema.Artifact {
 			CreatedJobId: toUUIDPtr(a.CreatedJobID),
 			Stage:        a.Stage,
 			Field:        a.Field,
+			IsCanonical:  &isCanonical,
 			CreatedAt:    a.CreatedAt,
 			UpdatedAt:    a.UpdatedAt,
 		})

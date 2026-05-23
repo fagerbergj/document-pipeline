@@ -205,9 +205,15 @@ type Artifact struct {
 	// Id Unique artifact identifier.
 	Id openapi_types.UUID `json:"id"`
 
-	// Stage Pipeline stage this artifact represents an output for. Set on
-	// user-seeded artifacts attached at upload time. Null on artifacts
-	// created automatically by stage execution.
+	// IsCanonical True for the single artifact that is the document's canonical "final
+	// product" — the output of the clarify stage (`clarified_text`), i.e.
+	// the polished body the user reads. Exactly zero or one artifact per
+	// document has this set; computed per response.
+	IsCanonical *bool `json:"is_canonical,omitempty"`
+
+	// Stage Pipeline stage this artifact is an output of (e.g. `clarify`). Set on
+	// user-seeded artifacts attached at upload time and on derived outputs
+	// produced by stage execution. Null on legacy rows and on stage inputs.
 	Stage *string `json:"stage,omitempty"`
 
 	// UpdatedAt ISO 8601 last-updated timestamp.
@@ -764,6 +770,9 @@ type StagesFilter = string
 
 // StatusesFilter defines model for statuses_filter.
 type StatusesFilter = string
+
+// BadRequest Generic error body.
+type BadRequest = ErrorResponse
 
 // NotFound Generic error body.
 type NotFound = ErrorResponse

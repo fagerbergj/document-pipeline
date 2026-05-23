@@ -139,6 +139,78 @@ func TestGetDocument_HappyPath(t *testing.T) {
 	}
 }
 
+// stageDataAllFields returns outputs for every stage used by the get_document
+// field tests.
+func stageDataAllFields(_ context.Context, _ string) (map[string]map[string]any, error) {
+	return map[string]map[string]any{
+		"ocr":       {"raw_text": "the raw scanned text"},
+		"summarize": {"narrative_summary": "the narrative summary"},
+		"clarify":   {"clarified_text": "the polished body"},
+		"classify":  {"summary": "abstract"},
+	}, nil
+}
+
+// By default get_document returns ONLY the canonical body + metadata; the
+// intermediate stage outputs must be omitted so normal answers can't quote them.
+func TestGetDocument_OmitsStageOutputsByDefault(t *testing.T) {
+	getDoc := func(_ context.Context, id string) (model.Document, error) {
+		return model.Document{ID: id}, nil
+	}
+	res, err := runGetDocument(context.Background(), getDoc, stageDataAllFields, GetDocumentArgs{ID: "doc-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.FullText != "the polished body" {
+		t.Errorf("FullText: %q", res.FullText)
+	}
+	if res.Summary != "abstract" {
+		t.Errorf("Summary: %q", res.Summary)
+	}
+	if res.RawText != "" || res.NarrativeSummary != "" {
+		t.Errorf("stage outputs must be omitted by default; got raw_text=%q narrative_summary=%q", res.RawText, res.NarrativeSummary)
+	}
+}
+
+// With include_stage_outputs the intermediate editable fields are exposed.
+func TestGetDocument_ExposesStageOutputsWhenRequested(t *testing.T) {
+	getDoc := func(_ context.Context, id string) (model.Document, error) {
+		return model.Document{ID: id}, nil
+	}
+	res, err := runGetDocument(context.Background(), getDoc, stageDataAllFields, GetDocumentArgs{ID: "doc-1", IncludeStageOutputs: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.RawText != "the raw scanned text" {
+		t.Errorf("RawText: %q", res.RawText)
+	}
+	if res.NarrativeSummary != "the narrative summary" {
+		t.Errorf("NarrativeSummary: %q", res.NarrativeSummary)
+	}
+	if res.FullText != "the polished body" {
+		t.Errorf("FullText: %q", res.FullText)
+	}
+}
+
+// raw_text comes from transcribe for audio docs; with include_stage_outputs set,
+// get_document must fall back to it when the ocr stage produced nothing.
+func TestGetDocument_RawTextFromTranscribe(t *testing.T) {
+	getDoc := func(_ context.Context, id string) (model.Document, error) {
+		return model.Document{ID: id}, nil
+	}
+	stageData := func(_ context.Context, _ string) (map[string]map[string]any, error) {
+		return map[string]map[string]any{
+			"transcribe": {"raw_text": "transcribed audio"},
+		}, nil
+	}
+	res, err := runGetDocument(context.Background(), getDoc, stageData, GetDocumentArgs{ID: "doc-1", IncludeStageOutputs: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.RawText != "transcribed audio" {
+		t.Errorf("RawText from transcribe: %q", res.RawText)
+	}
+}
+
 // TestGetDocument_TagsAsJSONString locks in the production shape: classify
 // emits tags as a raw JSON-encoded string via CollectStageData, not as a
 // pre-parsed []string. Regression guard for a real bug.

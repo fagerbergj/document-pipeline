@@ -156,9 +156,9 @@ export type Artifact = {
      */
     created_job_id?: string;
     /**
-     * Pipeline stage this artifact represents an output for. Set on
-     * user-seeded artifacts attached at upload time. Null on artifacts
-     * created automatically by stage execution.
+     * Pipeline stage this artifact is an output of (e.g. `clarify`). Set on
+     * user-seeded artifacts attached at upload time and on derived outputs
+     * produced by stage execution. Null on legacy rows and on stage inputs.
      *
      */
     stage?: string;
@@ -166,6 +166,14 @@ export type Artifact = {
      * Output field name this artifact represents (e.g. `raw_text`). Paired with `stage`.
      */
     field?: string;
+    /**
+     * True for the single artifact that is the document's canonical "final
+     * product" — the output of the clarify stage (`clarified_text`), i.e.
+     * the polished body the user reads. Exactly zero or one artifact per
+     * document has this set; computed per response.
+     *
+     */
+    is_canonical?: boolean;
     /**
      * ISO 8601 creation timestamp.
      */
@@ -747,6 +755,15 @@ export type ReceiveWebhookData = {
     url: '/api/v1/remarkable/webhook';
 };
 
+export type ReceiveWebhookErrors = {
+    /**
+     * The request was malformed (e.g. invalid query parameters or body).
+     */
+    400: ErrorResponse;
+};
+
+export type ReceiveWebhookError = ReceiveWebhookErrors[keyof ReceiveWebhookErrors];
+
 export type ReceiveWebhookResponses = {
     /**
      * Document accepted (or silently skipped as a duplicate).
@@ -769,6 +786,15 @@ export type ListPipelinesData = {
     };
     url: '/api/v1/pipelines';
 };
+
+export type ListPipelinesErrors = {
+    /**
+     * The request was malformed (e.g. invalid query parameters or body).
+     */
+    400: ErrorResponse;
+};
+
+export type ListPipelinesError = ListPipelinesErrors[keyof ListPipelinesErrors];
 
 export type ListPipelinesResponses = {
     /**
@@ -832,6 +858,15 @@ export type ListDocumentsData = {
     };
     url: '/api/v1/documents';
 };
+
+export type ListDocumentsErrors = {
+    /**
+     * The request was malformed (e.g. invalid query parameters or body).
+     */
+    400: ErrorResponse;
+};
+
+export type ListDocumentsError = ListDocumentsErrors[keyof ListDocumentsErrors];
 
 export type ListDocumentsResponses = {
     /**
@@ -899,6 +934,15 @@ export type ListDocumentSeriesData = {
     query?: never;
     url: '/api/v1/documents/series';
 };
+
+export type ListDocumentSeriesErrors = {
+    /**
+     * The request was malformed (e.g. invalid query parameters or body).
+     */
+    400: ErrorResponse;
+};
+
+export type ListDocumentSeriesError = ListDocumentSeriesErrors[keyof ListDocumentSeriesErrors];
 
 export type ListDocumentSeriesResponses = {
     /**
@@ -1068,6 +1112,15 @@ export type ListJobsData = {
     };
     url: '/api/v1/jobs';
 };
+
+export type ListJobsErrors = {
+    /**
+     * The request was malformed (e.g. invalid query parameters or body).
+     */
+    400: ErrorResponse;
+};
+
+export type ListJobsError = ListJobsErrors[keyof ListJobsErrors];
 
 export type ListJobsResponses = {
     /**
@@ -1252,6 +1305,15 @@ export type ListContextsData = {
     url: '/api/v1/contexts';
 };
 
+export type ListContextsErrors = {
+    /**
+     * The request was malformed (e.g. invalid query parameters or body).
+     */
+    400: ErrorResponse;
+};
+
+export type ListContextsError = ListContextsErrors[keyof ListContextsErrors];
+
 export type ListContextsResponses = {
     /**
      * Paginated list of context entries.
@@ -1267,6 +1329,15 @@ export type CreateContextData = {
     query?: never;
     url: '/api/v1/contexts';
 };
+
+export type CreateContextErrors = {
+    /**
+     * The request was malformed (e.g. invalid query parameters or body).
+     */
+    400: ErrorResponse;
+};
+
+export type CreateContextError = CreateContextErrors[keyof CreateContextErrors];
 
 export type CreateContextResponses = {
     /**
@@ -1350,6 +1421,15 @@ export type ListChatsData = {
     url: '/api/v1/chats';
 };
 
+export type ListChatsErrors = {
+    /**
+     * The request was malformed (e.g. invalid query parameters or body).
+     */
+    400: ErrorResponse;
+};
+
+export type ListChatsError = ListChatsErrors[keyof ListChatsErrors];
+
 export type ListChatsResponses = {
     /**
      * Paginated list of chats.
@@ -1365,6 +1445,15 @@ export type CreateChatData = {
     query?: never;
     url: '/api/v1/chats';
 };
+
+export type CreateChatErrors = {
+    /**
+     * The request was malformed (e.g. invalid query parameters or body).
+     */
+    400: ErrorResponse;
+};
+
+export type CreateChatError = CreateChatErrors[keyof CreateChatErrors];
 
 export type CreateChatResponses = {
     /**
@@ -1476,7 +1565,8 @@ export type SendChatMessageError = SendChatMessageErrors[keyof SendChatMessageEr
 
 export type SendChatMessageResponses = {
     /**
-     * SSE stream of token events followed by a done event.
+     * SSE stream of `token` / `thinking` / `tool_call` / `tool_result` / `confirmation_request` events followed by a `done` event. `thinking` carries out-of-band reasoning from reasoning models — render it as a collapsible trace, separate from the final answer.
+     *
      */
     200: string;
 };
@@ -1507,7 +1597,7 @@ export type ConfirmChatToolCallError = ConfirmChatToolCallErrors[keyof ConfirmCh
 
 export type ConfirmChatToolCallResponses = {
     /**
-     * On approve, SSE stream of the resumed agent loop (token / tool_call / tool_result / confirmation_request / done events). On reject, a single `done` event closes the stream.
+     * On approve, SSE stream of the resumed agent loop (token / thinking / tool_call / tool_result / confirmation_request / done events). On reject, a single `done` event closes the stream.
      *
      */
     200: string;

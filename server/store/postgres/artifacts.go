@@ -25,8 +25,11 @@ func (r *ArtifactRepo) Insert(ctx context.Context, a model.Artifact) error {
 	return err
 }
 
-// GetByStageField returns the most recently created artifact tagged with the
-// given stage and field for this document, or (zero, false, nil) if none.
+// GetByStageField returns the most recently created USER-SEEDED artifact
+// (created_job_id IS NULL) tagged with the given stage and field for this
+// document, or (zero, false, nil) if none. Worker-produced outputs are tagged
+// with the same stage/field but carry a created_job_id, so they are excluded —
+// otherwise a stage re-run would consume its own prior output as a seed.
 func (r *ArtifactRepo) GetByStageField(ctx context.Context, documentID, stage, field string) (model.Artifact, bool, error) {
 	row := r.db.QueryRowContext(ctx, q["artifacts.GetByStageField"], documentID, stage, field)
 	a, err := scanArtifact(row)

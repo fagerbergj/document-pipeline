@@ -12,6 +12,10 @@ rules:
   # the generated client as a hardcoded baseUrl, breaking non-local envs.
   no-empty-servers: off
 
+  # This is a private, internal API with no published license; the spec is
+  # not distributed, so a license field would be meaningless noise.
+  info-license: off
+
   # Security is enforced via Authentik at the reverse-proxy layer.
   # The openIdConnect scheme above documents the auth endpoint.
   # security-defined: off  ← re-enabled; security is declared at root level

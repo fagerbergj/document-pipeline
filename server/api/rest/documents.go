@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -413,27 +414,109 @@ func (h *handler) buildDocDetail(r *http.Request, doc model.Document) (schema.Do
 	// clarify ran several times). Older runs of the same field stay
 	// reachable through their job's Field.ArtifactID and the per-stage
 	// accordion — they just don't clutter the document-level list.
-	displayed := make([]model.Artifact, 0, len(all))
+	//
+	// Sources come first in DB order; derived artifacts follow, ordered by the
+	// pipeline stage that produced them. Ordering by stage (rather than Go's
+	// randomized map iteration) keeps the list stable across the document
+	// page's 2s poll instead of reshuffling on every refetch.
+	sources := make([]model.Artifact, 0, len(all))
 	latestDerived := map[string]model.Artifact{} // filename -> winner
 	for _, a := range all {
 		if a.CreatedJobID == nil {
-			displayed = append(displayed, a)
+			sources = append(sources, a)
 			continue
 		}
-		prev, exists := latestDerived[a.Filename]
-		if !exists || a.CreatedAt.After(prev.CreatedAt) {
+		if prev, exists := latestDerived[a.Filename]; !exists || preferArtifact(a, prev) {
 			latestDerived[a.Filename] = a
 		}
 	}
+	derived := make([]model.Artifact, 0, len(latestDerived))
 	for _, a := range latestDerived {
-		displayed = append(displayed, a)
+		derived = append(derived, a)
 	}
+	sort.SliceStable(derived, func(i, j int) bool {
+		si, sj := artifactStageIndex(h.pipeline, derived[i]), artifactStageIndex(h.pipeline, derived[j])
+		if si != sj {
+			return si < sj
+		}
+		if !derived[i].CreatedAt.Equal(derived[j].CreatedAt) {
+			return derived[i].CreatedAt.Before(derived[j].CreatedAt)
+		}
+		return derived[i].Filename < derived[j].Filename
+	})
+	displayed := append(sources, derived...)
+	canonicalID := canonicalArtifactID(derived)
+
 	jobs, err := h.jobs.ListForDocument(r.Context(), doc.ID)
 	if err != nil {
 		slog.Error("buildDocDetail jobs", "err", err)
 		return schema.DocumentDetail{}, err
 	}
-	return toDocDetail(doc, pickCurrentJob(jobs), displayed), nil
+	return toDocDetail(doc, pickCurrentJob(jobs), displayed, canonicalID), nil
+}
+
+// preferArtifact reports whether candidate a should replace prev as the latest
+// derived artifact for a filename. A tagged output (Stage/Field set by the
+// worker) always beats an untagged same-filename input draft — an upstream
+// stage's input copy (e.g. clarify reading narrative_summary) is written later
+// and would otherwise win on timestamp and mask the real output. Among equally
+// tagged artifacts the most recent run wins.
+func preferArtifact(a, prev model.Artifact) bool {
+	aTagged := a.Field != nil && *a.Field != ""
+	prevTagged := prev.Field != nil && *prev.Field != ""
+	if aTagged != prevTagged {
+		return aTagged
+	}
+	return a.CreatedAt.After(prev.CreatedAt)
+}
+
+// artifactStageIndex returns the position in the pipeline of the stage that
+// produced an artifact, used to order the document-level list. It prefers the
+// artifact's own Stage tag (set on derived outputs), falls back to mapping the
+// field — taken from the Field tag or the filename with its extension stripped
+// (`raw_text.md` → `raw_text`) — to the stage that outputs it, and sorts
+// anything unresolved to the end.
+func artifactStageIndex(p model.PipelineConfig, a model.Artifact) int {
+	if a.Stage != nil && *a.Stage != "" {
+		for i, s := range p.Stages {
+			if s.Name == *a.Stage {
+				return i
+			}
+		}
+	}
+	field := artifactField(a)
+	if field != "" {
+		for i, s := range p.Stages {
+			for _, o := range s.Outputs {
+				if o.Field == field {
+					return i
+				}
+			}
+		}
+	}
+	return len(p.Stages)
+}
+
+// artifactField returns the output field an artifact represents: its Field tag
+// if set, else the filename with its extension stripped.
+func artifactField(a model.Artifact) string {
+	if a.Field != nil && *a.Field != "" {
+		return *a.Field
+	}
+	return strings.TrimSuffix(a.Filename, filepath.Ext(a.Filename))
+}
+
+// canonicalArtifactID returns the id of the document's canonical "final
+// product" — the clarify stage's clarified_text output — or "" if no such
+// artifact exists (e.g. clarify was skipped). derived is the deduped
+// latest-per-filename set, so at most one artifact matches.
+func canonicalArtifactID(derived []model.Artifact) string {
+	for _, a := range derived {
+		if artifactField(a) == model.FieldClarifiedText {
+			return a.ID
+		}
+	}
+	return ""
 }
 
 func pickCurrentJob(jobs []model.Job) *model.Job { return core.PickCurrentJob(jobs) }

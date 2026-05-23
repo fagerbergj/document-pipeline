@@ -72,11 +72,16 @@ func readArtifactText(store interface {
 func (w *WorkerService) persistRun(ctx context.Context, job model.Job, inputs, outputs []fieldDraft, confidence model.Confidence, questions []model.Question) (model.Run, error) {
 	now := time.Now().UTC()
 	runID := uuid.NewString()
-	inFields, err := w.persistDrafts(ctx, job, runID, inputs, now)
+	// Inputs are not tagged: an input draft reuses the upstream field name
+	// (e.g. clarify reads narrative_summary) and would collide with the real
+	// output of the same name in the document-level artifact list. Only outputs
+	// carry stage/field so the API can order artifacts by pipeline stage and
+	// resolve the canonical body.
+	inFields, err := w.persistDrafts(ctx, job, runID, inputs, now, false)
 	if err != nil {
 		return model.Run{}, fmt.Errorf("persist inputs: %w", err)
 	}
-	outFields, err := w.persistDrafts(ctx, job, runID, outputs, now)
+	outFields, err := w.persistDrafts(ctx, job, runID, outputs, now, true)
 	if err != nil {
 		return model.Run{}, fmt.Errorf("persist outputs: %w", err)
 	}
@@ -94,7 +99,11 @@ func (w *WorkerService) persistRun(ctx context.Context, job model.Job, inputs, o
 	}, nil
 }
 
-func (w *WorkerService) persistDrafts(ctx context.Context, job model.Job, runID string, drafts []fieldDraft, now time.Time) ([]model.Field, error) {
+// persistDrafts writes each draft to the vault and creates an artifact row.
+// When tagOutput is true the artifact is tagged with the job's stage and the
+// draft's field name so the document API can order artifacts by pipeline stage
+// and identify the canonical output; inputs pass false (see persistRun).
+func (w *WorkerService) persistDrafts(ctx context.Context, job model.Job, runID string, drafts []fieldDraft, now time.Time, tagOutput bool) ([]model.Field, error) {
 	out := make([]model.Field, 0, len(drafts))
 	for _, d := range drafts {
 		field := d.field
@@ -121,6 +130,13 @@ func (w *WorkerService) persistDrafts(ctx context.Context, job model.Job, runID 
 			Path:         &path,
 			CreatedAt:    now,
 			UpdatedAt:    now,
+		}
+		// Tag only named outputs; leave the _unnamed fallback untagged.
+		if tagOutput && d.field != "" {
+			stage := job.Stage
+			fieldName := d.field
+			art.Stage = &stage
+			art.Field = &fieldName
 		}
 		if err := w.artifacts.Insert(ctx, art); err != nil {
 			return nil, fmt.Errorf("insert artifact for %s: %w", field, err)
