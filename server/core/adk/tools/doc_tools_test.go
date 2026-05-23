@@ -139,22 +139,44 @@ func TestGetDocument_HappyPath(t *testing.T) {
 	}
 }
 
-// get_document exposes every editable field so the chat model can see and
-// reason about what update_document accepts (raw_text, narrative_summary,
-// full_text/clarified_text, summary).
-func TestGetDocument_ExposesAllEditableFields(t *testing.T) {
+// stageDataAllFields returns outputs for every stage used by the get_document
+// field tests.
+func stageDataAllFields(_ context.Context, _ string) (map[string]map[string]any, error) {
+	return map[string]map[string]any{
+		"ocr":       {"raw_text": "the raw scanned text"},
+		"summarize": {"narrative_summary": "the narrative summary"},
+		"clarify":   {"clarified_text": "the polished body"},
+		"classify":  {"summary": "abstract"},
+	}, nil
+}
+
+// By default get_document returns ONLY the canonical body + metadata; the
+// intermediate stage outputs must be omitted so normal answers can't quote them.
+func TestGetDocument_OmitsStageOutputsByDefault(t *testing.T) {
 	getDoc := func(_ context.Context, id string) (model.Document, error) {
 		return model.Document{ID: id}, nil
 	}
-	stageData := func(_ context.Context, _ string) (map[string]map[string]any, error) {
-		return map[string]map[string]any{
-			"ocr":       {"raw_text": "the raw scanned text"},
-			"summarize": {"narrative_summary": "the narrative summary"},
-			"clarify":   {"clarified_text": "the polished body"},
-			"classify":  {"summary": "abstract"},
-		}, nil
+	res, err := runGetDocument(context.Background(), getDoc, stageDataAllFields, GetDocumentArgs{ID: "doc-1"})
+	if err != nil {
+		t.Fatal(err)
 	}
-	res, err := runGetDocument(context.Background(), getDoc, stageData, GetDocumentArgs{ID: "doc-1"})
+	if res.FullText != "the polished body" {
+		t.Errorf("FullText: %q", res.FullText)
+	}
+	if res.Summary != "abstract" {
+		t.Errorf("Summary: %q", res.Summary)
+	}
+	if res.RawText != "" || res.NarrativeSummary != "" {
+		t.Errorf("stage outputs must be omitted by default; got raw_text=%q narrative_summary=%q", res.RawText, res.NarrativeSummary)
+	}
+}
+
+// With include_stage_outputs the intermediate editable fields are exposed.
+func TestGetDocument_ExposesStageOutputsWhenRequested(t *testing.T) {
+	getDoc := func(_ context.Context, id string) (model.Document, error) {
+		return model.Document{ID: id}, nil
+	}
+	res, err := runGetDocument(context.Background(), getDoc, stageDataAllFields, GetDocumentArgs{ID: "doc-1", IncludeStageOutputs: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,8 +191,8 @@ func TestGetDocument_ExposesAllEditableFields(t *testing.T) {
 	}
 }
 
-// raw_text comes from transcribe for audio docs; get_document must fall back to
-// it when the ocr stage produced nothing.
+// raw_text comes from transcribe for audio docs; with include_stage_outputs set,
+// get_document must fall back to it when the ocr stage produced nothing.
 func TestGetDocument_RawTextFromTranscribe(t *testing.T) {
 	getDoc := func(_ context.Context, id string) (model.Document, error) {
 		return model.Document{ID: id}, nil
@@ -180,7 +202,7 @@ func TestGetDocument_RawTextFromTranscribe(t *testing.T) {
 			"transcribe": {"raw_text": "transcribed audio"},
 		}, nil
 	}
-	res, err := runGetDocument(context.Background(), getDoc, stageData, GetDocumentArgs{ID: "doc-1"})
+	res, err := runGetDocument(context.Background(), getDoc, stageData, GetDocumentArgs{ID: "doc-1", IncludeStageOutputs: true})
 	if err != nil {
 		t.Fatal(err)
 	}

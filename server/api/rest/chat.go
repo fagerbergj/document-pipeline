@@ -563,11 +563,15 @@ func chatInstruction(systemPrompt string) string {
 		"terms you encounter. Only stop when results stop adding new information. " +
 		"If a search returns no results, try one broader variant; if still empty, tell the user " +
 		"you couldn't find anything rather than spamming more searches.\n\n" +
+		"When answering, rely on the canonical body (full_text) — that is the polished version the " +
+		"user reads. The retrieval tools return only that by default.\n\n" +
 		"If the user reports that a specific stage output is wrong, use update_document to fix it. " +
 		"The editable fields are: full_text (the document body the user reads — same field as " +
 		"clarified_text), narrative_summary, raw_text, and summary. To correct the body of a note, " +
-		"edit full_text/clarified_text — not just summary. The user will approve, reject, or edit " +
-		"your proposal in a UI card; downstream stages re-run automatically on approval.\n\n" +
+		"edit full_text/clarified_text — not just summary. To inspect or fix an intermediate stage " +
+		"(raw_text or narrative_summary), call get_document with include_stage_outputs: true first; " +
+		"do not request those for ordinary questions. The user will approve, reject, or edit your " +
+		"proposal in a UI card; downstream stages re-run automatically on approval.\n\n" +
 		"After an edit is applied, read the new value back with get_document (Postgres-backed, " +
 		"immediately fresh). Do not rely on rag_search to confirm a just-applied edit — it is " +
 		"eventually consistent and may return the old text until the embed stage re-runs."
