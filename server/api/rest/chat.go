@@ -434,8 +434,11 @@ func (h *handler) buildUpdateDocumentTool() (tool.Tool, error) {
 	read := func(ctx context.Context, docID string) (string, string, string, error) {
 		return core.CurrentCanonicalBody(ctx, deps, docID)
 	}
-	update := func(ctx context.Context, docID, content string) (string, []string, error) {
-		return core.UpdateCanonicalBody(ctx, deps, docID, content)
+	// The stage+field are resolved at request time and pinned via the
+	// confirmation payload, so the apply writes the exact field the user
+	// approved even if the canonical body shifted in the meantime.
+	update := func(ctx context.Context, docID, stage, field, content string) ([]string, error) {
+		return core.UpdateStageArtifactAt(ctx, deps, docID, stage, field, content)
 	}
 	return adktools.NewUpdateDocumentTool(read, update)
 }

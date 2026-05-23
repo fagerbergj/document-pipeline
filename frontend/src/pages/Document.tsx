@@ -352,26 +352,29 @@ function ContextSection({ doc, onRefresh }: { doc: DocumentDetail; onRefresh: ()
 
 function ArtifactsSection({ doc }: { doc: DocumentDetail }) {
   const artifacts = doc.artifacts ?? []
-  // Default to the canonical "final product" (clarify's clarified_text); fall
-  // back to the first artifact when none is canonical (e.g. clarify skipped).
-  const canonicalId = artifacts.find(a => a.is_canonical)?.id
-  const [activeId, setActiveId] = useState(canonicalId ?? artifacts[0]?.id ?? '')
-  // The document refetches every 2s; if the active tab's artifact is no longer
-  // present (e.g. a run produced a fresh artifact id), reset to the canonical.
+  // Track the active tab by filename, not artifact id: a stage re-run mints a
+  // fresh artifact UUID for the same filename, so keying by id would snap the
+  // user off the tab they're reading on the 2s poll. Filenames are unique in
+  // the deduped list. Default to the canonical "final product" (clarified_text),
+  // falling back to the first artifact when none is canonical (clarify skipped).
+  const canonicalName = artifacts.find(a => a.is_canonical)?.filename
+  const [activeName, setActiveName] = useState(canonicalName ?? artifacts[0]?.filename ?? '')
+  // If the active tab's filename is gone (e.g. a doc with different artifacts),
+  // fall back to the canonical/first.
   useEffect(() => {
-    if (!artifacts.some(a => a.id === activeId)) {
-      setActiveId(canonicalId ?? artifacts[0]?.id ?? '')
+    if (!artifacts.some(a => a.filename === activeName)) {
+      setActiveName(canonicalName ?? artifacts[0]?.filename ?? '')
     }
-  }, [artifacts, activeId, canonicalId])
-  const activeArtifact = artifacts.find(a => a.id === activeId)
+  }, [artifacts, activeName, canonicalName])
+  const activeArtifact = artifacts.find(a => a.filename === activeName)
   if (!artifacts.length) return null
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
       <div className="flex border-b border-gray-100 dark:border-gray-700 overflow-x-auto">
         {artifacts.map(a => (
-          <button key={a.id} onClick={() => setActiveId(a.id)}
+          <button key={a.id} onClick={() => setActiveName(a.filename)}
             className={`px-4 py-2.5 text-xs font-medium whitespace-nowrap transition-colors border-b-2 -mb-px ${
-              activeId === a.id
+              activeName === a.filename
                 ? 'border-gray-900 dark:border-gray-100 text-gray-900 dark:text-white'
                 : 'border-transparent text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'
             }`}>

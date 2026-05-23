@@ -158,9 +158,29 @@ func TestResolveCanonicalBody_NoneAvailable(t *testing.T) {
 	}
 }
 
-func TestUpdateCanonicalBody_WritesResolvedBody(t *testing.T) {
+// ResolveCanonicalBody must NOT silently fall back to an upstream draft when the
+// body stage is merely still running — that would edit the wrong artifact and be
+// overwritten when the stage finishes. The caller should surface "wait".
+func TestResolveCanonicalBody_SurfacesStageNotDone(t *testing.T) {
+	running := model.Job{ID: "job-clarify", DocumentID: "doc-1", Stage: model.StageNameClarify, Status: model.JobStatusRunning}
+	jobs := newMockJobRepo(
+		doneBodyJob(model.StageNameOCR, model.FieldRawText),
+		doneBodyJob(model.StageNameSummarize, model.FieldNarrativeSummary),
+		running,
+	)
+	deps := StageUpdateDeps{Jobs: jobs, Pipeline: canonicalPipeline()}
+	if _, _, err := ResolveCanonicalBody(context.Background(), deps, "doc-1"); !errors.Is(err, ErrStageNotDone) {
+		t.Fatalf("want ErrStageNotDone (don't silently edit an upstream draft), got %v", err)
+	}
+}
+
+func TestUpdateStageArtifactAt_WritesResolvedBody(t *testing.T) {
 	deps, jobs, _, vault, jobID, artifactRel := setupStageUpdateFixture(t)
-	stage, downstream, err := UpdateCanonicalBody(context.Background(), deps, "doc-1", "REWRITTEN")
+	field, stage, err := ResolveCanonicalBody(context.Background(), deps, "doc-1")
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	downstream, err := UpdateStageArtifactAt(context.Background(), deps, "doc-1", stage, field, "REWRITTEN")
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -175,6 +195,47 @@ func TestUpdateCanonicalBody_WritesResolvedBody(t *testing.T) {
 	}
 	if jobs.statuses[jobID] != string(model.JobStatusPending) {
 		t.Errorf("job status after update: %q, want pending", jobs.statuses[jobID])
+	}
+}
+
+// Regression for the OCR-body bug: when the canonical body is raw_text from ocr
+// (clarify+summarize skipped, transcribe skipped), the read/update must target
+// ocr — not transcribe, the first stage that declares raw_text. Before the fix
+// CurrentStageOutput re-resolved raw_text→transcribe and failed.
+func TestCanonicalBody_OCRRawText_ReadAndUpdate(t *testing.T) {
+	ctx := context.Background()
+	vault := t.TempDir()
+	store := &mockArtifactStore{}
+	const docID = "doc-ocr"
+	artRel := "runs/job-ocr/run-1/raw_text.md"
+	if err := store.SaveAt(vault, artRel, []byte("OCR RAW TEXT")); err != nil {
+		t.Fatal(err)
+	}
+	artifacts := &mockArtifactRepo{}
+	artPath := artRel
+	_ = artifacts.Insert(ctx, model.Artifact{ID: "art-ocr", DocumentID: docID, Filename: "raw_text.md", Path: &artPath})
+	skipped := func(stage string) model.Job {
+		return model.Job{ID: "job-" + stage, DocumentID: docID, Stage: stage, Status: model.JobStatusDone}
+	}
+	ocrJob := model.Job{
+		ID: "job-ocr", DocumentID: docID, Stage: model.StageNameOCR, Status: model.JobStatusDone,
+		Runs: []model.Run{{ID: "run-1", Outputs: []model.Field{{Field: model.FieldRawText, ArtifactID: "art-ocr"}}}},
+	}
+	jobs := newMockJobRepo(skipped(model.StageNameTranscribe), ocrJob, skipped(model.StageNameSummarize), skipped(model.StageNameClarify))
+	deps := StageUpdateDeps{Jobs: jobs, Artifacts: artifacts, Store: store, SessionSvc: session.InMemoryService(), Pipeline: canonicalPipeline(), VaultPath: vault}
+
+	current, stage, field, err := CurrentCanonicalBody(ctx, deps, docID)
+	if err != nil {
+		t.Fatalf("read canonical body: %v", err)
+	}
+	if current != "OCR RAW TEXT" || stage != model.StageNameOCR || field != model.FieldRawText {
+		t.Fatalf("read got current=%q stage=%q field=%q", current, stage, field)
+	}
+	if _, err := UpdateStageArtifactAt(ctx, deps, docID, stage, field, "FIXED OCR"); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if data, _ := os.ReadFile(vault + "/" + artRel); string(data) != "FIXED OCR" {
+		t.Errorf("artifact bytes: %q", string(data))
 	}
 }
 

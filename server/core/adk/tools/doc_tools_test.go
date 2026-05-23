@@ -171,6 +171,38 @@ func TestGetDocument_OmitsStageOutputsByDefault(t *testing.T) {
 	}
 }
 
+// When clarify was skipped (no clarified_text), full_text falls back to the
+// most-polished body that did run so the model never sees an empty document.
+func TestGetDocument_FullTextFallsBackWhenClarifySkipped(t *testing.T) {
+	getDoc := func(_ context.Context, id string) (model.Document, error) {
+		return model.Document{ID: id}, nil
+	}
+	narrativeOnly := func(_ context.Context, _ string) (map[string]map[string]any, error) {
+		return map[string]map[string]any{
+			"ocr":       {"raw_text": "raw scan"},
+			"summarize": {"narrative_summary": "the digest"},
+		}, nil
+	}
+	res, err := runGetDocument(context.Background(), getDoc, narrativeOnly, GetDocumentArgs{ID: "doc-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.FullText != "the digest" {
+		t.Errorf("FullText should fall back to narrative_summary, got %q", res.FullText)
+	}
+
+	rawOnly := func(_ context.Context, _ string) (map[string]map[string]any, error) {
+		return map[string]map[string]any{"ocr": {"raw_text": "raw scan"}}, nil
+	}
+	res, err = runGetDocument(context.Background(), getDoc, rawOnly, GetDocumentArgs{ID: "doc-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.FullText != "raw scan" {
+		t.Errorf("FullText should fall back to raw_text, got %q", res.FullText)
+	}
+}
+
 // With include_stage_outputs the intermediate editable fields are exposed.
 func TestGetDocument_ExposesStageOutputsWhenRequested(t *testing.T) {
 	getDoc := func(_ context.Context, id string) (model.Document, error) {

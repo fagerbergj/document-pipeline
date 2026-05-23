@@ -46,9 +46,9 @@ func TestUpdateDocument_FirstCallRequestsConfirmation(t *testing.T) {
 		return "old content", "clarify", "clarified_text", nil
 	}
 	updateCalled := false
-	update := func(_ context.Context, _, _ string) (string, []string, error) {
+	update := func(_ context.Context, _, _, _, _ string) ([]string, error) {
 		updateCalled = true
-		return "clarify", []string{"classify", "embed"}, nil
+		return []string{"classify", "embed"}, nil
 	}
 	ctx := &fakeConfirmCtx{}
 	res, err := runUpdateDocument(ctx, read, update, UpdateDocumentArgs{
@@ -83,19 +83,25 @@ func TestUpdateDocument_FirstCallRequestsConfirmation(t *testing.T) {
 
 func TestUpdateDocument_ResumeApprovedRunsUpdate(t *testing.T) {
 	var calledWith struct {
-		docID, content string
+		docID, stage, field, content string
 	}
-	update := func(_ context.Context, docID, content string) (string, []string, error) {
+	update := func(_ context.Context, docID, stage, field, content string) ([]string, error) {
 		calledWith.docID = docID
+		calledWith.stage = stage
+		calledWith.field = field
 		calledWith.content = content
-		return "clarify", []string{"classify", "embed"}, nil
+		return []string{"classify", "embed"}, nil
 	}
 	read := func(_ context.Context, _ string) (string, string, string, error) {
-		t.Fatal("read should not be called on resume")
+		t.Fatal("read should not be called on resume when the payload pins stage/field")
 		return "", "", "", nil
 	}
+	// The pinned stage/field from the request ride along on the payload.
 	ctx := &fakeConfirmCtx{
-		confirmation: &toolconfirmation.ToolConfirmation{Confirmed: true},
+		confirmation: &toolconfirmation.ToolConfirmation{
+			Confirmed: true,
+			Payload:   map[string]any{"stage": "clarify", "field": "clarified_text"},
+		},
 	}
 	res, err := runUpdateDocument(ctx, read, update, UpdateDocumentArgs{
 		ID: "doc-1", Content: "agent-proposed",
@@ -106,25 +112,58 @@ func TestUpdateDocument_ResumeApprovedRunsUpdate(t *testing.T) {
 	if res.Status != "applied" {
 		t.Errorf("status: want applied, got %q", res.Status)
 	}
+	if res.Stage != "clarify" {
+		t.Errorf("result stage: want clarify, got %q", res.Stage)
+	}
 	if calledWith.content != "agent-proposed" {
 		t.Errorf("update called with content %q, want agent-proposed", calledWith.content)
+	}
+	if calledWith.stage != "clarify" || calledWith.field != "clarified_text" {
+		t.Errorf("update should apply the pinned stage/field; got stage=%q field=%q", calledWith.stage, calledWith.field)
 	}
 	if len(res.DownstreamReran) != 2 {
 		t.Errorf("downstream: %+v", res.DownstreamReran)
 	}
 }
 
+// When the payload pins the stage/field, the apply must NOT re-resolve the
+// canonical body — so a body stage finishing between request and approval can't
+// redirect the write to a different field than the user reviewed.
+func TestUpdateDocument_ResumeAppliesPinnedFieldNotReResolved(t *testing.T) {
+	var gotField string
+	update := func(_ context.Context, _, _, field, _ string) ([]string, error) {
+		gotField = field
+		return nil, nil
+	}
+	read := func(_ context.Context, _ string) (string, string, string, error) {
+		t.Fatal("apply must use the pinned field, not re-read/re-resolve")
+		return "", "", "", nil
+	}
+	ctx := &fakeConfirmCtx{
+		confirmation: &toolconfirmation.ToolConfirmation{
+			Confirmed: true,
+			Payload:   map[string]any{"stage": "summarize", "field": "narrative_summary"},
+		},
+	}
+	if _, err := runUpdateDocument(ctx, read, update, UpdateDocumentArgs{ID: "doc-1", Content: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	if gotField != "narrative_summary" {
+		t.Errorf("apply wrote field %q, want the pinned narrative_summary", gotField)
+	}
+}
+
 func TestUpdateDocument_ResumeApprovedUsesPayloadContentOverride(t *testing.T) {
 	var calledWith string
-	update := func(_ context.Context, _, content string) (string, []string, error) {
+	update := func(_ context.Context, _, _, _, content string) ([]string, error) {
 		calledWith = content
-		return "clarify", nil, nil
+		return nil, nil
 	}
 	read := func(_ context.Context, _ string) (string, string, string, error) { return "", "", "", nil }
 	ctx := &fakeConfirmCtx{
 		confirmation: &toolconfirmation.ToolConfirmation{
 			Confirmed: true,
-			Payload:   map[string]any{"content": "user-edited"},
+			Payload:   map[string]any{"content": "user-edited", "stage": "clarify", "field": "clarified_text"},
 		},
 	}
 	_, err := runUpdateDocument(ctx, read, update, UpdateDocumentArgs{
@@ -139,9 +178,9 @@ func TestUpdateDocument_ResumeApprovedUsesPayloadContentOverride(t *testing.T) {
 }
 
 func TestUpdateDocument_ResumeRejectedSkipsUpdate(t *testing.T) {
-	update := func(_ context.Context, _, _ string) (string, []string, error) {
+	update := func(_ context.Context, _, _, _, _ string) ([]string, error) {
 		t.Fatal("update should not be called when rejected")
-		return "", nil, nil
+		return nil, nil
 	}
 	read := func(_ context.Context, _ string) (string, string, string, error) { return "", "", "", nil }
 	ctx := &fakeConfirmCtx{
