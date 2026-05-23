@@ -273,7 +273,19 @@ func AppendStateEvent(ctx context.Context, svc session.Service, sessionID string
 // FunctionCall into a StreamEvent the client can render as an approval card.
 func buildConfirmationRequest(fc *genai.FunctionCall) StreamEvent {
 	ev := StreamEvent{Kind: StreamEventConfirmationRequest, CallID: fc.ID}
-	if tc, ok := fc.Args["toolConfirmation"].(map[string]any); ok {
+	// ADK puts the confirmation under args["toolConfirmation"] as a
+	// toolconfirmation.ToolConfirmation struct on the freshly emitted in-memory
+	// event, but as a map[string]any once that event has round-tripped through
+	// JSON session persistence. Handle both forms — asserting only map[string]any
+	// (the previous behavior) silently dropped the hint and payload on the
+	// in-memory path, so the approval card rendered an empty before/after diff
+	// and an empty proposed-content box even though the edit applied on approve.
+	switch tc := fc.Args["toolConfirmation"].(type) {
+	case toolconfirmation.ToolConfirmation:
+		ev.Hint, ev.Payload = tc.Hint, tc.Payload
+	case *toolconfirmation.ToolConfirmation:
+		ev.Hint, ev.Payload = tc.Hint, tc.Payload
+	case map[string]any:
 		if h, ok := tc["hint"].(string); ok {
 			ev.Hint = h
 		}

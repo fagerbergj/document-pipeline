@@ -2,13 +2,63 @@ package adk
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"google.golang.org/adk/session"
+	"google.golang.org/adk/tool/toolconfirmation"
 	"google.golang.org/genai"
 
 	"github.com/fagerbergj/document-pipeline/server/core/port"
 )
+
+// buildConfirmationRequest must surface the hint + payload whether ADK gives us
+// the freshly emitted ToolConfirmation struct (in-memory streaming path) or the
+// map[string]any it becomes after JSON session persistence. Asserting only the
+// map form silently dropped the approval card's diff on the live path.
+func TestBuildConfirmationRequest_PopulatesHintAndPayload(t *testing.T) {
+	payload := map[string]any{"before": "old", "after": "new", "field": "clarified_text", "stage": "clarify"}
+	structFC := &genai.FunctionCall{
+		ID:   "call-1",
+		Name: toolconfirmation.FunctionCallName,
+		Args: map[string]any{
+			"toolConfirmation": toolconfirmation.ToolConfirmation{Hint: "Replace the body?", Payload: payload},
+		},
+	}
+
+	assertConfirmation(t, "struct", buildConfirmationRequest(structFC), payload)
+
+	// Simulate a session round-trip: args["toolConfirmation"] becomes a map.
+	raw, err := json.Marshal(structFC.Args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mapArgs map[string]any
+	if err := json.Unmarshal(raw, &mapArgs); err != nil {
+		t.Fatal(err)
+	}
+	mapFC := &genai.FunctionCall{ID: "call-1", Name: toolconfirmation.FunctionCallName, Args: mapArgs}
+	assertConfirmation(t, "map", buildConfirmationRequest(mapFC), payload)
+}
+
+func assertConfirmation(t *testing.T, label string, ev StreamEvent, wantPayload map[string]any) {
+	t.Helper()
+	if ev.CallID != "call-1" {
+		t.Errorf("%s: call id %q", label, ev.CallID)
+	}
+	if ev.Hint != "Replace the body?" {
+		t.Errorf("%s: hint %q, want non-empty", label, ev.Hint)
+	}
+	pm, ok := ev.Payload.(map[string]any)
+	if !ok {
+		t.Fatalf("%s: payload type %T, want map", label, ev.Payload)
+	}
+	for k, want := range wantPayload {
+		if pm[k] != want {
+			t.Errorf("%s: payload[%q] = %v, want %v", label, k, pm[k], want)
+		}
+	}
+}
 
 type fakeLLM struct {
 	resp port.LLMChatResponse
