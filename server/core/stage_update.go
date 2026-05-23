@@ -131,10 +131,12 @@ func UpdateStageArtifactAt(ctx context.Context, d StageUpdateDeps, docID, stageN
 		return nil, fmt.Errorf("update runs: %w", err)
 	}
 
-	// Re-pend the job and cascade to downstream stages.
-	if err := d.Jobs.UpdateStatus(ctx, job.ID, string(model.JobStatusPending), now); err != nil {
-		return nil, fmt.Errorf("update status: %w", err)
-	}
+	// The edited stage stays `done` with the user's content — deliberately NOT
+	// re-pended. Re-pending it would make the worker re-run the stage, and an
+	// llm_text stage (clarify/summarize) regenerates its output from its input,
+	// overwriting the very edit we just wrote. Only downstream stages re-run, so
+	// they consume the edited output. (patchRun in jobs.go likewise overwrites
+	// the artifact without re-pending the edited stage.)
 	stageOrder := make([]string, len(d.Pipeline.Stages))
 	for i, s := range d.Pipeline.Stages {
 		stageOrder[i] = s.Name

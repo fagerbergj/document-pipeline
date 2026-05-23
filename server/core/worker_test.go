@@ -163,6 +163,29 @@ func (m *mockJobRepo) ListPaginated(ctx context.Context, filter port.JobFilter, 
 }
 func (m *mockJobRepo) ResetRunning(ctx context.Context) (int, error) { return 0, nil }
 func (m *mockJobRepo) CascadeReplay(ctx context.Context, documentID, fromStage string, stageOrder []string, updatedAt time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	idx := -1
+	for i, n := range stageOrder {
+		if n == fromStage {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return nil
+	}
+	downstream := map[string]bool{}
+	for _, s := range stageOrder[idx+1:] {
+		downstream[s] = true
+	}
+	for id, j := range m.jobs {
+		if j.DocumentID == documentID && downstream[j.Stage] {
+			j.Status = model.JobStatusPending
+			m.jobs[id] = j
+			m.statuses[id] = string(model.JobStatusPending)
+		}
+	}
 	return nil
 }
 func (m *mockJobRepo) CascadeBlock(ctx context.Context, documentID, fromStage string, stageOrder []string, updatedAt time.Time) error {

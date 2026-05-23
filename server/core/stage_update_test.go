@@ -35,9 +35,13 @@ func TestUpdateStageArtifact_HappyPath(t *testing.T) {
 		t.Errorf("artifact bytes: %q", string(data))
 	}
 
-	// Job has been re-pended.
-	if jobs.statuses[jobID] != string(model.JobStatusPending) {
-		t.Errorf("job status after update: %q, want pending", jobs.statuses[jobID])
+	// The edited stage stays done (re-pending it would regenerate and discard
+	// the edit); only downstream re-runs.
+	if jobs.statuses[jobID] != string(model.JobStatusDone) {
+		t.Errorf("edited stage status = %q, want done", jobs.statuses[jobID])
+	}
+	if jobs.statuses["job-classify-1"] != string(model.JobStatusPending) {
+		t.Errorf("downstream classify status = %q, want pending", jobs.statuses["job-classify-1"])
 	}
 
 	// Run preview + size refreshed.
@@ -193,8 +197,14 @@ func TestUpdateStageArtifactAt_WritesResolvedBody(t *testing.T) {
 	if data, _ := os.ReadFile(vault + "/" + artifactRel); string(data) != "REWRITTEN" {
 		t.Errorf("artifact bytes: %q", string(data))
 	}
-	if jobs.statuses[jobID] != string(model.JobStatusPending) {
-		t.Errorf("job status after update: %q, want pending", jobs.statuses[jobID])
+	// The edited stage must STAY done: re-pending clarify would make the worker
+	// regenerate clarified_text from its input and overwrite the user's edit.
+	if jobs.statuses[jobID] != string(model.JobStatusDone) {
+		t.Errorf("edited stage status = %q, want done (re-pending it discards the edit)", jobs.statuses[jobID])
+	}
+	// Downstream stages re-run so they consume the edited body.
+	if jobs.statuses["job-classify-1"] != string(model.JobStatusPending) {
+		t.Errorf("downstream classify status = %q, want pending", jobs.statuses["job-classify-1"])
 	}
 }
 
@@ -303,7 +313,11 @@ func setupStageUpdateFixture(t *testing.T) (StageUpdateDeps, *mockJobRepo, *mock
 			UpdatedAt: time.Now().Add(-1 * time.Hour),
 		}},
 	}
-	jobs := newMockJobRepo(job)
+	// A downstream stage so a cascade has something to re-pend.
+	classifyJob := model.Job{
+		ID: "job-classify-1", DocumentID: docID, Stage: model.StageNameClassify, Status: model.JobStatusDone,
+	}
+	jobs := newMockJobRepo(job, classifyJob)
 
 	pipeline := model.PipelineConfig{
 		Stages: []model.StageDefinition{
