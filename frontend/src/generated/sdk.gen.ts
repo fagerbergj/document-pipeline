@@ -2,7 +2,7 @@
 
 import { type Client, formDataBodySerializer, type Options as Options2, type TDataShape } from './client';
 import { client } from './client.gen';
-import type { ConfirmChatToolCallData, ConfirmChatToolCallErrors, ConfirmChatToolCallResponse, ConfirmChatToolCallResponses, CreateChatData, CreateChatResponses, CreateContextData, CreateContextResponses, DeleteChatData, DeleteChatErrors, DeleteChatResponses, DeleteContextData, DeleteContextErrors, DeleteContextResponses, DeleteDocumentData, DeleteDocumentErrors, DeleteDocumentResponses, GetArtifactData, GetArtifactErrors, GetArtifactResponses, GetChatData, GetChatErrors, GetChatResponses, GetDocumentData, GetDocumentErrors, GetDocumentResponses, GetJobData, GetJobErrors, GetJobResponses, GetPipelineData, GetPipelineErrors, GetPipelineResponses, ListChatsData, ListChatsResponses, ListContextsData, ListContextsResponses, ListDocumentsData, ListDocumentSeriesData, ListDocumentSeriesResponses, ListDocumentsResponses, ListJobsData, ListJobsResponses, ListPipelinesData, ListPipelinesResponses, PatchChatData, PatchChatErrors, PatchChatResponses, PatchDocumentData, PatchDocumentErrors, PatchDocumentResponses, PatchJobData, PatchJobErrors, PatchJobResponses, PatchRunData, PatchRunErrors, PatchRunResponses, PutJobStatusData, PutJobStatusErrors, PutJobStatusResponses, ReceiveWebhookData, ReceiveWebhookResponses, SendChatMessageData, SendChatMessageErrors, SendChatMessageResponse, SendChatMessageResponses, StreamJobTokensData, StreamJobTokensErrors, StreamJobTokensResponse, StreamJobTokensResponses, UpdateContextData, UpdateContextErrors, UpdateContextResponses, UploadDocumentData, UploadDocumentErrors, UploadDocumentResponses } from './types.gen';
+import type { ConfirmChatToolCallData, ConfirmChatToolCallErrors, ConfirmChatToolCallResponse, ConfirmChatToolCallResponses, CreateChatData, CreateChatErrors, CreateChatResponses, CreateContextData, CreateContextErrors, CreateContextResponses, DeleteChatData, DeleteChatErrors, DeleteChatResponses, DeleteContextData, DeleteContextErrors, DeleteContextResponses, DeleteDocumentData, DeleteDocumentErrors, DeleteDocumentResponses, GetArtifactData, GetArtifactErrors, GetArtifactResponses, GetChatData, GetChatErrors, GetChatResponses, GetDocumentData, GetDocumentErrors, GetDocumentResponses, GetJobData, GetJobErrors, GetJobResponses, GetPipelineData, GetPipelineErrors, GetPipelineResponses, ListChatsData, ListChatsErrors, ListChatsResponses, ListContextsData, ListContextsErrors, ListContextsResponses, ListDocumentsData, ListDocumentSeriesData, ListDocumentSeriesErrors, ListDocumentSeriesResponses, ListDocumentsErrors, ListDocumentsResponses, ListJobsData, ListJobsErrors, ListJobsResponses, ListPipelinesData, ListPipelinesErrors, ListPipelinesResponses, PatchChatData, PatchChatErrors, PatchChatResponses, PatchDocumentData, PatchDocumentErrors, PatchDocumentResponses, PatchJobData, PatchJobErrors, PatchJobResponses, PatchRunData, PatchRunErrors, PatchRunResponses, PutJobStatusData, PutJobStatusErrors, PutJobStatusResponses, ReceiveWebhookData, ReceiveWebhookErrors, ReceiveWebhookResponses, SendChatMessageData, SendChatMessageErrors, SendChatMessageResponse, SendChatMessageResponses, StreamJobTokensData, StreamJobTokensErrors, StreamJobTokensResponse, StreamJobTokensResponses, UpdateContextData, UpdateContextErrors, UpdateContextResponses, UploadDocumentData, UploadDocumentErrors, UploadDocumentResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -30,7 +30,7 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
  * Returns 200 as soon as the file is saved (or if it is a duplicate).
  *
  */
-export const receiveWebhook = <ThrowOnError extends boolean = false>(options: Options<ReceiveWebhookData, ThrowOnError>) => (options.client ?? client).post<ReceiveWebhookResponses, unknown, ThrowOnError>({
+export const receiveWebhook = <ThrowOnError extends boolean = false>(options: Options<ReceiveWebhookData, ThrowOnError>) => (options.client ?? client).post<ReceiveWebhookResponses, ReceiveWebhookErrors, ThrowOnError>({
     ...formDataBodySerializer,
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/remarkable/webhook',
@@ -46,7 +46,7 @@ export const receiveWebhook = <ThrowOnError extends boolean = false>(options: Op
  *
  * Returns a paginated list of pipeline configurations loaded from `pipeline.yaml`.
  */
-export const listPipelines = <ThrowOnError extends boolean = false>(options?: Options<ListPipelinesData, ThrowOnError>) => (options?.client ?? client).get<ListPipelinesResponses, unknown, ThrowOnError>({
+export const listPipelines = <ThrowOnError extends boolean = false>(options?: Options<ListPipelinesData, ThrowOnError>) => (options?.client ?? client).get<ListPipelinesResponses, ListPipelinesErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/pipelines',
     ...options
@@ -68,7 +68,7 @@ export const getPipeline = <ThrowOnError extends boolean = false>(options: Optio
  *
  * Returns a paginated list of document summaries (no artifacts or context).
  */
-export const listDocuments = <ThrowOnError extends boolean = false>(options?: Options<ListDocumentsData, ThrowOnError>) => (options?.client ?? client).get<ListDocumentsResponses, unknown, ThrowOnError>({
+export const listDocuments = <ThrowOnError extends boolean = false>(options?: Options<ListDocumentsData, ThrowOnError>) => (options?.client ?? client).get<ListDocumentsResponses, ListDocumentsErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/documents',
     ...options
@@ -108,7 +108,7 @@ export const uploadDocument = <ThrowOnError extends boolean = false>(options: Op
  * dropdowns without paging through the full document list.
  *
  */
-export const listDocumentSeries = <ThrowOnError extends boolean = false>(options?: Options<ListDocumentSeriesData, ThrowOnError>) => (options?.client ?? client).get<ListDocumentSeriesResponses, unknown, ThrowOnError>({
+export const listDocumentSeries = <ThrowOnError extends boolean = false>(options?: Options<ListDocumentSeriesData, ThrowOnError>) => (options?.client ?? client).get<ListDocumentSeriesResponses, ListDocumentSeriesErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/documents/series',
     ...options
@@ -169,7 +169,7 @@ export const getArtifact = <ThrowOnError extends boolean = false>(options: Optio
  * `job_id` and `document_id` each accept a comma-separated list of UUIDs.
  *
  */
-export const listJobs = <ThrowOnError extends boolean = false>(options?: Options<ListJobsData, ThrowOnError>) => (options?.client ?? client).get<ListJobsResponses, unknown, ThrowOnError>({
+export const listJobs = <ThrowOnError extends boolean = false>(options?: Options<ListJobsData, ThrowOnError>) => (options?.client ?? client).get<ListJobsResponses, ListJobsErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/jobs',
     ...options
@@ -250,8 +250,10 @@ export const patchRun = <ThrowOnError extends boolean = false>(options: Options<
  * Stream LLM tokens (SSE)
  *
  * Server-Sent Events stream of LLM output tokens while the job is
- * in the `running` state. Emits `token` events with `{"text": "..."}` payloads
- * and a final `done` event when generation completes or status changes.
+ * in the `running` state. Emits `token` and `thinking` events with `{"text": "..."}`
+ * payloads — `thinking` carries out-of-band reasoning from reasoning models and should be
+ * rendered as a separate collapsible trace, distinct from the final answer. A final
+ * `done` event closes the stream when generation completes or status changes.
  *
  */
 export const streamJobTokens = <ThrowOnError extends boolean = false>(options: Options<StreamJobTokensData, ThrowOnError, StreamJobTokensResponse>) => (options.client ?? client).sse.get<StreamJobTokensResponses, StreamJobTokensErrors, ThrowOnError>({
@@ -265,7 +267,7 @@ export const streamJobTokens = <ThrowOnError extends boolean = false>(options: O
  *
  * Returns a paginated list of saved context entries.
  */
-export const listContexts = <ThrowOnError extends boolean = false>(options?: Options<ListContextsData, ThrowOnError>) => (options?.client ?? client).get<ListContextsResponses, unknown, ThrowOnError>({
+export const listContexts = <ThrowOnError extends boolean = false>(options?: Options<ListContextsData, ThrowOnError>) => (options?.client ?? client).get<ListContextsResponses, ListContextsErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/contexts',
     ...options
@@ -276,7 +278,7 @@ export const listContexts = <ThrowOnError extends boolean = false>(options?: Opt
  *
  * Creates a new context entry with an immutable UUID.
  */
-export const createContext = <ThrowOnError extends boolean = false>(options: Options<CreateContextData, ThrowOnError>) => (options.client ?? client).post<CreateContextResponses, unknown, ThrowOnError>({
+export const createContext = <ThrowOnError extends boolean = false>(options: Options<CreateContextData, ThrowOnError>) => (options.client ?? client).post<CreateContextResponses, CreateContextErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/contexts',
     ...options,
@@ -317,7 +319,7 @@ export const updateContext = <ThrowOnError extends boolean = false>(options: Opt
  *
  * Returns a paginated list of chat summaries ordered by most recently updated.
  */
-export const listChats = <ThrowOnError extends boolean = false>(options?: Options<ListChatsData, ThrowOnError>) => (options?.client ?? client).get<ListChatsResponses, unknown, ThrowOnError>({
+export const listChats = <ThrowOnError extends boolean = false>(options?: Options<ListChatsData, ThrowOnError>) => (options?.client ?? client).get<ListChatsResponses, ListChatsErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/chats',
     ...options
@@ -328,7 +330,7 @@ export const listChats = <ThrowOnError extends boolean = false>(options?: Option
  *
  * Creates a new chat with optional system prompt and RAG retrieval settings.
  */
-export const createChat = <ThrowOnError extends boolean = false>(options?: Options<CreateChatData, ThrowOnError>) => (options?.client ?? client).post<CreateChatResponses, unknown, ThrowOnError>({
+export const createChat = <ThrowOnError extends boolean = false>(options?: Options<CreateChatData, ThrowOnError>) => (options?.client ?? client).post<CreateChatResponses, CreateChatErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/chats',
     ...options,

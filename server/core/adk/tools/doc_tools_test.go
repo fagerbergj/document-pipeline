@@ -139,6 +139,56 @@ func TestGetDocument_HappyPath(t *testing.T) {
 	}
 }
 
+// get_document exposes every editable field so the chat model can see and
+// reason about what update_document accepts (raw_text, narrative_summary,
+// full_text/clarified_text, summary).
+func TestGetDocument_ExposesAllEditableFields(t *testing.T) {
+	getDoc := func(_ context.Context, id string) (model.Document, error) {
+		return model.Document{ID: id}, nil
+	}
+	stageData := func(_ context.Context, _ string) (map[string]map[string]any, error) {
+		return map[string]map[string]any{
+			"ocr":       {"raw_text": "the raw scanned text"},
+			"summarize": {"narrative_summary": "the narrative summary"},
+			"clarify":   {"clarified_text": "the polished body"},
+			"classify":  {"summary": "abstract"},
+		}, nil
+	}
+	res, err := runGetDocument(context.Background(), getDoc, stageData, GetDocumentArgs{ID: "doc-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.RawText != "the raw scanned text" {
+		t.Errorf("RawText: %q", res.RawText)
+	}
+	if res.NarrativeSummary != "the narrative summary" {
+		t.Errorf("NarrativeSummary: %q", res.NarrativeSummary)
+	}
+	if res.FullText != "the polished body" {
+		t.Errorf("FullText: %q", res.FullText)
+	}
+}
+
+// raw_text comes from transcribe for audio docs; get_document must fall back to
+// it when the ocr stage produced nothing.
+func TestGetDocument_RawTextFromTranscribe(t *testing.T) {
+	getDoc := func(_ context.Context, id string) (model.Document, error) {
+		return model.Document{ID: id}, nil
+	}
+	stageData := func(_ context.Context, _ string) (map[string]map[string]any, error) {
+		return map[string]map[string]any{
+			"transcribe": {"raw_text": "transcribed audio"},
+		}, nil
+	}
+	res, err := runGetDocument(context.Background(), getDoc, stageData, GetDocumentArgs{ID: "doc-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.RawText != "transcribed audio" {
+		t.Errorf("RawText from transcribe: %q", res.RawText)
+	}
+}
+
 // TestGetDocument_TagsAsJSONString locks in the production shape: classify
 // emits tags as a raw JSON-encoded string via CollectStageData, not as a
 // pre-parsed []string. Regression guard for a real bug.

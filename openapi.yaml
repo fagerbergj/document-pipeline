@@ -62,6 +62,8 @@ paths:
       responses:
         '200':
           description: Document accepted (or silently skipped as a duplicate).
+        '400':
+          $ref: '#/components/responses/BadRequest'
 
   # ── Pipelines ────────────────────────────────────────────────────────────────
 
@@ -81,6 +83,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PaginatedPipelines'
+        '400':
+          $ref: '#/components/responses/BadRequest'
 
   /api/v1/pipelines/{pipeline_id}:
     parameters:
@@ -150,6 +154,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PaginatedDocuments'
+        '400':
+          $ref: '#/components/responses/BadRequest'
     post:
       tags: [Documents]
       summary: Upload a document
@@ -247,6 +253,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DocumentSeriesList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
 
   /api/v1/documents/{doc_id}:
     parameters:
@@ -355,6 +363,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PaginatedJobs'
+        '400':
+          $ref: '#/components/responses/BadRequest'
 
   /api/v1/jobs/{job_id}:
     parameters:
@@ -505,6 +515,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PaginatedContexts'
+        '400':
+          $ref: '#/components/responses/BadRequest'
     post:
       tags: [Contexts]
       summary: Create context
@@ -523,6 +535,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ContextEntry'
+        '400':
+          $ref: '#/components/responses/BadRequest'
 
   /api/v1/contexts/{context_id}:
     parameters:
@@ -584,6 +598,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PaginatedChats'
+        '400':
+          $ref: '#/components/responses/BadRequest'
     post:
       tags: [Chat]
       summary: Create a new chat
@@ -601,6 +617,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ChatSummary'
+        '400':
+          $ref: '#/components/responses/BadRequest'
 
   /api/v1/chats/{chat_id}:
     parameters:
@@ -836,6 +854,12 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
+    BadRequest:
+      description: The request was malformed (e.g. invalid query parameters or body).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
 
   # ── Schemas ───────────────────────────────────────────────────────────────────
 
@@ -1003,13 +1027,20 @@ components:
           type: string
           nullable: true
           description: |
-            Pipeline stage this artifact represents an output for. Set on
-            user-seeded artifacts attached at upload time. Null on artifacts
-            created automatically by stage execution.
+            Pipeline stage this artifact is an output of (e.g. `clarify`). Set on
+            user-seeded artifacts attached at upload time and on derived outputs
+            produced by stage execution. Null on legacy rows and on stage inputs.
         field:
           type: string
           nullable: true
           description: Output field name this artifact represents (e.g. `raw_text`). Paired with `stage`.
+        is_canonical:
+          type: boolean
+          description: |
+            True for the single artifact that is the document's canonical "final
+            product" — the output of the clarify stage (`clarified_text`), i.e.
+            the polished body the user reads. Exactly zero or one artifact per
+            document has this set; computed per response.
         created_at:
           type: string
           format: date-time

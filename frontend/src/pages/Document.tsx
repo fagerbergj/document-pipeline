@@ -352,7 +352,17 @@ function ContextSection({ doc, onRefresh }: { doc: DocumentDetail; onRefresh: ()
 
 function ArtifactsSection({ doc }: { doc: DocumentDetail }) {
   const artifacts = doc.artifacts ?? []
-  const [activeId, setActiveId] = useState(artifacts[0]?.id ?? '')
+  // Default to the canonical "final product" (clarify's clarified_text); fall
+  // back to the first artifact when none is canonical (e.g. clarify skipped).
+  const canonicalId = artifacts.find(a => a.is_canonical)?.id
+  const [activeId, setActiveId] = useState(canonicalId ?? artifacts[0]?.id ?? '')
+  // The document refetches every 2s; if the active tab's artifact is no longer
+  // present (e.g. a run produced a fresh artifact id), reset to the canonical.
+  useEffect(() => {
+    if (!artifacts.some(a => a.id === activeId)) {
+      setActiveId(canonicalId ?? artifacts[0]?.id ?? '')
+    }
+  }, [artifacts, activeId, canonicalId])
   const activeArtifact = artifacts.find(a => a.id === activeId)
   if (!artifacts.length) return null
   return (
@@ -366,6 +376,11 @@ function ArtifactsSection({ doc }: { doc: DocumentDetail }) {
                 : 'border-transparent text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'
             }`}>
             {a.filename}
+            {a.is_canonical && (
+              <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-semibold rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
+                Final
+              </span>
+            )}
           </button>
         ))}
       </div>

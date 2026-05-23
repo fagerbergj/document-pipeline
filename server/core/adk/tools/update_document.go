@@ -74,7 +74,9 @@ func NewUpdateDocumentTool(read ArtifactReadFn, update ArtifactUpdateFn) (tool.T
 			"Allowed `field` values:\n" +
 			"  - raw_text          (transcribe/ocr output)\n" +
 			"  - narrative_summary (summarize output)\n" +
-			"  - clarified_text    (clarify output)\n" +
+			"  - clarified_text    (clarify output — the document body; this is the same\n" +
+			"                       thing get_document returns as `full_text`)\n" +
+			"  - full_text         (alias for clarified_text)\n" +
 			"  - summary           (classify output — not the narrative one)\n\n" +
 			"After approval, downstream stages (including embed) automatically re-run, so the corrected " +
 			"text propagates through the pipeline.\n\n" +
@@ -97,8 +99,14 @@ func runUpdateDocument(tctx confirmContext, read ArtifactReadFn, update Artifact
 	if strings.TrimSpace(args.ID) == "" {
 		return UpdateDocumentResult{}, fmt.Errorf("update_document requires an id; pass the document UUID")
 	}
+	// `full_text` is the name get_document uses for the document body; map it to
+	// the underlying clarify output so the model can edit it without knowing the
+	// internal field name.
+	if args.Field == "full_text" {
+		args.Field = model.FieldClarifiedText
+	}
 	if !allowedUpdateFields[args.Field] {
-		return UpdateDocumentResult{}, fmt.Errorf("update_document field %q is not editable; allowed: raw_text, narrative_summary, clarified_text, summary", args.Field)
+		return UpdateDocumentResult{}, fmt.Errorf("update_document field %q is not editable; allowed: raw_text, narrative_summary, clarified_text (a.k.a. full_text), summary", args.Field)
 	}
 	if strings.TrimSpace(args.Content) == "" {
 		return UpdateDocumentResult{}, fmt.Errorf("update_document requires non-empty content; use rag_search/get_document first to see the current value, then propose a replacement")

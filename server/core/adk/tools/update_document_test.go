@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"google.golang.org/adk/tool/toolconfirmation"
+
+	"github.com/fagerbergj/document-pipeline/server/core/model"
 )
 
 // fakeConfirmCtx implements confirmContext for the two-phase tool flow. The
@@ -169,6 +171,30 @@ func TestUpdateDocument_RejectsDisallowedField(t *testing.T) {
 	_, err := runUpdateDocument(ctx, nil, nil, UpdateDocumentArgs{ID: "doc-1", Field: "tags", Content: "[]"})
 	if err == nil {
 		t.Fatal("expected error for disallowed field")
+	}
+}
+
+// full_text is the name get_document uses for the body; it must be accepted and
+// routed to the underlying clarified_text field.
+func TestUpdateDocument_FullTextAliasRoutesToClarifiedText(t *testing.T) {
+	var gotField string
+	update := func(_ context.Context, _, field, _ string) (string, []string, error) {
+		gotField = field
+		return "clarify", nil, nil
+	}
+	read := func(_ context.Context, _, _ string) (string, string, error) { return "", "", nil }
+	ctx := &fakeConfirmCtx{confirmation: &toolconfirmation.ToolConfirmation{Confirmed: true}}
+	res, err := runUpdateDocument(ctx, read, update, UpdateDocumentArgs{
+		ID: "doc-1", Field: "full_text", Content: "new body",
+	})
+	if err != nil {
+		t.Fatalf("full_text should be accepted: %v", err)
+	}
+	if res.Status != "applied" {
+		t.Errorf("status: want applied, got %q", res.Status)
+	}
+	if gotField != model.FieldClarifiedText {
+		t.Errorf("update called with field %q, want %q", gotField, model.FieldClarifiedText)
 	}
 }
 

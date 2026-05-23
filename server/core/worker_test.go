@@ -247,7 +247,9 @@ func (m *mockArtifactRepo) GetByStageField(_ context.Context, documentID, stage,
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, a := range m.items {
-		if a.DocumentID != documentID || a.Stage == nil || a.Field == nil {
+		// Mirror GetByStageField.sql: only user-seeded artifacts (no creating
+		// job) qualify; worker outputs carry the same tags but a CreatedJobID.
+		if a.DocumentID != documentID || a.Stage == nil || a.Field == nil || a.CreatedJobID != nil {
 			continue
 		}
 		if *a.Stage == stage && *a.Field == field {
@@ -1259,5 +1261,153 @@ func TestFindInput_AllEmpty(t *testing.T) {
 	got, _ := findInput(stageData, "raw_text")
 	if got != "" {
 		t.Errorf("all empty should yield empty, got %q", got)
+	}
+}
+
+// After a stage run, derived OUTPUT artifacts must be tagged with the stage and
+// output field (so the document API can order them and resolve the canonical
+// body), while INPUT drafts stay untagged to avoid masking same-named outputs.
+func TestProcessJob_TagsOutputArtifactsNotInputs(t *testing.T) {
+	png := pngPath(t)
+	doc := newTestDoc(png)
+	job := newTestJob(doc.ID, "ocr")
+
+	docs := newMockDocRepo(doc)
+	jobs := newMockJobRepo(job)
+	events := newMockEventRepo()
+
+	llm := &mockLLM{visionResponse: "# My Note\nSome transcribed text"}
+	stage := model.StageDefinition{
+		Name:    "ocr",
+		Type:    model.StageTypeComputerVision,
+		Model:   "llava",
+		Outputs: []model.StageOutput{{Field: "raw_text", Type: "text"}},
+	}
+	pipeline := model.PipelineConfig{MaxConcurrent: 1, Stages: []model.StageDefinition{stage}}
+	w := newWorker(t, docs, jobs, events, llm, &mockEmbedStore{}, newMockKVRepo(), &mockPromptRenderer{}, pipeline)
+
+	w.processJob(context.Background(), job, stage)
+
+	repo := w.artifacts.(*mockArtifactRepo)
+	updatedJob, _ := jobs.GetByID(context.Background(), job.ID)
+	if len(updatedJob.Runs) != 1 {
+		t.Fatalf("expected 1 run, got %d", len(updatedJob.Runs))
+	}
+	run := updatedJob.Runs[0]
+
+	if len(run.Outputs) == 0 {
+		t.Fatal("expected at least one output")
+	}
+	for _, o := range run.Outputs {
+		art, err := repo.Get(context.Background(), doc.ID, o.ArtifactID)
+		if err != nil {
+			t.Fatalf("get output artifact: %v", err)
+		}
+		if art.Stage == nil || *art.Stage != "ocr" {
+			t.Errorf("output %q stage = %v, want \"ocr\"", o.Field, art.Stage)
+		}
+		if art.Field == nil || *art.Field != o.Field {
+			t.Errorf("output %q field = %v, want %q", o.Field, art.Field, o.Field)
+		}
+	}
+	for _, in := range run.Inputs {
+		art, err := repo.Get(context.Background(), doc.ID, in.ArtifactID)
+		if err != nil {
+			t.Fatalf("get input artifact: %v", err)
+		}
+		if art.Stage != nil || art.Field != nil {
+			t.Errorf("input %q should be untagged, got stage=%v field=%v", in.Field, art.Stage, art.Field)
+		}
+	}
+}
+
+// Worker transcribe outputs are tagged stage="transcribe"/field="raw_text",
+// the same tags a user seed carries. A re-run must NOT mistake its own prior
+// output for a user seed and skip whisper — GetByStageField excludes
+// worker-created rows (created_job_id IS NOT NULL).
+func TestProcessJob_TranscribeReRunIgnoresOwnPriorOutput(t *testing.T) {
+	mediaPath := filepath.Join(t.TempDir(), "audio.webm")
+	if err := os.WriteFile(mediaPath, []byte("fake audio bytes"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	doc := model.Document{ID: uuid.NewString(), MediaPath: &mediaPath, CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	job := newTestJob(doc.ID, "transcribe")
+
+	docs := newMockDocRepo(doc)
+	jobs := newMockJobRepo(job)
+	events := newMockEventRepo()
+	kv := newMockKVRepo()
+	meta, _ := json.Marshal(IngestMeta{FileType: model.FileTypeWEBM})
+	_ = kv.Set(context.Background(), kvIngestMetaPrefix+doc.ID, string(meta))
+
+	// Prior transcribe output from an earlier run: tagged like a seed but with a
+	// CreatedJobID (worker-produced).
+	artifacts := &mockArtifactRepo{}
+	priorJob, st, fld := "prior-job", "transcribe", "raw_text"
+	_ = artifacts.Insert(context.Background(), model.Artifact{
+		ID: uuid.NewString(), DocumentID: doc.ID, Filename: "raw_text.md",
+		Stage: &st, Field: &fld, CreatedJobID: &priorJob,
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	})
+
+	stage := model.StageDefinition{Name: "transcribe", Type: model.StageTypeTranscribe, Model: "whisper", Outputs: []model.StageOutput{{Field: "raw_text", Type: "text"}}}
+	pipeline := model.PipelineConfig{MaxConcurrent: 1, Stages: []model.StageDefinition{stage}}
+	w := NewWorkerService(docs, jobs, artifacts, events, &mockContextRepo{}, kv, &mockArtifactStore{}, &mockLLM{}, &mockEmbedStore{},
+		&mockTranscriber{response: "FRESH WHISPER TRANSCRIPT"}, &mockStreamManager{}, &mockPromptRenderer{}, session.InMemoryService(), pipeline, t.TempDir())
+
+	w.processJob(context.Background(), job, stage)
+
+	updatedJob, _ := jobs.GetByID(context.Background(), job.ID)
+	if len(updatedJob.Runs) != 1 || len(updatedJob.Runs[0].Outputs) == 0 {
+		t.Fatalf("expected a transcribe run with output, got %+v", updatedJob.Runs)
+	}
+	if got := readOutputText(t, w, doc.ID, updatedJob.Runs[0].Outputs[0]); got != "FRESH WHISPER TRANSCRIPT" {
+		t.Errorf("re-run must run whisper, not reuse its own prior output; got %q", got)
+	}
+}
+
+// The legitimate user-seed path still works: an artifact tagged
+// transcribe/raw_text with NO CreatedJobID is consumed and whisper is skipped.
+func TestProcessJob_TranscribeUsesUserSeed(t *testing.T) {
+	vault := t.TempDir()
+	store := &mockArtifactStore{}
+	mediaPath := filepath.Join(t.TempDir(), "audio.webm")
+	if err := os.WriteFile(mediaPath, []byte("fake audio bytes"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	doc := model.Document{ID: uuid.NewString(), MediaPath: &mediaPath, CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	job := newTestJob(doc.ID, "transcribe")
+
+	docs := newMockDocRepo(doc)
+	jobs := newMockJobRepo(job)
+	events := newMockEventRepo()
+	kv := newMockKVRepo()
+	meta, _ := json.Marshal(IngestMeta{FileType: model.FileTypeWEBM})
+	_ = kv.Set(context.Background(), kvIngestMetaPrefix+doc.ID, string(meta))
+
+	artifacts := &mockArtifactRepo{}
+	seedID, st, fld := uuid.NewString(), "transcribe", "raw_text"
+	if err := store.Save(vault, seedID, "raw_text.txt", []byte("USER PROVIDED TRANSCRIPT")); err != nil {
+		t.Fatal(err)
+	}
+	_ = artifacts.Insert(context.Background(), model.Artifact{
+		ID: seedID, DocumentID: doc.ID, Filename: "raw_text.txt",
+		Stage: &st, Field: &fld, // CreatedJobID nil → user seed
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	})
+
+	stage := model.StageDefinition{Name: "transcribe", Type: model.StageTypeTranscribe, Model: "whisper", Outputs: []model.StageOutput{{Field: "raw_text", Type: "text"}}}
+	pipeline := model.PipelineConfig{MaxConcurrent: 1, Stages: []model.StageDefinition{stage}}
+	w := NewWorkerService(docs, jobs, artifacts, events, &mockContextRepo{}, kv, store, &mockLLM{}, &mockEmbedStore{},
+		&mockTranscriber{response: "WHISPER SHOULD NOT RUN"}, &mockStreamManager{}, &mockPromptRenderer{}, session.InMemoryService(), pipeline, vault)
+
+	w.processJob(context.Background(), job, stage)
+
+	updatedJob, _ := jobs.GetByID(context.Background(), job.ID)
+	if len(updatedJob.Runs) != 1 || len(updatedJob.Runs[0].Outputs) == 0 {
+		t.Fatalf("expected a transcribe run with output, got %+v", updatedJob.Runs)
+	}
+	if got := readOutputText(t, w, doc.ID, updatedJob.Runs[0].Outputs[0]); got != "USER PROVIDED TRANSCRIPT" {
+		t.Errorf("user seed should be consumed instead of running whisper; got %q", got)
 	}
 }

@@ -564,8 +564,13 @@ func chatInstruction(systemPrompt string) string {
 		"If a search returns no results, try one broader variant; if still empty, tell the user " +
 		"you couldn't find anything rather than spamming more searches.\n\n" +
 		"If the user reports that a specific stage output is wrong, use update_document to fix it. " +
-		"The user will approve, reject, or edit your proposal in a UI card; downstream stages " +
-		"re-run automatically on approval."
+		"The editable fields are: full_text (the document body the user reads — same field as " +
+		"clarified_text), narrative_summary, raw_text, and summary. To correct the body of a note, " +
+		"edit full_text/clarified_text — not just summary. The user will approve, reject, or edit " +
+		"your proposal in a UI card; downstream stages re-run automatically on approval.\n\n" +
+		"After an edit is applied, read the new value back with get_document (Postgres-backed, " +
+		"immediately fresh). Do not rely on rag_search to confirm a just-applied edit — it is " +
+		"eventually consistent and may return the old text until the embed stage re-runs."
 	if systemPrompt != "" {
 		instruction += "\n\nAdditional context:\n" + systemPrompt
 	}
