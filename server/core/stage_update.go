@@ -17,10 +17,11 @@ import (
 // Errors returned by the stage-artifact helpers. Surfaced through the
 // update_document chat tool so the agent can describe failures to the user.
 var (
-	ErrUnknownField = errors.New("no pipeline stage produces this field")
-	ErrNoJob        = errors.New("document has no job for this stage")
-	ErrStageNotDone = errors.New("stage is not in 'done' status")
-	ErrNoArtifact   = errors.New("stage output has no backing artifact")
+	ErrUnknownField    = errors.New("no pipeline stage produces this field")
+	ErrNoJob           = errors.New("document has no job for this stage")
+	ErrStageNotDone    = errors.New("stage is not in 'done' status")
+	ErrNoArtifact      = errors.New("stage output has no backing artifact")
+	ErrNoCanonicalBody = errors.New("document has no completed body stage to edit")
 )
 
 // StageUpdateDeps bundles the repos + storage needed to read or rewrite a
@@ -135,17 +136,96 @@ func UpdateStageArtifact(ctx context.Context, d StageUpdateDeps, docID, field, c
 	return stageName, downstream, nil
 }
 
+// stageOutputFields returns every output field a stage produces. Stages declare
+// outputs either as a single `output:` (summarize, clarify) or a list
+// `outputs:` (transcribe, ocr, classify) in pipeline.yaml; both forms must be
+// considered or fields like clarified_text/narrative_summary appear unknown.
+func stageOutputFields(s model.StageDefinition) []string {
+	fields := make([]string, 0, len(s.Outputs)+1)
+	if s.Output != "" {
+		fields = append(fields, s.Output)
+	}
+	for _, o := range s.Outputs {
+		fields = append(fields, o.Field)
+	}
+	return fields
+}
+
 // resolveFieldStage looks up which stage in the configured pipeline produces
 // the named output field. Returns ErrUnknownField if no stage matches.
 func resolveFieldStage(p model.PipelineConfig, field string) (string, error) {
 	for _, s := range p.Stages {
-		for _, o := range s.Outputs {
-			if o.Field == field {
+		for _, f := range stageOutputFields(s) {
+			if f == field {
 				return s.Name, nil
 			}
 		}
 	}
 	return "", fmt.Errorf("%w: %q", ErrUnknownField, field)
+}
+
+// canonicalBodyFields are the document-body output fields, most-polished first.
+// update_document edits whichever the document actually has so a doc whose
+// clarify stage was skipped still has an editable body.
+var canonicalBodyFields = []string{
+	model.FieldClarifiedText,
+	model.FieldNarrativeSummary,
+	model.FieldRawText,
+}
+
+// ResolveCanonicalBody returns the field + stage of a document's canonical
+// body: clarified_text when clarify has completed, otherwise the most-polished
+// body stage that did (narrative_summary, then raw_text). The pipeline is
+// walked in reverse so the latest body stage wins, and both transcribe and ocr
+// (which share raw_text) are matched by inspecting the actual stages. Returns
+// ErrNoCanonicalBody when no body stage has produced output yet.
+func ResolveCanonicalBody(ctx context.Context, d StageUpdateDeps, docID string) (field, stage string, err error) {
+	for i := len(d.Pipeline.Stages) - 1; i >= 0; i-- {
+		s := d.Pipeline.Stages[i]
+		bodyField := bodyOutputOf(s)
+		if bodyField == "" {
+			continue
+		}
+		if _, _, _, ferr := findDoneStageRun(ctx, d, docID, s.Name, bodyField); ferr == nil {
+			return bodyField, s.Name, nil
+		}
+	}
+	return "", "", fmt.Errorf("%w for document %s", ErrNoCanonicalBody, ShortID(docID))
+}
+
+// bodyOutputOf returns the body field a stage produces (clarified_text,
+// narrative_summary, or raw_text), or "" if it produces none.
+func bodyOutputOf(s model.StageDefinition) string {
+	for _, f := range stageOutputFields(s) {
+		for _, body := range canonicalBodyFields {
+			if f == body {
+				return f
+			}
+		}
+	}
+	return ""
+}
+
+// CurrentCanonicalBody returns the current text of the document's canonical
+// body along with the stage and field it resolved to (for the approval card).
+func CurrentCanonicalBody(ctx context.Context, d StageUpdateDeps, docID string) (current, stage, field string, err error) {
+	field, _, err = ResolveCanonicalBody(ctx, d, docID)
+	if err != nil {
+		return "", "", "", err
+	}
+	current, stage, err = CurrentStageOutput(ctx, d, docID, field)
+	return current, stage, field, err
+}
+
+// UpdateCanonicalBody overwrites the document's canonical body and cascades to
+// downstream stages. Resolves the body field (clarified_text, else the latest
+// completed body stage) so the model never needs to name it.
+func UpdateCanonicalBody(ctx context.Context, d StageUpdateDeps, docID, content string) (string, []string, error) {
+	field, _, err := ResolveCanonicalBody(ctx, d, docID)
+	if err != nil {
+		return "", nil, err
+	}
+	return UpdateStageArtifact(ctx, d, docID, field, content)
 }
 
 // findDoneStageRun returns the doc's job for stageName along with its latest

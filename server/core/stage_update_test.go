@@ -86,6 +86,120 @@ func TestCurrentStageOutput_ReadsCurrentArtifact(t *testing.T) {
 	}
 }
 
+// resolveFieldStage must handle the singular `output:` form (summarize,
+// clarify) as well as the list `outputs:` form. Production pipeline.yaml uses
+// `output: clarified_text` for clarify, so without this the document body is
+// uneditable — the bug this guards against.
+func TestResolveFieldStage_HandlesSingularOutput(t *testing.T) {
+	p := canonicalPipeline()
+	if stage, err := resolveFieldStage(p, model.FieldClarifiedText); err != nil || stage != model.StageNameClarify {
+		t.Errorf("clarified_text (singular output): stage=%q err=%v", stage, err)
+	}
+	if stage, err := resolveFieldStage(p, model.FieldNarrativeSummary); err != nil || stage != model.StageNameSummarize {
+		t.Errorf("narrative_summary (singular output): stage=%q err=%v", stage, err)
+	}
+	if stage, err := resolveFieldStage(p, model.FieldSummary); err != nil || stage != model.StageNameClassify {
+		t.Errorf("summary (list outputs): stage=%q err=%v", stage, err)
+	}
+}
+
+func TestResolveCanonicalBody_PrefersClarifiedText(t *testing.T) {
+	jobs := newMockJobRepo(
+		doneBodyJob(model.StageNameOCR, model.FieldRawText),
+		doneBodyJob(model.StageNameSummarize, model.FieldNarrativeSummary),
+		doneBodyJob(model.StageNameClarify, model.FieldClarifiedText),
+	)
+	deps := StageUpdateDeps{Jobs: jobs, Pipeline: canonicalPipeline()}
+	field, stage, err := ResolveCanonicalBody(context.Background(), deps, "doc-1")
+	if err != nil || field != model.FieldClarifiedText || stage != model.StageNameClarify {
+		t.Fatalf("field=%q stage=%q err=%v", field, stage, err)
+	}
+}
+
+func TestResolveCanonicalBody_FallsBackWhenClarifySkipped(t *testing.T) {
+	// A skipped stage is done with no output run.
+	skipped := func(stage string) model.Job {
+		return model.Job{ID: "job-" + stage, DocumentID: "doc-1", Stage: stage, Status: model.JobStatusDone}
+	}
+	jobs := newMockJobRepo(
+		doneBodyJob(model.StageNameOCR, model.FieldRawText),
+		doneBodyJob(model.StageNameSummarize, model.FieldNarrativeSummary),
+		skipped(model.StageNameClarify),
+	)
+	deps := StageUpdateDeps{Jobs: jobs, Pipeline: canonicalPipeline()}
+	field, stage, err := ResolveCanonicalBody(context.Background(), deps, "doc-1")
+	if err != nil || field != model.FieldNarrativeSummary || stage != model.StageNameSummarize {
+		t.Fatalf("field=%q stage=%q err=%v", field, stage, err)
+	}
+}
+
+// An OCR-only doc with summarize+clarify skipped falls back to raw_text — and
+// the resolver must match ocr's job, not transcribe (both declare raw_text).
+func TestResolveCanonicalBody_FallsBackToRawTextFromOCR(t *testing.T) {
+	skipped := func(stage string) model.Job {
+		return model.Job{ID: "job-" + stage, DocumentID: "doc-1", Stage: stage, Status: model.JobStatusDone}
+	}
+	jobs := newMockJobRepo(
+		doneBodyJob(model.StageNameOCR, model.FieldRawText),
+		skipped(model.StageNameSummarize),
+		skipped(model.StageNameClarify),
+	)
+	deps := StageUpdateDeps{Jobs: jobs, Pipeline: canonicalPipeline()}
+	field, stage, err := ResolveCanonicalBody(context.Background(), deps, "doc-1")
+	if err != nil || field != model.FieldRawText || stage != model.StageNameOCR {
+		t.Fatalf("field=%q stage=%q err=%v", field, stage, err)
+	}
+}
+
+func TestResolveCanonicalBody_NoneAvailable(t *testing.T) {
+	deps := StageUpdateDeps{Jobs: newMockJobRepo(), Pipeline: canonicalPipeline()}
+	if _, _, err := ResolveCanonicalBody(context.Background(), deps, "doc-1"); !errors.Is(err, ErrNoCanonicalBody) {
+		t.Errorf("want ErrNoCanonicalBody, got %v", err)
+	}
+}
+
+func TestUpdateCanonicalBody_WritesResolvedBody(t *testing.T) {
+	deps, jobs, _, vault, jobID, artifactRel := setupStageUpdateFixture(t)
+	stage, downstream, err := UpdateCanonicalBody(context.Background(), deps, "doc-1", "REWRITTEN")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if stage != model.StageNameClarify {
+		t.Errorf("stage: want clarify, got %q", stage)
+	}
+	if len(downstream) != 2 {
+		t.Errorf("downstream: %+v", downstream)
+	}
+	if data, _ := os.ReadFile(vault + "/" + artifactRel); string(data) != "REWRITTEN" {
+		t.Errorf("artifact bytes: %q", string(data))
+	}
+	if jobs.statuses[jobID] != string(model.JobStatusPending) {
+		t.Errorf("job status after update: %q, want pending", jobs.statuses[jobID])
+	}
+}
+
+// canonicalPipeline mirrors production: summarize/clarify use the singular
+// `output:` form, transcribe/ocr/classify use the `outputs:` list.
+func canonicalPipeline() model.PipelineConfig {
+	return model.PipelineConfig{Stages: []model.StageDefinition{
+		{Name: model.StageNameTranscribe, Outputs: []model.StageOutput{{Field: model.FieldRawText}}},
+		{Name: model.StageNameOCR, Outputs: []model.StageOutput{{Field: model.FieldRawText}}},
+		{Name: model.StageNameSummarize, Output: model.FieldNarrativeSummary},
+		{Name: model.StageNameClarify, Output: model.FieldClarifiedText},
+		{Name: model.StageNameClassify, Outputs: []model.StageOutput{{Field: model.FieldTags}, {Field: model.FieldSummary}}},
+		{Name: model.StageNameEmbed},
+	}}
+}
+
+// doneBodyJob builds a completed job whose latest run emits the given field with
+// a backing artifact id (enough for ResolveCanonicalBody / findDoneStageRun).
+func doneBodyJob(stage, field string) model.Job {
+	return model.Job{
+		ID: "job-" + stage, DocumentID: "doc-1", Stage: stage, Status: model.JobStatusDone,
+		Runs: []model.Run{{ID: "run-" + stage, Outputs: []model.Field{{Field: field, ArtifactID: "art-" + stage}}}},
+	}
+}
+
 // setupStageUpdateFixture wires a minimal repo + store + pipeline so the
 // stage_update helpers have something to read from and write to. Returns the
 // deps, jobs repo (for assertions), filesystem store, vault path, and the

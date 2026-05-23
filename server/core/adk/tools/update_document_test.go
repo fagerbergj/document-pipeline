@@ -7,8 +7,6 @@ import (
 	"time"
 
 	"google.golang.org/adk/tool/toolconfirmation"
-
-	"github.com/fagerbergj/document-pipeline/server/core/model"
 )
 
 // fakeConfirmCtx implements confirmContext for the two-phase tool flow. The
@@ -44,17 +42,17 @@ func (f *fakeConfirmCtx) RequestConfirmation(hint string, payload any) error {
 }
 
 func TestUpdateDocument_FirstCallRequestsConfirmation(t *testing.T) {
-	read := func(_ context.Context, _, _ string) (string, string, error) {
-		return "old content", "clarify", nil
+	read := func(_ context.Context, _ string) (string, string, string, error) {
+		return "old content", "clarify", "clarified_text", nil
 	}
 	updateCalled := false
-	update := func(_ context.Context, _, _, _ string) (string, []string, error) {
+	update := func(_ context.Context, _, _ string) (string, []string, error) {
 		updateCalled = true
 		return "clarify", []string{"classify", "embed"}, nil
 	}
 	ctx := &fakeConfirmCtx{}
 	res, err := runUpdateDocument(ctx, read, update, UpdateDocumentArgs{
-		ID: "doc-1", Field: "clarified_text", Content: "new content",
+		ID: "doc-1", Content: "new content",
 	})
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -75,6 +73,9 @@ func TestUpdateDocument_FirstCallRequestsConfirmation(t *testing.T) {
 	if pl["before"] != "old content" || pl["after"] != "new content" {
 		t.Errorf("payload before/after: %+v", pl)
 	}
+	if pl["field"] != "clarified_text" {
+		t.Errorf("payload field: %+v", pl)
+	}
 	if updateCalled {
 		t.Error("update fn must not be called before user approves")
 	}
@@ -82,23 +83,22 @@ func TestUpdateDocument_FirstCallRequestsConfirmation(t *testing.T) {
 
 func TestUpdateDocument_ResumeApprovedRunsUpdate(t *testing.T) {
 	var calledWith struct {
-		docID, field, content string
+		docID, content string
 	}
-	update := func(_ context.Context, docID, field, content string) (string, []string, error) {
+	update := func(_ context.Context, docID, content string) (string, []string, error) {
 		calledWith.docID = docID
-		calledWith.field = field
 		calledWith.content = content
 		return "clarify", []string{"classify", "embed"}, nil
 	}
-	read := func(_ context.Context, _, _ string) (string, string, error) {
+	read := func(_ context.Context, _ string) (string, string, string, error) {
 		t.Fatal("read should not be called on resume")
-		return "", "", nil
+		return "", "", "", nil
 	}
 	ctx := &fakeConfirmCtx{
 		confirmation: &toolconfirmation.ToolConfirmation{Confirmed: true},
 	}
 	res, err := runUpdateDocument(ctx, read, update, UpdateDocumentArgs{
-		ID: "doc-1", Field: "clarified_text", Content: "agent-proposed",
+		ID: "doc-1", Content: "agent-proposed",
 	})
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -116,11 +116,11 @@ func TestUpdateDocument_ResumeApprovedRunsUpdate(t *testing.T) {
 
 func TestUpdateDocument_ResumeApprovedUsesPayloadContentOverride(t *testing.T) {
 	var calledWith string
-	update := func(_ context.Context, _, _, content string) (string, []string, error) {
+	update := func(_ context.Context, _, content string) (string, []string, error) {
 		calledWith = content
 		return "clarify", nil, nil
 	}
-	read := func(_ context.Context, _, _ string) (string, string, error) { return "", "", nil }
+	read := func(_ context.Context, _ string) (string, string, string, error) { return "", "", "", nil }
 	ctx := &fakeConfirmCtx{
 		confirmation: &toolconfirmation.ToolConfirmation{
 			Confirmed: true,
@@ -128,7 +128,7 @@ func TestUpdateDocument_ResumeApprovedUsesPayloadContentOverride(t *testing.T) {
 		},
 	}
 	_, err := runUpdateDocument(ctx, read, update, UpdateDocumentArgs{
-		ID: "doc-1", Field: "clarified_text", Content: "agent-proposed",
+		ID: "doc-1", Content: "agent-proposed",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -139,16 +139,16 @@ func TestUpdateDocument_ResumeApprovedUsesPayloadContentOverride(t *testing.T) {
 }
 
 func TestUpdateDocument_ResumeRejectedSkipsUpdate(t *testing.T) {
-	update := func(_ context.Context, _, _, _ string) (string, []string, error) {
+	update := func(_ context.Context, _, _ string) (string, []string, error) {
 		t.Fatal("update should not be called when rejected")
 		return "", nil, nil
 	}
-	read := func(_ context.Context, _, _ string) (string, string, error) { return "", "", nil }
+	read := func(_ context.Context, _ string) (string, string, string, error) { return "", "", "", nil }
 	ctx := &fakeConfirmCtx{
 		confirmation: &toolconfirmation.ToolConfirmation{Confirmed: false},
 	}
 	res, err := runUpdateDocument(ctx, read, update, UpdateDocumentArgs{
-		ID: "doc-1", Field: "clarified_text", Content: "x",
+		ID: "doc-1", Content: "x",
 	})
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -160,58 +160,26 @@ func TestUpdateDocument_ResumeRejectedSkipsUpdate(t *testing.T) {
 
 func TestUpdateDocument_RejectsEmptyID(t *testing.T) {
 	ctx := &fakeConfirmCtx{}
-	_, err := runUpdateDocument(ctx, nil, nil, UpdateDocumentArgs{Field: "clarified_text", Content: "x"})
+	_, err := runUpdateDocument(ctx, nil, nil, UpdateDocumentArgs{Content: "x"})
 	if err == nil {
 		t.Fatal("expected error for empty id")
 	}
 }
 
-func TestUpdateDocument_RejectsDisallowedField(t *testing.T) {
-	ctx := &fakeConfirmCtx{}
-	_, err := runUpdateDocument(ctx, nil, nil, UpdateDocumentArgs{ID: "doc-1", Field: "tags", Content: "[]"})
-	if err == nil {
-		t.Fatal("expected error for disallowed field")
-	}
-}
-
-// full_text is the name get_document uses for the body; it must be accepted and
-// routed to the underlying clarified_text field.
-func TestUpdateDocument_FullTextAliasRoutesToClarifiedText(t *testing.T) {
-	var gotField string
-	update := func(_ context.Context, _, field, _ string) (string, []string, error) {
-		gotField = field
-		return "clarify", nil, nil
-	}
-	read := func(_ context.Context, _, _ string) (string, string, error) { return "", "", nil }
-	ctx := &fakeConfirmCtx{confirmation: &toolconfirmation.ToolConfirmation{Confirmed: true}}
-	res, err := runUpdateDocument(ctx, read, update, UpdateDocumentArgs{
-		ID: "doc-1", Field: "full_text", Content: "new body",
-	})
-	if err != nil {
-		t.Fatalf("full_text should be accepted: %v", err)
-	}
-	if res.Status != "applied" {
-		t.Errorf("status: want applied, got %q", res.Status)
-	}
-	if gotField != model.FieldClarifiedText {
-		t.Errorf("update called with field %q, want %q", gotField, model.FieldClarifiedText)
-	}
-}
-
 func TestUpdateDocument_RejectsEmptyContent(t *testing.T) {
 	ctx := &fakeConfirmCtx{}
-	_, err := runUpdateDocument(ctx, nil, nil, UpdateDocumentArgs{ID: "doc-1", Field: "clarified_text", Content: " "})
+	_, err := runUpdateDocument(ctx, nil, nil, UpdateDocumentArgs{ID: "doc-1", Content: " "})
 	if err == nil {
 		t.Fatal("expected error for empty content")
 	}
 }
 
 func TestUpdateDocument_ReadErrorPropagates(t *testing.T) {
-	read := func(_ context.Context, _, _ string) (string, string, error) {
-		return "", "", errors.New("stage not done")
+	read := func(_ context.Context, _ string) (string, string, string, error) {
+		return "", "", "", errors.New("stage not done")
 	}
 	ctx := &fakeConfirmCtx{}
-	_, err := runUpdateDocument(ctx, read, nil, UpdateDocumentArgs{ID: "doc-1", Field: "clarified_text", Content: "x"})
+	_, err := runUpdateDocument(ctx, read, nil, UpdateDocumentArgs{ID: "doc-1", Content: "x"})
 	if err == nil {
 		t.Fatal("expected error to propagate")
 	}

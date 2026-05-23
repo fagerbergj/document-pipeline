@@ -431,11 +431,11 @@ func (h *handler) buildUpdateDocumentTool() (tool.Tool, error) {
 		Pipeline:   h.pipeline,
 		VaultPath:  h.vaultPath,
 	}
-	read := func(ctx context.Context, docID, field string) (string, string, error) {
-		return core.CurrentStageOutput(ctx, deps, docID, field)
+	read := func(ctx context.Context, docID string) (string, string, string, error) {
+		return core.CurrentCanonicalBody(ctx, deps, docID)
 	}
-	update := func(ctx context.Context, docID, field, content string) (string, []string, error) {
-		return core.UpdateStageArtifact(ctx, deps, docID, field, content)
+	update := func(ctx context.Context, docID, content string) (string, []string, error) {
+		return core.UpdateCanonicalBody(ctx, deps, docID, content)
 	}
 	return adktools.NewUpdateDocumentTool(read, update)
 }
@@ -565,13 +565,14 @@ func chatInstruction(systemPrompt string) string {
 		"you couldn't find anything rather than spamming more searches.\n\n" +
 		"When answering, rely on the canonical body (full_text) — that is the polished version the " +
 		"user reads. The retrieval tools return only that by default.\n\n" +
-		"If the user reports that a specific stage output is wrong, use update_document to fix it. " +
-		"The editable fields are: full_text (the document body the user reads — same field as " +
-		"clarified_text), narrative_summary, raw_text, and summary. To correct the body of a note, " +
-		"edit full_text/clarified_text — not just summary. To inspect or fix an intermediate stage " +
-		"(raw_text or narrative_summary), call get_document with include_stage_outputs: true first; " +
-		"do not request those for ordinary questions. The user will approve, reject, or edit your " +
-		"proposal in a UI card; downstream stages re-run automatically on approval.\n\n" +
+		"Whenever the user asks to fix, correct, rewrite, or change what a note says, call " +
+		"update_document with the document id and the FULL corrected body as `content` — read the " +
+		"current text with get_document first so you preserve everything they didn't ask to change. " +
+		"Do not just describe the change in prose: update_document is what edits the note, and it " +
+		"always shows the user an approval card (with a before/after diff) before anything is " +
+		"written, so call it rather than asking the user for permission yourself. The user can edit " +
+		"or reject your proposal there; on approval the summary, tags, and embeddings re-derive from " +
+		"the new body automatically.\n\n" +
 		"After an edit is applied, read the new value back with get_document (Postgres-backed, " +
 		"immediately fresh). Do not rely on rag_search to confirm a just-applied edit — it is " +
 		"eventually consistent and may return the old text until the embed stage re-runs."
