@@ -487,8 +487,12 @@ func artifactStageIndex(p model.PipelineConfig, a model.Artifact) int {
 	field := artifactField(a)
 	if field != "" {
 		for i, s := range p.Stages {
-			for _, o := range s.Outputs {
-				if o.Field == field {
+			// StageOutputFields covers both the singular `output:` (clarify,
+			// summarize) and list `outputs:` forms; iterating s.Outputs alone
+			// would miss clarified_text/narrative_summary and sort legacy
+			// untagged artifacts for those stages to the end.
+			for _, f := range core.StageOutputFields(s) {
+				if f == field {
 					return i
 				}
 			}

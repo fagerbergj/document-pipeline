@@ -45,19 +45,29 @@ func CurrentStageOutput(ctx context.Context, d StageUpdateDeps, docID, field str
 	if err != nil {
 		return "", "", err
 	}
+	text, err := currentStageOutputAt(ctx, d, docID, stageName, field)
+	return text, stageName, err
+}
+
+// currentStageOutputAt reads the current text of (stageName, field) without
+// re-deriving the stage from the field. Callers that already know the stage
+// (e.g. CurrentCanonicalBody, where raw_text may come from ocr rather than the
+// first stage that declares it) pass it explicitly so the read targets the
+// stage that actually ran.
+func currentStageOutputAt(ctx context.Context, d StageUpdateDeps, docID, stageName, field string) (string, error) {
 	_, run, fieldIdx, err := findDoneStageRun(ctx, d, docID, stageName, field)
 	if err != nil {
-		return "", stageName, err
+		return "", err
 	}
 	art, err := d.Artifacts.Get(ctx, docID, run.Outputs[fieldIdx].ArtifactID)
 	if err != nil {
-		return "", stageName, fmt.Errorf("get artifact: %w", err)
+		return "", fmt.Errorf("get artifact: %w", err)
 	}
 	text, err := readArtifactText(d.Store, d.VaultPath, art)
 	if err != nil {
-		return "", stageName, fmt.Errorf("read artifact: %w", err)
+		return "", fmt.Errorf("read artifact: %w", err)
 	}
-	return text, stageName, nil
+	return text, nil
 }
 
 // UpdateStageArtifact overwrites the named output field of the doc's job for
@@ -73,25 +83,35 @@ func UpdateStageArtifact(ctx context.Context, d StageUpdateDeps, docID, field, c
 	if err != nil {
 		return "", nil, err
 	}
+	downstream, err := UpdateStageArtifactAt(ctx, d, docID, stageName, field, content)
+	return stageName, downstream, err
+}
+
+// UpdateStageArtifactAt overwrites (stageName, field)'s artifact and cascades to
+// downstream stages, returning the downstream stage names. Callers pass the
+// stage explicitly so a field declared by more than one stage (raw_text from
+// transcribe or ocr) targets the one that actually produced this doc's output —
+// resolveFieldStage would pick the first declarer, which may have been skipped.
+func UpdateStageArtifactAt(ctx context.Context, d StageUpdateDeps, docID, stageName, field, content string) ([]string, error) {
 	job, run, fieldIdx, err := findDoneStageRun(ctx, d, docID, stageName, field)
 	if err != nil {
-		return stageName, nil, err
+		return nil, err
 	}
 
 	// Rewrite the artifact bytes on disk.
 	fld := run.Outputs[fieldIdx]
 	art, err := d.Artifacts.Get(ctx, docID, fld.ArtifactID)
 	if err != nil {
-		return stageName, nil, fmt.Errorf("get artifact: %w", err)
+		return nil, fmt.Errorf("get artifact: %w", err)
 	}
 	data := []byte(content)
 	if art.Path != nil && *art.Path != "" {
 		if err := d.Store.SaveAt(d.VaultPath, *art.Path, data); err != nil {
-			return stageName, nil, fmt.Errorf("save artifact: %w", err)
+			return nil, fmt.Errorf("save artifact: %w", err)
 		}
 	} else {
 		if err := d.Store.Save(d.VaultPath, art.ID, art.Filename, data); err != nil {
-			return stageName, nil, fmt.Errorf("save artifact: %w", err)
+			return nil, fmt.Errorf("save artifact: %w", err)
 		}
 	}
 
@@ -108,12 +128,12 @@ func UpdateStageArtifact(ctx context.Context, d StageUpdateDeps, docID, field, c
 	job.Runs[runIdx].Outputs[fieldIdx].Preview = PreviewOf(content)
 	job.Runs[runIdx].UpdatedAt = now
 	if err := d.Jobs.UpdateRuns(ctx, job.ID, job.Runs, now); err != nil {
-		return stageName, nil, fmt.Errorf("update runs: %w", err)
+		return nil, fmt.Errorf("update runs: %w", err)
 	}
 
 	// Re-pend the job and cascade to downstream stages.
 	if err := d.Jobs.UpdateStatus(ctx, job.ID, string(model.JobStatusPending), now); err != nil {
-		return stageName, nil, fmt.Errorf("update status: %w", err)
+		return nil, fmt.Errorf("update status: %w", err)
 	}
 	stageOrder := make([]string, len(d.Pipeline.Stages))
 	for i, s := range d.Pipeline.Stages {
@@ -127,20 +147,20 @@ func UpdateStageArtifact(ctx context.Context, d StageUpdateDeps, docID, field, c
 		}
 	}
 	if err := d.Jobs.CascadeReplay(ctx, docID, stageName, stageOrder, now); err != nil {
-		return stageName, nil, fmt.Errorf("cascade replay: %w", err)
+		return nil, fmt.Errorf("cascade replay: %w", err)
 	}
 	downstream := downstreamStages(stageOrder, stageName)
 	slog.Info("stage artifact updated via chat tool",
 		"doc_id", ShortID(docID), "stage", stageName, "field", field,
 		"bytes", len(data), "downstream", downstream)
-	return stageName, downstream, nil
+	return downstream, nil
 }
 
-// stageOutputFields returns every output field a stage produces. Stages declare
+// StageOutputFields returns every output field a stage produces. Stages declare
 // outputs either as a single `output:` (summarize, clarify) or a list
 // `outputs:` (transcribe, ocr, classify) in pipeline.yaml; both forms must be
 // considered or fields like clarified_text/narrative_summary appear unknown.
-func stageOutputFields(s model.StageDefinition) []string {
+func StageOutputFields(s model.StageDefinition) []string {
 	fields := make([]string, 0, len(s.Outputs)+1)
 	if s.Output != "" {
 		fields = append(fields, s.Output)
@@ -155,7 +175,7 @@ func stageOutputFields(s model.StageDefinition) []string {
 // the named output field. Returns ErrUnknownField if no stage matches.
 func resolveFieldStage(p model.PipelineConfig, field string) (string, error) {
 	for _, s := range p.Stages {
-		for _, f := range stageOutputFields(s) {
+		for _, f := range StageOutputFields(s) {
 			if f == field {
 				return s.Name, nil
 			}
@@ -186,8 +206,20 @@ func ResolveCanonicalBody(ctx context.Context, d StageUpdateDeps, docID string) 
 		if bodyField == "" {
 			continue
 		}
-		if _, _, _, ferr := findDoneStageRun(ctx, d, docID, s.Name, bodyField); ferr == nil {
+		_, _, _, ferr := findDoneStageRun(ctx, d, docID, s.Name, bodyField)
+		switch {
+		case ferr == nil:
 			return bodyField, s.Name, nil
+		case errors.Is(ferr, ErrNoJob), errors.Is(ferr, ErrNoArtifact):
+			// Stage was skipped or produced no output for this doc — fall back
+			// to a less-polished body field (e.g. clarify skipped → narrative_summary).
+			continue
+		default:
+			// ErrStageNotDone (the body stage is still running) or an
+			// infrastructure error (e.g. listing jobs failed). Don't silently
+			// edit an upstream draft or report "no body" — surface it so the
+			// caller can tell the user to wait or retry.
+			return "", "", ferr
 		}
 	}
 	return "", "", fmt.Errorf("%w for document %s", ErrNoCanonicalBody, ShortID(docID))
@@ -196,7 +228,7 @@ func ResolveCanonicalBody(ctx context.Context, d StageUpdateDeps, docID string) 
 // bodyOutputOf returns the body field a stage produces (clarified_text,
 // narrative_summary, or raw_text), or "" if it produces none.
 func bodyOutputOf(s model.StageDefinition) string {
-	for _, f := range stageOutputFields(s) {
+	for _, f := range StageOutputFields(s) {
 		for _, body := range canonicalBodyFields {
 			if f == body {
 				return f
@@ -208,24 +240,15 @@ func bodyOutputOf(s model.StageDefinition) string {
 
 // CurrentCanonicalBody returns the current text of the document's canonical
 // body along with the stage and field it resolved to (for the approval card).
+// It reads at the resolved stage rather than re-deriving it from the field, so
+// a raw_text body produced by ocr is not mistakenly looked up under transcribe.
 func CurrentCanonicalBody(ctx context.Context, d StageUpdateDeps, docID string) (current, stage, field string, err error) {
-	field, _, err = ResolveCanonicalBody(ctx, d, docID)
+	field, stage, err = ResolveCanonicalBody(ctx, d, docID)
 	if err != nil {
 		return "", "", "", err
 	}
-	current, stage, err = CurrentStageOutput(ctx, d, docID, field)
+	current, err = currentStageOutputAt(ctx, d, docID, stage, field)
 	return current, stage, field, err
-}
-
-// UpdateCanonicalBody overwrites the document's canonical body and cascades to
-// downstream stages. Resolves the body field (clarified_text, else the latest
-// completed body stage) so the model never needs to name it.
-func UpdateCanonicalBody(ctx context.Context, d StageUpdateDeps, docID, content string) (string, []string, error) {
-	field, _, err := ResolveCanonicalBody(ctx, d, docID)
-	if err != nil {
-		return "", nil, err
-	}
-	return UpdateStageArtifact(ctx, d, docID, field, content)
 }
 
 // findDoneStageRun returns the doc's job for stageName along with its latest

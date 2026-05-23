@@ -46,14 +46,13 @@ func NewGetDocumentTool(getDoc DocLookupFn, stageData StageDataFn) (tool.Tool, e
 	return functiontool.New(functiontool.Config{
 		Name: "get_document",
 		Description: "Fetch a document's contents by its UUID. By default returns the canonical body " +
-			"`full_text` (the clarify stage's clarified_text — quote THIS when answering) plus " +
-			"`summary`, `tags`, and date. To edit the body, pass `full_text` (or `clarified_text`) " +
-			"to update_document.\n" +
-			"Set `include_stage_outputs: true` ONLY when the user wants to inspect or correct an " +
-			"earlier pipeline stage — it adds the intermediate, non-canonical `raw_text` " +
-			"(transcribe/ocr) and `narrative_summary` (summarize), which are also editable via " +
-			"update_document. Do not request these for normal questions; they are noisier and may " +
-			"contradict the polished body.\n" +
+			"`full_text` (the polished version the user reads — quote THIS when answering) plus " +
+			"`summary`, `tags`, and date. To change what a note says, pass the corrected `full_text` " +
+			"to update_document (it edits the body; you do not choose a field).\n" +
+			"Set `include_stage_outputs: true` ONLY when the user wants to inspect an earlier " +
+			"pipeline stage — it adds the intermediate, non-canonical `raw_text` (transcribe/ocr) " +
+			"and `narrative_summary` (summarize). These are for reference; do not request them for " +
+			"normal questions, as they are noisier and may contradict the polished body.\n" +
 			"Use after search_documents returns a candidate id, or when the user references a doc " +
 			"by an id you already have. Never call with an empty id — run search_documents first.",
 	}, func(tctx tool.Context, args GetDocumentArgs) (GetDocumentResult, error) {
@@ -76,22 +75,27 @@ func runGetDocument(ctx context.Context, getDoc DocLookupFn, stageData StageData
 	if err != nil {
 		return GetDocumentResult{}, fmt.Errorf("get_document collect stage data: %w", err)
 	}
+	// full_text is the canonical body (clarify's clarified_text), but clarify
+	// may have been skipped (e.g. uploaded without context, or below the
+	// summarize size threshold). Fall back to the most-polished body that did
+	// run so the model never gets an empty document and silently fails to answer.
+	fullText := stagefield.String(sd, model.StageNameClarify, model.FieldClarifiedText)
+	if fullText == "" {
+		fullText = stagefield.String(sd, model.StageNameSummarize, model.FieldNarrativeSummary)
+	}
+	if fullText == "" {
+		fullText = rawTextOf(sd)
+	}
 	out := GetDocumentResult{
 		ID:       doc.ID,
-		FullText: stagefield.String(sd, model.StageNameClarify, model.FieldClarifiedText),
+		FullText: fullText,
 		Summary:  stagefield.String(sd, model.StageNameClassify, model.FieldSummary),
 		Tags:     stagefield.Tags(sd, model.StageNameClassify, model.FieldTags),
 	}
 	// Intermediate stage outputs are opt-in: normal answers should only see the
 	// canonical body, not the noisier capture text or the intermediate draft.
 	if args.IncludeStageOutputs {
-		// raw_text is produced by whichever capture stage ran for this doc's
-		// type: transcribe for audio, ocr for images. Only one runs, so fall back.
-		rawText := stagefield.String(sd, model.StageNameTranscribe, model.FieldRawText)
-		if rawText == "" {
-			rawText = stagefield.String(sd, model.StageNameOCR, model.FieldRawText)
-		}
-		out.RawText = rawText
+		out.RawText = rawTextOf(sd)
 		out.NarrativeSummary = stagefield.String(sd, model.StageNameSummarize, model.FieldNarrativeSummary)
 	}
 	if doc.Title != nil {
@@ -101,4 +105,13 @@ func runGetDocument(ctx context.Context, getDoc DocLookupFn, stageData StageData
 		out.DateMonth = *doc.DateMonth
 	}
 	return out, nil
+}
+
+// rawTextOf returns the raw_text produced by whichever capture stage ran for
+// this doc: transcribe for audio, ocr for images. Only one runs, so fall back.
+func rawTextOf(sd model.StageOutputs) string {
+	if t := stagefield.String(sd, model.StageNameTranscribe, model.FieldRawText); t != "" {
+		return t
+	}
+	return stagefield.String(sd, model.StageNameOCR, model.FieldRawText)
 }

@@ -44,10 +44,10 @@ type UpdateDocumentResult struct {
 // the diff preview, along with the stage and field it resolved to.
 type ArtifactReadFn func(ctx context.Context, docID string) (current, stage, field string, err error)
 
-// ArtifactUpdateFn rewrites the document's canonical body and triggers the
-// downstream cascade. Returns the stage updated and the names of downstream
-// stages that were re-queued.
-type ArtifactUpdateFn func(ctx context.Context, docID, content string) (stage string, downstream []string, err error)
+// ArtifactUpdateFn rewrites the given (stage, field) — the canonical body
+// resolved and shown to the user at request time — and triggers the downstream
+// cascade. Returns the names of downstream stages that were re-queued.
+type ArtifactUpdateFn func(ctx context.Context, docID, stage, field, content string) (downstream []string, err error)
 
 // NewUpdateDocumentTool returns an ADK tool that lets the chat agent rewrite a
 // document's canonical body (its polished clarified_text, falling back to the
@@ -97,15 +97,30 @@ func runUpdateDocument(tctx confirmContext, read ArtifactReadFn, update Artifact
 			slog.Info("update_document rejected", "doc_id", shortID(args.ID))
 			return UpdateDocumentResult{Status: "rejected"}, nil
 		}
-		// The user may have edited the proposed content before approving.
-		// Prefer the payload-supplied content over the model's original args.
+		// Apply against the stage+field resolved when we requested confirmation
+		// (carried on the payload), not a fresh resolution — otherwise a body
+		// stage finishing between request and approval could redirect the write
+		// to a different field than the user reviewed in the diff. The user may
+		// also have edited the proposed content before approving.
 		content := args.Content
+		var stage, field string
 		if p, ok := c.Payload.(map[string]any); ok {
 			if v, ok := p["content"].(string); ok && v != "" {
 				content = v
 			}
+			stage, _ = p["stage"].(string)
+			field, _ = p["field"].(string)
 		}
-		stage, downstream, err := update(tctx, args.ID, content)
+		if stage == "" || field == "" {
+			// Payload lacked the pinned target (e.g. a confirmation issued by an
+			// older build). Fall back to resolving the body fresh.
+			if _, s, f, rerr := read(tctx, args.ID); rerr == nil {
+				stage, field = s, f
+			} else {
+				return UpdateDocumentResult{}, fmt.Errorf("update_document apply: resolve body: %w", rerr)
+			}
+		}
+		downstream, err := update(tctx, args.ID, stage, field, content)
 		if err != nil {
 			return UpdateDocumentResult{}, fmt.Errorf("update_document apply: %w", err)
 		}
