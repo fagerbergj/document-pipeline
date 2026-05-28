@@ -347,9 +347,9 @@ export function ConfirmationBlock({ part, onDecide }: {
         </div>
       )}
 
-      {collapsed && (
-        <div className="px-3 py-2 flex items-center gap-2">
-          <span className={`text-xs font-semibold uppercase tracking-wide ${statusText}`}>
+{collapsed && (
+        <div className={`px-3 py-2 flex items-center gap-2 ${statusStyles.bg}`}>
+          <span className={`text-xs font-semibold uppercase tracking-wide ${statusStyles.text}`}>
             {part.status}
           </span>
           <span className="text-xs text-gray-500 dark:text-gray-400">{part.hint}</span>

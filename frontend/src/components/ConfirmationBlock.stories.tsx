@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react'
-import { fn } from '@storybook/test'
 import { ConfirmationBlock } from './AgentParts'
+
+const onDecideMock = () => {}
 
 /**
  * ConfirmationBlock renders the inline approval card for a tool-call that
@@ -58,7 +59,7 @@ This is the old introduction that needs to be replaced.`,
 This is the new improved introduction with better details.`,
       status: 'pending',
     },
-    onDecide: fn(),
+    onDecide: onDecideMock,
   },
 }
 
@@ -94,7 +95,7 @@ Old summary goes here with less detail.`,
 3. Schedule follow-up review`,
       status: 'pending',
     },
-    onDecide: fn(),
+    onDecide: onDecideMock,
   },
 }
 
@@ -122,7 +123,7 @@ Value A: 150
 Value B: 250`,
       status: 'approved',
     },
-    onDecide: fn(),
+    onDecide: onDecideMock,
   },
 }
 
@@ -152,7 +153,7 @@ It begins with its founding in 2010.
 Then traces its growth through 2020 and beyond.`,
       status: 'rejected',
     },
-    onDecide: fn(),
+    onDecide: onDecideMock,
   },
 }
 
@@ -178,6 +179,6 @@ This is the baseline.`,
 This is the model's suggestion.`,
       status: 'pending',
     },
-    onDecide: fn(),
+    onDecide: onDecideMock,
   },
 }
