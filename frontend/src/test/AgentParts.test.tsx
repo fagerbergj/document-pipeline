@@ -226,7 +226,7 @@ describe('ConfirmationBlock rendering', () => {
   it('hides buttons once status is approved', () => {
     const decided = { ...part, status: 'approved' as const }
     render(<AssistantParts parts={[decided]} onDecideConfirmation={() => {}} />)
-    expect(screen.queryByRole('button', { name: /approve/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^approve$/i })).not.toBeInTheDocument()
     expect(screen.getByText(/approved/i)).toBeInTheDocument()
   })
 
@@ -278,6 +278,15 @@ describe('ConfirmationBlock rendering', () => {
     fireEvent.change(textarea, { target: { value: 'edited text' } })
     fireEvent.click(screen.getByRole('button', { name: /approve/i }))
     expect(onDecide).toHaveBeenCalledWith('c1', true, 'edited text')
+  })
+
+  it('re-expands the collapsed bar when clicked', () => {
+    const approvedPart = { ...part, status: 'approved' as const }
+    render(<AssistantParts parts={[approvedPart]} onDecideConfirmation={() => {}} />)
+    expect(screen.queryByText('Diff')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByText(/expand/i))
+    expect(screen.getByText('Diff')).toBeInTheDocument()
+    expect(screen.getByText('Editable')).toBeInTheDocument()
   })
 
   it('provides reset button to revert to model proposal', () => {

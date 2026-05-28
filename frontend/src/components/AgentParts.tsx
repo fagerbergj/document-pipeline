@@ -1,6 +1,6 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { useState, useEffect, useMemo, type ReactNode } from 'react'
+import { useState, useEffect, type ReactNode } from 'react'
 import EditableOutput from './EditableOutput'
 import DiffView from './DiffView'
 
@@ -243,23 +243,30 @@ export function ConfirmationBlock({ part, onDecide }: {
     setEdited(part.after)
   }, [part.callId, part.after])
 
-  const statusStyles = useMemo(() => {
-    if (part.status === 'approved') return {
-      border: 'border-green-300 dark:border-green-700',
-      bg: 'bg-green-50 dark:bg-green-950/30',
-      text: 'text-green-800 dark:text-green-400'
-    }
-    if (part.status === 'rejected') return {
-      border: 'border-red-300 dark:border-red-700',
-      bg: 'bg-red-50 dark:bg-red-950/30',
-      text: 'text-red-800 dark:text-red-400'
-    }
-    return {
-      border: 'border-amber-200 dark:border-amber-800',
-      bg: 'bg-amber-50 dark:bg-amber-950/30',
-      text: 'text-amber-800 dark:text-amber-300'
-    }
-  }, [part.status])
+  const statusStyles =
+    part.status === 'approved'
+      ? {
+          border: 'border-green-300 dark:border-green-700',
+          bg: 'bg-green-50 dark:bg-green-950/30',
+          text: 'text-green-800 dark:text-green-400',
+          hint: 'text-green-700 dark:text-green-400',
+          tabInactive: 'text-green-600 dark:text-green-500 hover:text-green-800 dark:hover:text-green-300',
+        }
+      : part.status === 'rejected'
+      ? {
+          border: 'border-red-300 dark:border-red-700',
+          bg: 'bg-red-50 dark:bg-red-950/30',
+          text: 'text-red-800 dark:text-red-400',
+          hint: 'text-red-700 dark:text-red-400',
+          tabInactive: 'text-red-600 dark:text-red-500 hover:text-red-800 dark:hover:text-red-300',
+        }
+      : {
+          border: 'border-amber-200 dark:border-amber-800',
+          bg: 'bg-amber-50 dark:bg-amber-950/30',
+          text: 'text-amber-800 dark:text-amber-300',
+          hint: 'text-amber-700 dark:text-amber-400',
+          tabInactive: 'text-amber-600 dark:text-amber-500 hover:text-amber-800 dark:hover:text-amber-300',
+        }
 
   return (
     <div className={`my-2 rounded-lg border ${statusStyles.border} ${statusStyles.bg} not-prose`}>
@@ -269,22 +276,25 @@ export function ConfirmationBlock({ part, onDecide }: {
             <span className={`text-xs font-semibold uppercase tracking-wide ${statusStyles.text}`}>
               Approval needed
             </span>
-            <span className={`text-xs ${part.status === 'approved' ? 'text-green-700 dark:text-green-400' : part.status === 'rejected' ? 'text-red-700 dark:text-red-400' : 'text-amber-700 dark:text-amber-400'}`}>{part.hint}</span>
+            <span className={`text-xs ${statusStyles.hint}`}>{part.hint}</span>
             {part.status !== 'pending' && (
-              <span className={`ml-auto text-xs font-medium ${statusStyles.text}`}>
-                {part.status}
-              </span>
+              <button
+                onClick={() => setCollapsed(true)}
+                className={`ml-auto text-xs font-medium ${statusStyles.text} hover:underline`}
+              >
+                {part.status} (collapse)
+              </button>
             )}
           </div>
 
           <div className="p-3 space-y-3">
-          <div className="flex gap-2 border-b border-amber-200 dark:border-amber-800">
+          <div className={`flex gap-2 border-b ${statusStyles.border}`}>
             <button
               onClick={() => setActiveTab('diff')}
               className={`px-3 py-1.5 text-xs font-medium transition-colors ${
                 activeTab === 'diff'
-                  ? 'text-amber-800 dark:text-amber-300 border-b-2 border-amber-800 dark:border-amber-300'
-                  : 'text-amber-600 dark:text-amber-500 hover:text-amber-800 dark:hover:text-amber-300'
+                  ? `${statusStyles.text} border-b-2 border-current`
+                  : statusStyles.tabInactive
               }`}
             >
               Diff
@@ -293,8 +303,8 @@ export function ConfirmationBlock({ part, onDecide }: {
               onClick={() => setActiveTab('editable')}
               className={`px-3 py-1.5 text-xs font-medium transition-colors ${
                 activeTab === 'editable'
-                  ? 'text-amber-800 dark:text-amber-300 border-b-2 border-amber-800 dark:border-amber-300'
-                  : 'text-amber-600 dark:text-amber-500 hover:text-amber-800 dark:hover:text-amber-300'
+                  ? `${statusStyles.text} border-b-2 border-current`
+                  : statusStyles.tabInactive
               }`}
             >
               Editable
@@ -334,7 +344,7 @@ export function ConfirmationBlock({ part, onDecide }: {
               {edited !== part.after && (
                 <button
                   onClick={() => setEdited(part.after)}
-                  className="text-xs text-amber-700 dark:text-amber-400 hover:underline ml-auto"
+                  className={`text-xs hover:underline ml-auto ${statusStyles.hint}`}
                 >
                   Reset to model's proposal
                 </button>
@@ -346,12 +356,17 @@ export function ConfirmationBlock({ part, onDecide }: {
       )}
 
       {collapsed && (
-        <div className={`px-3 py-2 flex items-center gap-2 ${statusStyles.bg}`}>
+        <button
+          type="button"
+          onClick={() => setCollapsed(false)}
+          className={`w-full px-3 py-2 flex items-center gap-2 text-left ${statusStyles.bg} rounded-lg`}
+        >
           <span className={`text-xs font-semibold uppercase tracking-wide ${statusStyles.text}`}>
             {part.status}
           </span>
           <span className="text-xs text-gray-500 dark:text-gray-400">{part.hint}</span>
-        </div>
+          <span className={`ml-auto text-xs ${statusStyles.hint}`}>Expand</span>
+        </button>
       )}
     </div>
   )

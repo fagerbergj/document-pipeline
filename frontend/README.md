@@ -114,11 +114,17 @@ npm test              # Run all tests once
 npm run test:watch    # Watch mode for TDD
 ```
 
-Tests use Vitest + React Testing Library. Run specific tests:
+Tests use Vitest + React Testing Library. The Vitest config defines two
+projects: `unit` (jsdom, all `src/test/*` tests) and `storybook` (Playwright
+Chromium, runs every `*.stories.tsx`). `npm test` runs both.
+
+Run a single project or file:
 
 ```bash
-npx vitest run src/test/AgentParts.test.tsx
-npx vitest src/test/AgentParts.test.tsx  # Watch mode for specific file
+npx vitest run --project unit                                # unit tests only
+npx vitest run --project storybook                           # storybook browser tests only
+npx vitest run --project unit src/test/AgentParts.test.tsx   # single file
+npx vitest --project unit src/test/AgentParts.test.tsx       # watch mode, single file
 ```
 
 ### Running Storybook
@@ -128,12 +134,6 @@ npm run storybook
 ```
 
 Storybook runs on `http://localhost:6006` and allows you to preview components in isolation.
-
-### Running Storybook Tests
-
-```bash
-npx vitest --project storybook run
-```
 
 ### Type Checking
 
