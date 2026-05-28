@@ -241,7 +241,7 @@ export function ConfirmationBlock({ part, onDecide }: {
   useEffect(() => {
     setActiveTab('diff')
     setEdited(part.after)
-  }, [part])
+  }, [part.callId, part.after])
 
   const statusStyles = useMemo(() => {
     if (part.status === 'approved') return {
@@ -266,21 +266,18 @@ export function ConfirmationBlock({ part, onDecide }: {
       {!collapsed && (
         <>
           <div className={`px-3 py-2 border-b ${statusStyles.border} flex items-center gap-2`}>
-            <span className="text-xs font-semibold text-amber-800 dark:text-amber-300 uppercase tracking-wide">
+            <span className={`text-xs font-semibold uppercase tracking-wide ${statusStyles.text}`}>
               Approval needed
             </span>
-            <span className="text-xs text-amber-700 dark:text-amber-400">{part.hint}</span>
+            <span className={`text-xs ${part.status === 'approved' ? 'text-green-700 dark:text-green-400' : part.status === 'rejected' ? 'text-red-700 dark:text-red-400' : 'text-amber-700 dark:text-amber-400'}`}>{part.hint}</span>
             {part.status !== 'pending' && (
-              <span className={`ml-auto text-xs font-medium ${part.status === 'approved' ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}`}>
+              <span className={`ml-auto text-xs font-medium ${statusStyles.text}`}>
                 {part.status}
               </span>
             )}
           </div>
-        </>
-      )}
 
-      {!collapsed && (
-        <div className="p-3 space-y-3">
+          <div className="p-3 space-y-3">
           <div className="flex gap-2 border-b border-amber-200 dark:border-amber-800">
             <button
               onClick={() => setActiveTab('diff')}
@@ -344,10 +341,11 @@ export function ConfirmationBlock({ part, onDecide }: {
               )}
             </div>
           )}
-        </div>
+          </div>
+        </>
       )}
 
-{collapsed && (
+      {collapsed && (
         <div className={`px-3 py-2 flex items-center gap-2 ${statusStyles.bg}`}>
           <span className={`text-xs font-semibold uppercase tracking-wide ${statusStyles.text}`}>
             {part.status}
