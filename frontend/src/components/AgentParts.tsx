@@ -1,6 +1,6 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { useState, type ReactNode } from 'react'
+import { useState, useEffect, useMemo, type ReactNode } from 'react'
 import EditableOutput from './EditableOutput'
 import DiffView from './DiffView'
 
@@ -228,65 +228,133 @@ export function ConfirmationBlock({ part, onDecide }: {
   onDecide?: (callId: string, confirmed: boolean, content?: string) => void
 }) {
   const [edited, setEdited] = useState(part.after)
+  const [activeTab, setActiveTab] = useState<'diff' | 'editable'>('diff')
+  const [collapsed, setCollapsed] = useState(false)
   const pending = part.status === 'pending'
 
+  useEffect(() => {
+    if (part.status !== 'pending') {
+      setCollapsed(true)
+    }
+  }, [part.status])
+
+  useEffect(() => {
+    setActiveTab('diff')
+    setEdited(part.after)
+  }, [part])
+
+  const statusStyles = useMemo(() => {
+    if (part.status === 'approved') return {
+      border: 'border-green-300 dark:border-green-700',
+      bg: 'bg-green-50 dark:bg-green-950/30',
+      text: 'text-green-800 dark:text-green-400'
+    }
+    if (part.status === 'rejected') return {
+      border: 'border-red-300 dark:border-red-700',
+      bg: 'bg-red-50 dark:bg-red-950/30',
+      text: 'text-red-800 dark:text-red-400'
+    }
+    return {
+      border: 'border-amber-200 dark:border-amber-800',
+      bg: 'bg-amber-50 dark:bg-amber-950/30',
+      text: 'text-amber-800 dark:text-amber-300'
+    }
+  }, [part.status])
+
   return (
-    <div className="my-2 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 not-prose">
-      <div className="px-3 py-2 border-b border-amber-200 dark:border-amber-800 flex items-center gap-2">
-        <span className="text-xs font-semibold text-amber-800 dark:text-amber-300 uppercase tracking-wide">
-          Approval needed
-        </span>
-        <span className="text-xs text-amber-700 dark:text-amber-400">{part.hint}</span>
-        {part.status !== 'pending' && (
-          <span className={`ml-auto text-xs font-medium ${part.status === 'approved' ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}`}>
-            {part.status}
-          </span>
-        )}
-      </div>
-
-      <div className="p-3 space-y-3">
-        <details open className="rounded border border-amber-200 dark:border-amber-800 bg-white dark:bg-gray-900">
-          <summary className="cursor-pointer select-none px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-400">
-            Diff
-          </summary>
-          <DiffView before={part.before} after={edited} />
-        </details>
-
-        <EditableOutput
-          field={part.field}
-          content={edited}
-          editing={pending}
-          onChange={setEdited}
-          edited={pending && edited !== part.after}
-          label={`Proposed ${part.field.replace(/_/g, ' ')}`}
-          maxHeight="30vh"
-        />
-
-        {pending && (
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => onDecide?.(part.callId, true, edited)}
-              className="px-3 py-1.5 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700"
-            >
-              Approve
-            </button>
-            <button
-              onClick={() => onDecide?.(part.callId, false)}
-              className="px-3 py-1.5 text-sm font-medium border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
-            >
-              Reject
-            </button>
-            {edited !== part.after && (
-              <button
-                onClick={() => setEdited(part.after)}
-                className="text-xs text-amber-700 dark:text-amber-400 hover:underline ml-auto"
-              >
-                Reset to model's proposal
-              </button>
+    <div className={`my-2 rounded-lg border ${statusStyles.border} ${statusStyles.bg} not-prose`}>
+      {!collapsed && (
+        <>
+          <div className={`px-3 py-2 border-b ${statusStyles.border} flex items-center gap-2`}>
+            <span className="text-xs font-semibold text-amber-800 dark:text-amber-300 uppercase tracking-wide">
+              Approval needed
+            </span>
+            <span className="text-xs text-amber-700 dark:text-amber-400">{part.hint}</span>
+            {part.status !== 'pending' && (
+              <span className={`ml-auto text-xs font-medium ${part.status === 'approved' ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}`}>
+                {part.status}
+              </span>
             )}
           </div>
-        )}
-      </div>
+        </>
+      )}
+
+      {!collapsed && (
+        <div className="p-3 space-y-3">
+          <div className="flex gap-2 border-b border-amber-200 dark:border-amber-800">
+            <button
+              onClick={() => setActiveTab('diff')}
+              className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                activeTab === 'diff'
+                  ? 'text-amber-800 dark:text-amber-300 border-b-2 border-amber-800 dark:border-amber-300'
+                  : 'text-amber-600 dark:text-amber-500 hover:text-amber-800 dark:hover:text-amber-300'
+              }`}
+            >
+              Diff
+            </button>
+            <button
+              onClick={() => setActiveTab('editable')}
+              className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                activeTab === 'editable'
+                  ? 'text-amber-800 dark:text-amber-300 border-b-2 border-amber-800 dark:border-amber-300'
+                  : 'text-amber-600 dark:text-amber-500 hover:text-amber-800 dark:hover:text-amber-300'
+              }`}
+            >
+              Editable
+            </button>
+          </div>
+
+          <div className="min-h-[200px]">
+            {activeTab === 'diff' ? (
+              <DiffView before={part.before} after={edited} />
+            ) : (
+              <EditableOutput
+                field={part.field}
+                content={edited}
+                editing={pending}
+                onChange={setEdited}
+                edited={pending && edited !== part.after}
+                label={`Proposed ${part.field.replace(/_/g, ' ')}`}
+                maxHeight="30vh"
+              />
+            )}
+          </div>
+
+          {pending && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => onDecide?.(part.callId, true, edited)}
+                className="px-3 py-1.5 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700"
+              >
+                Approve
+              </button>
+              <button
+                onClick={() => onDecide?.(part.callId, false)}
+                className="px-3 py-1.5 text-sm font-medium border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+              >
+                Reject
+              </button>
+              {edited !== part.after && (
+                <button
+                  onClick={() => setEdited(part.after)}
+                  className="text-xs text-amber-700 dark:text-amber-400 hover:underline ml-auto"
+                >
+                  Reset to model's proposal
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {collapsed && (
+        <div className="px-3 py-2 flex items-center gap-2">
+          <span className={`text-xs font-semibold uppercase tracking-wide ${statusText}`}>
+            {part.status}
+          </span>
+          <span className="text-xs text-gray-500 dark:text-gray-400">{part.hint}</span>
+        </div>
+      )}
     </div>
   )
 }
