@@ -33,3 +33,6 @@ server/web/dist/*
 *.swp
 *.swo
 .DS_Store
+
+*storybook.log
+storybook-static

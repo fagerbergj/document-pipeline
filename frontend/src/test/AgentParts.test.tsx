@@ -226,7 +226,79 @@ describe('ConfirmationBlock rendering', () => {
   it('hides buttons once status is approved', () => {
     const decided = { ...part, status: 'approved' as const }
     render(<AssistantParts parts={[decided]} onDecideConfirmation={() => {}} />)
-    expect(screen.queryByRole('button', { name: /approve/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^approve$/i })).not.toBeInTheDocument()
     expect(screen.getByText(/approved/i)).toBeInTheDocument()
+  })
+
+  it('renders tabs for diff and editable views when pending', () => {
+    render(<AssistantParts parts={[part]} onDecideConfirmation={() => {}} />)
+    expect(screen.getByText('Diff')).toBeInTheDocument()
+    expect(screen.getByText('Editable')).toBeInTheDocument()
+  })
+
+  it('shows diff content by default', () => {
+    render(<AssistantParts parts={[part]} onDecideConfirmation={() => {}} />)
+    expect(screen.getByText(/old text/)).toBeInTheDocument()
+    expect(screen.getByText(/new text/)).toBeInTheDocument()
+  })
+
+  it('switches to editable tab when clicked', () => {
+    render(<AssistantParts parts={[part]} onDecideConfirmation={() => {}} />)
+    const editableTab = screen.getByText('Editable')
+    fireEvent.click(editableTab)
+    const textarea = screen.getByRole('textbox')
+    expect(textarea).toBeInTheDocument()
+    expect(textarea).toHaveValue('new text')
+  })
+
+  it('collapses after confirmation is approved', () => {
+    const { rerender } = render(<AssistantParts parts={[part]} onDecideConfirmation={() => {}} />)
+    expect(screen.getByText('Approval needed')).toBeInTheDocument()
+    
+    const approvedPart = { ...part, status: 'approved' as const }
+    rerender(<AssistantParts parts={[approvedPart]} onDecideConfirmation={() => {}} />)
+    expect(screen.queryByText(/Diff/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Editable/)).not.toBeInTheDocument()
+  })
+
+  it('collapses after confirmation is rejected', () => {
+    const { rerender } = render(<AssistantParts parts={[part]} onDecideConfirmation={() => {}} />)
+    const rejectedPart = { ...part, status: 'rejected' as const }
+    rerender(<AssistantParts parts={[rejectedPart]} onDecideConfirmation={() => {}} />)
+    expect(screen.queryByText(/Diff/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Editable/)).not.toBeInTheDocument()
+  })
+
+  it('allows editing before approving', () => {
+    const onDecide = vi.fn()
+    render(<AssistantParts parts={[part]} onDecideConfirmation={onDecide} />)
+    const editableTab = screen.getByText('Editable')
+    fireEvent.click(editableTab)
+    const textarea = screen.getByRole('textbox')
+    fireEvent.change(textarea, { target: { value: 'edited text' } })
+    fireEvent.click(screen.getByRole('button', { name: /approve/i }))
+    expect(onDecide).toHaveBeenCalledWith('c1', true, 'edited text')
+  })
+
+  it('re-expands the collapsed bar when clicked', () => {
+    const approvedPart = { ...part, status: 'approved' as const }
+    render(<AssistantParts parts={[approvedPart]} onDecideConfirmation={() => {}} />)
+    expect(screen.queryByText('Diff')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByText(/expand/i))
+    expect(screen.getByText('Diff')).toBeInTheDocument()
+    expect(screen.getByText('Editable')).toBeInTheDocument()
+  })
+
+  it('provides reset button to revert to model proposal', () => {
+    const onDecide = vi.fn()
+    render(<AssistantParts parts={[part]} onDecideConfirmation={onDecide} />)
+    const editableTab = screen.getByText('Editable')
+    fireEvent.click(editableTab)
+    const textarea = screen.getByRole('textbox')
+    fireEvent.change(textarea, { target: { value: 'edited text' } })
+    expect(textarea).toHaveValue('edited text')
+    const resetBtn = screen.getByText(/reset to model/i)
+    fireEvent.click(resetBtn)
+    expect(textarea).toHaveValue('new text')
   })
 })
