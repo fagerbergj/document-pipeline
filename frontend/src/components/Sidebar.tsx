@@ -18,7 +18,7 @@ interface SidebarProps {
   onClose: () => void
 }
 
-export default function Sidebar({ open, onClose }: SidebarProps) {
+export function Sidebar({ open, onClose }: SidebarProps) {
   const { pathname } = useLocation()
   const [searchParams] = useSearchParams()
   const activeStatus = searchParams.get('status') ?? ''
@@ -180,3 +180,5 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     </>
   )
 }
+
+export default Sidebar

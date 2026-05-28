@@ -6,10 +6,12 @@ const colors: Record<string, string> = {
   done:    'bg-green-100 text-green-800',
 }
 
-export default function StatusBadge({ state }: { state: string }) {
+export function StatusBadge({ state }: { state: string }) {
   return (
-    <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${colors[state] ?? 'bg-gray-100 text-gray-700'}`}>
+    <span role="status" className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${colors[state] ?? 'bg-gray-100 text-gray-700'}`}>
       {state}
     </span>
   )
 }
+
+export default StatusBadge
