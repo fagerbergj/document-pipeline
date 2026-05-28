@@ -7,10 +7,14 @@ import { storybookTest } from '@storybook/addon-vitest/vitest-plugin';
 import { playwright } from '@vitest/browser-playwright';
 const dirname = typeof __dirname !== 'undefined' ? __dirname : path.dirname(fileURLToPath(import.meta.url));
 
+const isTest = process.env.VITEST
+
 export default defineConfig({
   plugins: [react()],
   server: {
-    proxy: {
+    // During tests, disable proxy to avoid connecting to the backend (which isn't running)
+    // Proxy is needed for dev to reach the backend for real API calls
+    proxy: isTest ? {} : {
       // Long timeouts: first chat message can wait minutes while Ollama loads the model.
       '/api': {
         target: 'http://localhost:8000',
@@ -55,5 +59,9 @@ export default defineConfig({
         }
       }
     }]
+  },
+  resolve: {
+    // During tests, use browser conditions only to ensure MSW worker resolution works correctly
+    conditions: isTest ? ['browser', 'module', 'import'] : ['browser', 'module', 'import', 'node']
   }
 });
