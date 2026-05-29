@@ -126,7 +126,7 @@ func RunAgent(
 	instruction string,
 	userParts []*genai.Part,
 	sessionSvc session.Service,
-	sessionID string,
+	userID, sessionID string,
 	onEvent func(StreamEvent),
 ) (RunResult, error) {
 	ag, err := llmagent.New(llmagent.Config{
@@ -140,7 +140,7 @@ func RunAgent(
 		return RunResult{}, fmt.Errorf("adk agent: %w", err)
 	}
 
-	sess, err := getOrCreateSession(ctx, sessionSvc, sessionID)
+	sess, err := getOrCreateSession(ctx, sessionSvc, userID, sessionID)
 	if err != nil {
 		return RunResult{}, err
 	}
@@ -171,7 +171,7 @@ func RunAgent(
 		toolResponses []map[string]any
 	)
 
-	for event, err := range r.Run(ctx, PipelineUserID, sessionID, userMsg, runCfg) {
+	for event, err := range r.Run(ctx, userID, sessionID, userMsg, runCfg) {
 		if err != nil {
 			return RunResult{}, fmt.Errorf("adk run: %w", err)
 		}
@@ -220,12 +220,12 @@ func RunAgent(
 	}, nil
 }
 
-// getOrCreateSession retrieves the session with sessionID, creating it if it
-// does not exist yet.
-func getOrCreateSession(ctx context.Context, svc session.Service, sessionID string) (session.Session, error) {
+// getOrCreateSession retrieves the session with (userID, sessionID), creating
+// it if it does not exist yet.
+func getOrCreateSession(ctx context.Context, svc session.Service, userID, sessionID string) (session.Session, error) {
 	resp, err := svc.Create(ctx, &session.CreateRequest{
 		AppName:   AppName,
-		UserID:    PipelineUserID,
+		UserID:    userID,
 		SessionID: sessionID,
 	})
 	if err == nil {
@@ -234,7 +234,7 @@ func getOrCreateSession(ctx context.Context, svc session.Service, sessionID stri
 	// Session likely already exists — fall through to Get.
 	getResp, getErr := svc.Get(ctx, &session.GetRequest{
 		AppName:   AppName,
-		UserID:    PipelineUserID,
+		UserID:    userID,
 		SessionID: sessionID,
 	})
 	if getErr != nil {
@@ -243,22 +243,22 @@ func getOrCreateSession(ctx context.Context, svc session.Service, sessionID stri
 	return getResp.Session, nil
 }
 
-// DeleteSession removes the persistent ADK session for a given ID.
+// DeleteSession removes the persistent ADK session for (userID, sessionID).
 // Safe to call when the session does not exist.
-func DeleteSession(ctx context.Context, svc session.Service, sessionID string) {
+func DeleteSession(ctx context.Context, svc session.Service, userID, sessionID string) {
 	_ = svc.Delete(ctx, &session.DeleteRequest{
 		AppName:   AppName,
-		UserID:    PipelineUserID,
+		UserID:    userID,
 		SessionID: sessionID,
 	})
 }
 
 // AppendStateEvent appends a metadata-only event to an existing session,
 // applying stateDelta to the persistent session state.
-func AppendStateEvent(ctx context.Context, svc session.Service, sessionID string, stateDelta map[string]any) error {
+func AppendStateEvent(ctx context.Context, svc session.Service, userID, sessionID string, stateDelta map[string]any) error {
 	getResp, err := svc.Get(ctx, &session.GetRequest{
 		AppName:   AppName,
-		UserID:    PipelineUserID,
+		UserID:    userID,
 		SessionID: sessionID,
 	})
 	if err != nil {
@@ -336,10 +336,10 @@ func RequestedConfirmationPayload(sess session.Session, callID string) (map[stri
 //
 // confirmed=true approves; payload may carry overrides (e.g. user-edited
 // content) the tool reads via ctx.ToolConfirmation().Payload.
-func AppendConfirmationResponse(ctx context.Context, svc session.Service, sessionID, callID string, confirmed bool, payload map[string]any) error {
+func AppendConfirmationResponse(ctx context.Context, svc session.Service, userID, sessionID, callID string, confirmed bool, payload map[string]any) error {
 	getResp, err := svc.Get(ctx, &session.GetRequest{
 		AppName:   AppName,
-		UserID:    PipelineUserID,
+		UserID:    userID,
 		SessionID: sessionID,
 	})
 	if err != nil {

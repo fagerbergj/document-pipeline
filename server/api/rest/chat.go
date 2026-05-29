@@ -264,7 +264,7 @@ func (h *handler) patchChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(delta) > 0 {
-		if err := adk.AppendStateEvent(r.Context(), h.sessionSvc, id, delta); err != nil {
+		if err := adk.AppendStateEvent(r.Context(), h.sessionSvc, getUserIDForSession(r), id, delta); err != nil {
 			slog.Error("patchChat AppendStateEvent", "err", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
@@ -348,7 +348,7 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 		if len(title) > 60 {
 			title = title[:60]
 		}
-		_ = adk.AppendStateEvent(r.Context(), h.sessionSvc, chatID, map[string]any{stateKeyTitle: strings.TrimSpace(title)})
+		_ = adk.AppendStateEvent(r.Context(), h.sessionSvc, getUserIDForSession(r), chatID, map[string]any{stateKeyTitle: strings.TrimSpace(title)})
 	}
 }
 
@@ -401,7 +401,7 @@ func (h *handler) streamAgentRun(
 		}
 	}()
 
-	result, runErr := adk.RunAgent(r.Context(), mdl, tools, instruction, userParts, h.sessionSvc, chatID, func(ev adk.StreamEvent) {
+	result, runErr := adk.RunAgent(r.Context(), mdl, tools, instruction, userParts, h.sessionSvc, getUserIDForSession(r), chatID, func(ev adk.StreamEvent) {
 		eventType := ev.SSEEventType()
 		if eventType == "" {
 			return
@@ -508,7 +508,7 @@ func (h *handler) confirmChatToolCall(w http.ResponseWriter, r *http.Request) {
 	if len(payload) == 0 {
 		payload = nil
 	}
-	if err := adk.AppendConfirmationResponse(r.Context(), h.sessionSvc, chatID, callID, body.Confirmed, payload); err != nil {
+	if err := adk.AppendConfirmationResponse(r.Context(), h.sessionSvc, getUserIDForSession(r), chatID, callID, body.Confirmed, payload); err != nil {
 		slog.Error("confirmChatToolCall AppendConfirmationResponse", "chat_id", chatID, "call_id", callID, "err", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return

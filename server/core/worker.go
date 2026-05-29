@@ -592,7 +592,7 @@ func (w *WorkerService) runLLMText(
 	}
 
 	mdl := adk.NewPortLLMModel(w.llm, stage.Model)
-	result, genErr := adk.RunAgent(ctx, mdl, []tool.Tool{w.ragTool}, promptText, userParts, w.sessionSvc, job.ID, func(ev adk.StreamEvent) {
+	result, genErr := adk.RunAgent(ctx, mdl, []tool.Tool{w.ragTool}, promptText, userParts, w.sessionSvc, adk.PipelineUserID, job.ID, func(ev adk.StreamEvent) {
 		// Token events skip JSON-encoding for the live-log stream — that
 		// consumer treats Data as the raw text, not a JSON envelope.
 		if ev.Kind == adk.StreamEventToken {

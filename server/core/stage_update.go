@@ -145,7 +145,7 @@ func UpdateStageArtifactAt(ctx context.Context, d StageUpdateDeps, docID, stageN
 	// any in-flight clarify/classify sessions don't replay stale context.
 	if allJobs, err := d.Jobs.ListForDocument(ctx, docID); err == nil {
 		for _, j := range allJobs {
-			adk.DeleteSession(ctx, d.SessionSvc, j.ID)
+			adk.DeleteSession(ctx, d.SessionSvc, adk.PipelineUserID, j.ID)
 		}
 	}
 	if err := d.Jobs.CascadeReplay(ctx, docID, stageName, stageOrder, now); err != nil {
