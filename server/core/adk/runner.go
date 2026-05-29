@@ -1,6 +1,7 @@
 package adk
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -25,14 +26,7 @@ import (
 // PIPELINE_SYSTEM_USER_ID env var with fallback to "pipeline" for local dev.
 const AppName = "document-pipeline"
 
-var PipelineUserID = getenv("PIPELINE_SYSTEM_USER_ID", "pipeline")
-
-func getenv(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
-}
+var PipelineUserID = cmp.Or(os.Getenv("PIPELINE_SYSTEM_USER_ID"), "pipeline")
 
 // RunResult holds the final text and any tool responses accumulated during the
 // agent loop.
