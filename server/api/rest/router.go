@@ -19,6 +19,16 @@ func NewRouter(h *handler, frontendFS fs.FS) http.Handler {
 	r.Use(middleware.Recoverer)
 
 	r.Route("/api/v1", func(r chi.Router) {
+		// Authenticated routes (chat endpoints use Authentik user for session scoping)
+		r.With(WithAuthUser, requireAuth).Route("/chats", func(r chi.Router) {
+			r.Get("/", h.listChats)
+			r.Post("/", h.createChat)
+			r.Get("/{chat_id}", h.getChat)
+			r.Patch("/{chat_id}", h.patchChat)
+			r.Delete("/{chat_id}", h.deleteChat)
+			r.Post("/{chat_id}/messages", h.sendChatMessage)
+			r.Post("/{chat_id}/confirmations/{call_id}", h.confirmChatToolCall)
+		})
 		// Pipelines
 		r.Get("/pipelines", h.listPipelines)
 		r.Get("/pipelines/{pipeline_id}", h.getPipeline)
@@ -49,14 +59,6 @@ func NewRouter(h *handler, frontendFS fs.FS) http.Handler {
 		// Ingest
 		r.Post("/remarkable/webhook", h.receiveWebhook)
 
-		// Chat
-		r.Get("/chats", h.listChats)
-		r.Post("/chats", h.createChat)
-		r.Get("/chats/{chat_id}", h.getChat)
-		r.Patch("/chats/{chat_id}", h.patchChat)
-		r.Delete("/chats/{chat_id}", h.deleteChat)
-		r.Post("/chats/{chat_id}/messages", h.sendChatMessage)
-		r.Post("/chats/{chat_id}/confirmations/{call_id}", h.confirmChatToolCall)
 	})
 
 	// SPA fallback — serve frontend static files, fall through to index.html

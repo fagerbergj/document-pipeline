@@ -1,6 +1,7 @@
 package rest
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -31,6 +32,58 @@ func loggingMiddleware(next http.Handler) http.Handler {
 			"status", rw.status,
 			"duration", time.Since(start),
 		)
+	})
+}
+
+// authUserKey is the context key for storing the authenticated user ID.
+type authUserKey struct{}
+
+// WithAuthUser extracts the Authentik username from request headers and stores it in context.
+// Only standard Authentik forward-auth headers (X-Authentik-Username, X-Authentik-Uid) are accepted.
+func WithAuthUser(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user := extractAuthUser(r)
+		if user != "" {
+			r = r.WithContext(context.WithValue(r.Context(), authUserKey{}, user))
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// extractAuthUser reads caller identity from Authentik forward-auth headers.
+//
+// Trusting these headers is only safe because the service sits behind the
+// api_gateway Traefik instance, whose authentik@file middleware calls the
+// outpost and uses authResponseHeaders to overwrite X-Authentik-* on the
+// forwarded request — so a client that sets these headers itself has them
+// replaced before the backend sees them. If this service is ever exposed
+// outside that gateway (e.g. bound to a public port directly), these headers
+// become spoofable and this function must change.
+func extractAuthUser(r *http.Request) string {
+	if user := r.Header.Get("X-Authentik-Username"); user != "" {
+		return user
+	}
+	if user := r.Header.Get("X-Authentik-Uid"); user != "" {
+		return user
+	}
+	return ""
+}
+
+// AuthUserFromContext retrieves the authenticated user ID from context, if present.
+func AuthUserFromContext(ctx context.Context) (string, bool) {
+	user, ok := ctx.Value(authUserKey{}).(string)
+	return user, ok
+}
+
+// requireAuth checks if the request has an authenticated user.
+// Returns 401 Unauthorized if no auth user found.
+func requireAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := AuthUserFromContext(r.Context()); !ok {
+			writeError(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
+		next.ServeHTTP(w, r)
 	})
 }
 
