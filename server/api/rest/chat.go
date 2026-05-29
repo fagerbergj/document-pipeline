@@ -48,13 +48,13 @@ func getUserIDForSession(r *http.Request) string {
 
 // defaultRAG applies when a chat is created without an explicit rag_retrieval
 // body. Mirrors the frontend's New Chat defaults so API-created chats behave
-// like UI-created ones. MinimumScore=0 means "no filter" in rag_search; 0.5
-// drops the 0.49–0.55 noise band that pollutes top-k for short proper-noun
-// queries against nomic-embed-text.
+// like UI-created ones. MinimumScore=0 means "no filter" in rag_search; 0.7
+// keeps only strongly-relevant matches and avoids the noise band that
+// pollutes top-k for short proper-noun queries against nomic-embed-text.
 var defaultRAG = model.RAGConfig{
 	Enabled:      true,
 	MaxSources:   5,
-	MinimumScore: 0.5,
+	MinimumScore: 0.7,
 }
 
 // ── session state helpers ─────────────────────────────────────────────────────

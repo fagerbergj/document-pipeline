@@ -32,7 +32,7 @@ export default function Chat() {
   const [input, setInput] = useState('')
   const [systemPrompt, setSystemPrompt] = useState('')
   const [maxSources, setMaxSources] = useState(5)
-  const [minScore, setMinScore] = useState(0.5)
+  const [minScore, setMinScore] = useState(0.7)
   const [showSettings, setShowSettings] = useState(false)
   const [chatListOpen, setChatListOpen] = useState(false)
   const [copied, setCopied] = useState<number | null>(null)
@@ -83,7 +83,7 @@ export default function Chat() {
       if (cancelled) return
       setSystemPrompt(detail.system_prompt ?? '')
       setMaxSources(detail.rag_retrieval?.max_sources ?? 5)
-      setMinScore(detail.rag_retrieval?.minimum_score ?? 0.5)
+      setMinScore(detail.rag_retrieval?.minimum_score ?? 0.7)
       // Seed the store with server-persisted history. The store's seed()
       // is a no-op if a stream is already running for this chat, so a
       // background-streaming response is not clobbered when the user
