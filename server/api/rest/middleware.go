@@ -26,16 +26,14 @@ func loggingMiddleware(next http.Handler) http.Handler {
 		start := time.Now()
 		rw := &responseWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rw, r)
-		// Read user directly from headers (not context) — this middleware runs
-		// outside the auth subtree and so the WithAuthUser-populated context
-		// isn't visible here. The headers are always present on the inbound
-		// request when the gateway authenticated the caller.
+		// Log the UID, not the username — usernames may be PII. The UID is
+		// also what scopes sessions, so logs and storage stay correlated.
 		slog.Info("request",
 			"method", r.Method,
 			"path", r.URL.Path,
 			"status", rw.status,
 			"duration", time.Since(start),
-			"user", extractAuthUser(r),
+			"uid", r.Header.Get("X-Authentik-Uid"),
 		)
 	})
 }
@@ -43,8 +41,7 @@ func loggingMiddleware(next http.Handler) http.Handler {
 // authUserKey is the context key for storing the authenticated user ID.
 type authUserKey struct{}
 
-// WithAuthUser extracts the Authentik username from request headers and stores it in context.
-// Only standard Authentik forward-auth headers (X-Authentik-Username, X-Authentik-Uid) are accepted.
+// WithAuthUser extracts the Authentik UID from request headers and stores it in context.
 func WithAuthUser(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user := extractAuthUser(r)
@@ -55,23 +52,20 @@ func WithAuthUser(next http.Handler) http.Handler {
 	})
 }
 
-// extractAuthUser reads caller identity from Authentik forward-auth headers.
+// extractAuthUser reads the stable caller identity from X-Authentik-Uid.
+// UID is used (not username) because it survives Authentik profile renames;
+// session storage is keyed by this value, so changing it would orphan a
+// user's chats.
 //
-// Trusting these headers is only safe because the service sits behind the
+// Trusting this header is only safe because the service sits behind the
 // api_gateway Traefik instance, whose authentik@file middleware calls the
 // outpost and uses authResponseHeaders to overwrite X-Authentik-* on the
-// forwarded request — so a client that sets these headers itself has them
-// replaced before the backend sees them. If this service is ever exposed
-// outside that gateway (e.g. bound to a public port directly), these headers
-// become spoofable and this function must change.
+// forwarded request — so a client that sets the header itself has it
+// replaced before the backend sees it. If this service is ever exposed
+// outside that gateway (e.g. bound to a public port directly), the header
+// becomes spoofable and this function must change.
 func extractAuthUser(r *http.Request) string {
-	if user := r.Header.Get("X-Authentik-Username"); user != "" {
-		return user
-	}
-	if user := r.Header.Get("X-Authentik-Uid"); user != "" {
-		return user
-	}
-	return ""
+	return r.Header.Get("X-Authentik-Uid")
 }
 
 // AuthUserFromContext retrieves the authenticated user ID from context, if present.
