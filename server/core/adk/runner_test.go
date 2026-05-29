@@ -95,6 +95,7 @@ func TestRunAgent_SurfacesThinkingSeparately(t *testing.T) {
 		"instruction",
 		[]*genai.Part{{Text: "hello"}},
 		session.InMemoryService(),
+		PipelineUserID,
 		"sess-1",
 		func(ev StreamEvent) { events = append(events, ev) },
 	)
@@ -184,5 +185,80 @@ func TestRequestedConfirmationPayload_RecoversStageField(t *testing.T) {
 	}
 	if _, ok := RequestedConfirmationPayload(nil, "call-1"); ok {
 		t.Error("expected (nil, false) for a nil session")
+	}
+}
+
+// Regression: the session helpers (RunAgent, AppendStateEvent) must operate on
+// the (userID, sessionID) tuple they're given, not a package-level default.
+//
+// The earlier bug: every helper used PipelineUserID internally. Chat handlers
+// would create a session under the request user's UID, then call RunAgent
+// which silently wrote events to a phantom session under PipelineUserID — so
+// reloading the chat returned no messages and titles never landed. This test
+// drives the helpers with two distinct userIDs sharing the same sessionID and
+// asserts they stay isolated.
+func TestSessionHelpers_HonorUserID(t *testing.T) {
+	ctx := context.Background()
+	svc := session.InMemoryService()
+	const sessID = "shared-session-id"
+	const userA = "user-a-uid"
+	const userB = "user-b-uid"
+
+	llm := &fakeLLM{resp: port.LLMChatResponse{Text: "reply"}}
+	mdl := NewPortLLMModel(llm, "test-model")
+
+	// Run as user A — getOrCreateSession should create the session under userA.
+	if _, err := RunAgent(ctx, mdl, nil, "inst", []*genai.Part{{Text: "hello from A"}}, svc, userA, sessID, nil); err != nil {
+		t.Fatalf("RunAgent userA: %v", err)
+	}
+
+	aResp, err := svc.Get(ctx, &session.GetRequest{AppName: AppName, UserID: userA, SessionID: sessID})
+	if err != nil {
+		t.Fatalf("get userA session: %v", err)
+	}
+	aEvents := 0
+	for range aResp.Session.Events().All() {
+		aEvents++
+	}
+	if aEvents == 0 {
+		t.Fatal("userA session has no events — RunAgent wrote to the wrong user")
+	}
+
+	// AppendStateEvent under userA must land on userA's session.
+	if err := AppendStateEvent(ctx, svc, userA, sessID, map[string]any{"title": "A's title"}); err != nil {
+		t.Fatalf("AppendStateEvent userA: %v", err)
+	}
+	aResp2, err := svc.Get(ctx, &session.GetRequest{AppName: AppName, UserID: userA, SessionID: sessID})
+	if err != nil {
+		t.Fatalf("re-get userA session: %v", err)
+	}
+	if v, _ := aResp2.Session.State().Get("title"); v != "A's title" {
+		t.Errorf("userA title = %v, want 'A's title' — AppendStateEvent landed on the wrong user", v)
+	}
+
+	// Run as user B with the SAME sessionID — must be an isolated session.
+	if _, err := RunAgent(ctx, mdl, nil, "inst", []*genai.Part{{Text: "hello from B"}}, svc, userB, sessID, nil); err != nil {
+		t.Fatalf("RunAgent userB: %v", err)
+	}
+
+	bResp, err := svc.Get(ctx, &session.GetRequest{AppName: AppName, UserID: userB, SessionID: sessID})
+	if err != nil {
+		t.Fatalf("get userB session: %v", err)
+	}
+	bEvents := 0
+	for range bResp.Session.Events().All() {
+		bEvents++
+	}
+	if bEvents == 0 {
+		t.Fatal("userB session has no events — RunAgent isn't isolating per user")
+	}
+	if v, _ := bResp.Session.State().Get("title"); v != nil {
+		t.Errorf("userB session leaked state from userA: title = %v", v)
+	}
+
+	// DeleteSession under userB must not affect userA's session.
+	DeleteSession(ctx, svc, userB, sessID)
+	if _, err := svc.Get(ctx, &session.GetRequest{AppName: AppName, UserID: userA, SessionID: sessID}); err != nil {
+		t.Errorf("userA session was deleted when userB called DeleteSession: %v", err)
 	}
 }
