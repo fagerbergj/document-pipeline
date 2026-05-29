@@ -26,11 +26,16 @@ func loggingMiddleware(next http.Handler) http.Handler {
 		start := time.Now()
 		rw := &responseWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rw, r)
+		// Read user directly from headers (not context) — this middleware runs
+		// outside the auth subtree and so the WithAuthUser-populated context
+		// isn't visible here. The headers are always present on the inbound
+		// request when the gateway authenticated the caller.
 		slog.Info("request",
 			"method", r.Method,
 			"path", r.URL.Path,
 			"status", rw.status,
 			"duration", time.Since(start),
+			"user", extractAuthUser(r),
 		)
 	})
 }
