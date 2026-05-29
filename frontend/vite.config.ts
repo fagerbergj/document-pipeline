@@ -61,7 +61,10 @@ export default defineConfig({
     }]
   },
   resolve: {
-    // During tests, use browser conditions only to ensure MSW worker resolution works correctly
-    conditions: isTest ? ['browser', 'module', 'import'] : ['browser', 'module', 'import', 'node']
+    // Browser-only resolve conditions for both tests and prod. Including 'node'
+    // here makes Vite pick the Node entry points of packages with conditional
+    // exports (e.g. vfile, reached via react-markdown), which call process.cwd()
+    // in the browser and crash on the first markdown render.
+    conditions: ['browser', 'module', 'import']
   }
 });
