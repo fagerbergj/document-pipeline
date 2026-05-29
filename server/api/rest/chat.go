@@ -35,6 +35,17 @@ const (
 	stateKeyRAGMinScore   = "rag_min_score"
 )
 
+// getUserIDForSession returns the UserID to use for ADK session operations.
+// Every /chats route is protected by requireAuth, so an authenticated user is always present.
+// If no auth user is found (which would indicate a bug in the middleware chain), this panics.
+func getUserIDForSession(r *http.Request) string {
+	user, ok := AuthUserFromContext(r.Context())
+	if !ok {
+		panic("getUserIDForSession called without authenticated user")
+	}
+	return user
+}
+
 // defaultRAG applies when a chat is created without an explicit rag_retrieval
 // body. Mirrors the frontend's New Chat defaults so API-created chats behave
 // like UI-created ones. MinimumScore=0 means "no filter" in rag_search; 0.5
@@ -116,10 +127,11 @@ func (h *handler) listChats(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	beforeID := q.Get("before_id")
+	userID := getUserIDForSession(r)
 
 	resp, err := h.sessionSvc.List(r.Context(), &session.ListRequest{
 		AppName: adk.AppName,
-		UserID:  adk.UserID,
+		UserID:  userID,
 	})
 	if err != nil {
 		slog.Error("listChats", "err", err)
@@ -189,7 +201,7 @@ func (h *handler) createChat(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := h.sessionSvc.Create(r.Context(), &session.CreateRequest{
 		AppName:   adk.AppName,
-		UserID:    adk.UserID,
+		UserID:    getUserIDForSession(r),
 		SessionID: chatID,
 		State:     state,
 	})
@@ -205,7 +217,7 @@ func (h *handler) getChat(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "chat_id")
 	resp, err := h.sessionSvc.Get(r.Context(), &session.GetRequest{
 		AppName:   adk.AppName,
-		UserID:    adk.UserID,
+		UserID:    getUserIDForSession(r),
 		SessionID: id,
 	})
 	if err != nil {
@@ -220,7 +232,7 @@ func (h *handler) patchChat(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "chat_id")
 	resp, err := h.sessionSvc.Get(r.Context(), &session.GetRequest{
 		AppName:   adk.AppName,
-		UserID:    adk.UserID,
+		UserID:    getUserIDForSession(r),
 		SessionID: id,
 	})
 	if err != nil {
@@ -260,7 +272,7 @@ func (h *handler) patchChat(w http.ResponseWriter, r *http.Request) {
 		// Re-fetch to reflect updated state.
 		resp2, err := h.sessionSvc.Get(r.Context(), &session.GetRequest{
 			AppName:   adk.AppName,
-			UserID:    adk.UserID,
+			UserID:    getUserIDForSession(r),
 			SessionID: id,
 		})
 		if err != nil {
@@ -276,7 +288,7 @@ func (h *handler) deleteChat(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "chat_id")
 	err := h.sessionSvc.Delete(r.Context(), &session.DeleteRequest{
 		AppName:   adk.AppName,
-		UserID:    adk.UserID,
+		UserID:    getUserIDForSession(r),
 		SessionID: id,
 	})
 	if err != nil {
@@ -292,7 +304,7 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 	chatID := chi.URLParam(r, "chat_id")
 	sessResp, err := h.sessionSvc.Get(r.Context(), &session.GetRequest{
 		AppName:   adk.AppName,
-		UserID:    adk.UserID,
+		UserID:    getUserIDForSession(r),
 		SessionID: chatID,
 	})
 	if err != nil {
@@ -454,7 +466,7 @@ func (h *handler) confirmChatToolCall(w http.ResponseWriter, r *http.Request) {
 
 	sessResp, err := h.sessionSvc.Get(r.Context(), &session.GetRequest{
 		AppName:   adk.AppName,
-		UserID:    adk.UserID,
+		UserID:    getUserIDForSession(r),
 		SessionID: chatID,
 	})
 	if err != nil {

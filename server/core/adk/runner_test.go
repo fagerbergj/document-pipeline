@@ -148,7 +148,7 @@ func TestStreamEvent_SSEEventType_UsesPortConstants(t *testing.T) {
 func TestRequestedConfirmationPayload_RecoversStageField(t *testing.T) {
 	ctx := context.Background()
 	svc := session.InMemoryService()
-	resp, err := svc.Create(ctx, &session.CreateRequest{AppName: AppName, UserID: UserID, SessionID: "s1"})
+	resp, err := svc.Create(ctx, &session.CreateRequest{AppName: AppName, UserID: PipelineUserID, SessionID: "s1"})
 	if err != nil {
 		t.Fatal(err)
 	}

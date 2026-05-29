@@ -379,6 +379,11 @@ func doRequest(t *testing.T, h *handler, method, path string, body any) *httptes
 	}
 	req := httptest.NewRequest(method, path, &buf)
 	req.Header.Set("Content-Type", "application/json")
+	// Chat routes require Authentik authentication; add fake headers for tests
+	if strings.HasPrefix(path, "/api/v1/chats") {
+		req.Header.Set("X-Authentik-Uid", "test-user")
+		req.Header.Set("X-Authentik-Username", "testuser")
+	}
 	rr := httptest.NewRecorder()
 	NewRouter(h, nil).ServeHTTP(rr, req)
 	return rr
@@ -925,6 +930,44 @@ func TestDeleteContext_NotFound(t *testing.T) {
 }
 
 // ── chat tests ────────────────────────────────────────────────────────────────
+
+// TestChat_Unauthenticated verifies that requireAuth middleware returns 401 on
+// every chat route when no Authentik headers are present. Covers all seven
+// routes so a future remount of one outside the auth-protected subtree is
+// caught.
+func TestChat_Unauthenticated(t *testing.T) {
+	cases := []struct {
+		method, path string
+	}{
+		{http.MethodGet, "/api/v1/chats"},
+		{http.MethodPost, "/api/v1/chats"},
+		{http.MethodGet, "/api/v1/chats/abc"},
+		{http.MethodPatch, "/api/v1/chats/abc"},
+		{http.MethodDelete, "/api/v1/chats/abc"},
+		{http.MethodPost, "/api/v1/chats/abc/messages"},
+		{http.MethodPost, "/api/v1/chats/abc/confirmations/call-1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
+			h, _, _ := newTestHandler(t)
+			var buf bytes.Buffer
+			json.NewEncoder(&buf).Encode(map[string]any{})
+			req := httptest.NewRequest(tc.method, tc.path, &buf)
+			req.Header.Set("Content-Type", "application/json")
+			// Intentionally no X-Authentik-* headers
+			rr := httptest.NewRecorder()
+			NewRouter(h, nil).ServeHTTP(rr, req)
+			if rr.Code != http.StatusUnauthorized {
+				t.Fatalf("status %d, want 401", rr.Code)
+			}
+			var resp map[string]any
+			decodeResponse(t, rr, &resp)
+			if resp["detail"] != "authentication required" {
+				t.Fatalf("detail: got %v", resp["detail"])
+			}
+		})
+	}
+}
 
 func TestCreateChat(t *testing.T) {
 	h, _, _ := newTestHandler(t)
