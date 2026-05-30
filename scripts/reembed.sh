@@ -75,6 +75,23 @@ else
   echo "         clear it manually: DELETE FROM ${PG_SCHEMA}.key_value WHERE key LIKE 'series_corpus_hash:%';" >&2
 fi
 
+# Delete the Qdrant collection to recreate with correct vector dimensions
+# Use the same default collection name as docker-compose.yml
+QDRANT_COLLECTION="${QDRANT_COLLECTION:-documents}"
+QDRANT_URL="${QDRANT_URL:-http://localhost:6333}"
+
+echo "Deleting Qdrant collection '$QDRANT_COLLECTION' at $QDRANT_URL..."
+if [[ "$MODE" == "host" ]] || [[ "$MODE" == "docker" ]]; then
+  # Use HTTP DELETE to remove the collection
+  if curl -sf -X DELETE "$QDRANT_URL/collections/$QDRANT_COLLECTION"; then
+    echo "  Collection deleted successfully."
+  else
+    echo "  Collection may not exist (this is OK if creating fresh)." >&2
+  fi
+else
+  echo "  Skipping collection deletion in sql mode (no HTTP access to Qdrant)." >&2
+fi
+
 echo "Re-queuing all done embed jobs (mode=$MODE)..."
 
 # Inner loop runs verbatim in either host shell or sidecar shell — `$1` is the

@@ -67,7 +67,7 @@ func NewWorkerService(
 	pipeline model.PipelineConfig,
 	vaultPath string,
 ) *WorkerService {
-	em := "nomic-embed-text:v1.5"
+	em := "qwen3-embed"
 	for _, s := range pipeline.Stages {
 		if s.Type == model.StageTypeEmbed && s.Model != "" {
 			em = s.Model
