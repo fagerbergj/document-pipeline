@@ -717,6 +717,13 @@ func (w *WorkerService) runEmbed(
 		return w.rebuildSeriesCorpus(ctx, doc, job, stage)
 	}
 
+	// Create payload indexes for metadata fields if Qdrant is enabled
+	if stage.QdrantPayloadIndex {
+		if err := w.embed.EnsurePayloadIndexes(ctx, stage.MetadataFields); err != nil {
+			slog.Warn("failed to ensure payload indexes", "err", err)
+		}
+	}
+
 	inputText, inputField := findInput(stageData, stage.Input)
 	if inputText == "" {
 		return fmt.Errorf("embed stage %q: no text found for input %q", stage.Name, stage.Input)

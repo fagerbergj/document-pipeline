@@ -76,6 +76,8 @@ func (n *noopEmbed) GetByIDs(_ context.Context, _ []string) ([]port.EmbedResult,
 func (n *noopEmbed) DeleteByDocID(_ context.Context, _ string) error  { return nil }
 func (n *noopEmbed) DeleteBySeries(_ context.Context, _ string) error { return nil }
 
+func (n *noopEmbed) EnsurePayloadIndexes(_ context.Context, _ []string) error { return nil }
+
 // --- no-op Transcriber ---
 
 type noopTranscriber struct{ response string }

@@ -69,24 +69,36 @@ func (s *YAMLPipelineSource) Load() (model.PipelineConfig, error) {
 		if (s.ContextualModel == "") != (s.ContextualPrompt == "") {
 			return model.PipelineConfig{}, fmt.Errorf("stage %q: contextual_model and contextual_prompt must both be set or both empty", s.Name)
 		}
+
+		// Extract Qdrant config from destinations
+		qdrantPayloadIndex := false
+		for _, dest := range s.Destinations {
+			if destType, ok := dest["type"].(string); ok && destType == "qdrant" {
+				if pi, ok := dest["payload_index"].(bool); ok {
+					qdrantPayloadIndex = pi
+				}
+			}
+		}
+
 		cfg.Stages = append(cfg.Stages, model.StageDefinition{
-			Name:             s.Name,
-			Type:             s.Type,
-			Model:            s.Model,
-			Prompt:           s.Prompt,
-			Input:            s.Input,
-			Output:           s.Output,
-			Outputs:          s.Outputs,
-			RequireContext:   s.RequireContext,
-			Destinations:     s.Destinations,
-			MetadataFields:   s.MetadataFields,
-			StartIf:          s.StartIf,
-			ContinueIf:       s.ContinueIf,
-			SkipIf:           s.SkipIf,
-			MaxConcurrent:    s.MaxConcurrent,
-			Vision:           s.Vision,
-			ContextualModel:  s.ContextualModel,
-			ContextualPrompt: s.ContextualPrompt,
+			Name:               s.Name,
+			Type:               s.Type,
+			Model:              s.Model,
+			Prompt:             s.Prompt,
+			Input:              s.Input,
+			Output:             s.Output,
+			Outputs:            s.Outputs,
+			RequireContext:     s.RequireContext,
+			Destinations:       s.Destinations,
+			MetadataFields:     s.MetadataFields,
+			StartIf:            s.StartIf,
+			ContinueIf:         s.ContinueIf,
+			SkipIf:             s.SkipIf,
+			MaxConcurrent:      s.MaxConcurrent,
+			Vision:             s.Vision,
+			ContextualModel:    s.ContextualModel,
+			ContextualPrompt:   s.ContextualPrompt,
+			QdrantPayloadIndex: qdrantPayloadIndex,
 		})
 	}
 

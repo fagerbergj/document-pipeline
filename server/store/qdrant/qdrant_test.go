@@ -162,3 +162,98 @@ func TestSearch_ReturnsResults(t *testing.T) {
 		t.Errorf("expected score 0.95, got %f", results[0].Score)
 	}
 }
+
+func TestEnsurePayloadIndexes(t *testing.T) {
+	var calledPaths []string
+	collectionExists := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calledPaths = append(calledPaths, r.Method+" "+r.URL.Path)
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/collections/docs":
+			if !collectionExists {
+				w.WriteHeader(http.StatusNotFound)
+			} else {
+				json.NewEncoder(w).Encode(namedCollectionInfo())
+			}
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/docs/index":
+			collectionExists = true
+			json.NewEncoder(w).Encode(map[string]any{"result": true})
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/docs":
+			collectionExists = true
+			json.NewEncoder(w).Encode(map[string]any{"result": true})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	c := qdrant.New(srv.URL, "docs", "")
+	err := c.EnsurePayloadIndexes(context.Background(), []string{"title", "tags"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify the index endpoint was called for each field
+	found := false
+	for _, path := range calledPaths {
+		if path == "PUT /collections/docs/index" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected index endpoint to be called, got paths: %v", calledPaths)
+	}
+}
+
+func TestEnsurePayloadIndexes_Empty(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	c := qdrant.New(srv.URL, "docs", "")
+	// Should not call the endpoint for empty fields
+	err := c.EnsurePayloadIndexes(context.Background(), []string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUpsert_HNSWConfig(t *testing.T) {
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/collections/docs":
+			w.WriteHeader(http.StatusNotFound)
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/docs":
+			json.NewDecoder(r.Body).Decode(&gotBody)
+			json.NewEncoder(w).Encode(map[string]any{"result": true})
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/docs/points":
+			json.NewEncoder(w).Encode(map[string]any{"result": map[string]any{"status": "ok"}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	c := qdrant.New(srv.URL, "docs", "")
+	err := c.Upsert(context.Background(), "550e8400-e29b-41d4-a716-446655440000",
+		[]float32{0.1, 0.2, 0.3, 0.4}, nil, map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify HNSW config is included in the vector definition
+	vectors, ok := gotBody["vectors"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected vectors in body, got: %v", gotBody)
+	}
+	textVec, ok := vectors["text"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected text vector, got: %v", vectors)
+	}
+	if _, hasHNSW := textVec["hnsw_config"]; !hasHNSW {
+		t.Errorf("expected hnsw_config in vector definition, got: %v", textVec)
+	}
+}

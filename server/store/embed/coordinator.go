@@ -15,6 +15,7 @@ type qdrantStore interface {
 	GetByIDs(ctx context.Context, ids []string) ([]port.EmbedResult, error)
 	DeleteByDocID(ctx context.Context, docID string) error
 	DeleteBySeries(ctx context.Context, series string) error
+	EnsurePayloadIndexes(ctx context.Context, fields []string) error
 }
 
 // EmbedStoreCoordinator implements port.EmbedStore over a Qdrant backend.
@@ -27,6 +28,11 @@ var _ port.EmbedStore = (*EmbedStoreCoordinator)(nil)
 // New returns a coordinator backed by Qdrant.
 func New(qdrant qdrantStore) *EmbedStoreCoordinator {
 	return &EmbedStoreCoordinator{qdrant: qdrant}
+}
+
+// Qdrant returns the underlying Qdrant client for advanced operations.
+func (c *EmbedStoreCoordinator) Qdrant() qdrantStore {
+	return c.qdrant
 }
 
 // Upsert stores the embedding in Qdrant.
@@ -53,4 +59,9 @@ func (c *EmbedStoreCoordinator) DeleteByDocID(ctx context.Context, docID string)
 // DeleteBySeries removes all series corpus embeddings from Qdrant.
 func (c *EmbedStoreCoordinator) DeleteBySeries(ctx context.Context, series string) error {
 	return c.qdrant.DeleteBySeries(ctx, series)
+}
+
+// EnsurePayloadIndexes creates payload indexes for the specified fields.
+func (c *EmbedStoreCoordinator) EnsurePayloadIndexes(ctx context.Context, fields []string) error {
+	return c.qdrant.EnsurePayloadIndexes(ctx, fields)
 }

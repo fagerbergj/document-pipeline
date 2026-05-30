@@ -38,3 +38,5 @@ func (s *NoopStore) GetByIDs(_ context.Context, _ []string) ([]port.EmbedResult,
 }
 func (s *NoopStore) DeleteByDocID(_ context.Context, _ string) error  { return nil }
 func (s *NoopStore) DeleteBySeries(_ context.Context, _ string) error { return nil }
+
+func (s *NoopStore) EnsurePayloadIndexes(_ context.Context, _ []string) error { return nil }

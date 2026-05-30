@@ -309,6 +309,8 @@ func (m *mockEmbedStore) GetByIDs(_ context.Context, _ []string) ([]port.EmbedRe
 }
 func (m *mockEmbedStore) DeleteBySeries(_ context.Context, _ string) error { return nil }
 
+func (m *mockEmbedStore) EnsurePayloadIndexes(_ context.Context, _ []string) error { return nil }
+
 type mockStageEventRepo struct{}
 
 func (m *mockStageEventRepo) Append(_ context.Context, _ model.StageEvent) error { return nil }

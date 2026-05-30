@@ -32,6 +32,9 @@ type StageDefinition struct {
 	// ContextualPrompt is the path to the prompt template used by the
 	// contextual embedding step. Required when ContextualModel is set.
 	ContextualPrompt string
+	// QdrantPayloadIndex, when set on an embed stage with a qdrant destination,
+	// enables payload indexing on metadata fields for faster filtering during RAG.
+	QdrantPayloadIndex bool `yaml:"-"`
 }
 
 type StageOutput struct {

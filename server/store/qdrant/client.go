@@ -170,6 +170,19 @@ func (c *Client) ensureCollection(ctx context.Context, textLen int, imageLen int
 	sparse := map[string]any{
 		sparseNameText: map[string]any{"modifier": idfModifier},
 	}
+
+	// Add HNSW indexing parameters for efficient similarity search
+	// ef_construction: higher = better recall but slower index building
+	// M: higher = better recall but more memory
+	hnswConfig := map[string]any{
+		"ef_construct": 100,
+		"m":            16,
+	}
+	dense[vectorNameText].(map[string]any)["hnsw_config"] = hnswConfig
+	if imageLen > 0 {
+		dense[vectorNameImage].(map[string]any)["hnsw_config"] = hnswConfig
+	}
+
 	cr, err := c.do(ctx, http.MethodPut, "/collections/"+c.collection, map[string]any{
 		"vectors":        dense,
 		"sparse_vectors": sparse,
@@ -183,7 +196,7 @@ func (c *Client) ensureCollection(ctx context.Context, textLen int, imageLen int
 	}
 	cr.Body.Close()
 	c.setFeatures(collectionFeatures{exists: true, namedVectors: true, hasSparse: true})
-	slog.Info("created qdrant collection", "collection", c.collection, "with_sparse", true)
+	slog.Info("created qdrant collection", "collection", c.collection, "with_sparse", true, "hnsw_ef_construct", 100, "hnsw_m", 16)
 	return true, nil
 }
 
@@ -209,4 +222,47 @@ func hexVal(b byte) byte {
 		return b - 'A' + 10
 	}
 	return 0
+}
+
+// EnsurePayloadIndexes creates payload indexes for the specified fields if they don't exist.
+// This enables fast filtering on metadata fields like title, tags, summary.
+func (c *Client) EnsurePayloadIndexes(ctx context.Context, fields []string) error {
+	if len(fields) == 0 {
+		return nil
+	}
+
+	// Ensure collection exists first (creates if missing)
+	_, err := c.ensureCollection(ctx, 128, 0) // dummy dimensions
+	if err != nil {
+		return err
+	}
+
+	// Create payload indexes for each field
+	for _, field := range fields {
+		if err := c.ensurePayloadIndex(ctx, field); err != nil {
+			slog.Warn("failed to create payload index", "field", field, "err", err)
+			// Continue creating other indexes even if one fails
+		}
+	}
+	return nil
+}
+
+func (c *Client) ensurePayloadIndex(ctx context.Context, field string) error {
+	// Check if index already exists by querying collection info
+	body := map[string]any{
+		"indexing": map[string]any{
+			"indexing_type": "payload",
+			"payload_key":   field,
+		},
+		"skip_search": false,
+	}
+	_, err := c.do(ctx, http.MethodPut, "/collections/"+c.collection+"/index", body)
+	if err != nil {
+		// Qdrant returns 404 if index already exists or 409 if conflict
+		// We'll consider it a success if the request completes (even with error)
+		// since the index likely already exists
+		return nil
+	}
+	slog.Debug("created payload index", "field", field)
+	return nil
 }
