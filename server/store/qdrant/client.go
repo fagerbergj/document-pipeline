@@ -268,9 +268,12 @@ func (c *Client) ensurePayloadIndexes(ctx context.Context) {
 }
 
 // createPayloadIndex issues Qdrant's "create field index" request for a single
-// field. Unlike the rest of do()'s callers we must inspect the HTTP status:
-// do() only returns an error on transport failure, so a 4xx (e.g. a malformed
-// request) would otherwise be silently treated as success.
+// field. The schema is always "keyword", which suits the text metadata we index
+// (title, tags, summary, date_month); a numeric/geo field would need a different
+// schema and Qdrant would reject "keyword" for it. Unlike the rest of do()'s
+// callers we must inspect the HTTP status: do() only returns an error on
+// transport failure, so a 4xx (e.g. a malformed request) would otherwise be
+// silently treated as success.
 func (c *Client) createPayloadIndex(ctx context.Context, field string) error {
 	resp, err := c.do(ctx, http.MethodPut, "/collections/"+c.collection+"/index", map[string]any{
 		"field_name":   field,

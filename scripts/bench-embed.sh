@@ -88,13 +88,15 @@ for q in "${QUERIES[@]}"; do
   resp=$(qdrant_query "$vector") || { echo "  qdrant query failed" >&2; continue; }
 
   # Print "score  title — snippet" per hit. Title/text come from the payload;
-  # the snippet is truncated so the table stays readable.
+  # the snippet is truncated so the table stays readable. Guard the jq so a
+  # malformed (but HTTP-200) response prints a note instead of aborting the
+  # whole run under `set -e`/pipefail.
   echo "$resp" | jq -r '
     .result.points[]?
     | [ (.score | tostring | .[0:6]),
         (.payload.title // "(untitled)"),
         ((.payload.text // "") | gsub("\\s+"; " ") | .[0:80]) ]
     | "  " + (.[0]) + "  " + (.[1]) + " — " + (.[2])
-  '
+  ' || echo "  (no parseable results: $resp)" >&2
   echo
 done
