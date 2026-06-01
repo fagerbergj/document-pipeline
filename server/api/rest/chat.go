@@ -35,15 +35,41 @@ const (
 	stateKeyRAGMinScore   = "rag_min_score"
 )
 
+// getUserIDForSession returns the UserID to use for ADK session operations.
+// Every /chats route is protected by requireAuth, so an authenticated user is always present.
+// If no auth user is found (which would indicate a bug in the middleware chain), this panics.
+func getUserIDForSession(r *http.Request) string {
+	user, ok := AuthUserFromContext(r.Context())
+	if !ok {
+		panic("getUserIDForSession called without authenticated user")
+	}
+	return user
+}
+
+// defaultRAGMinScore is the similarity floor for default RAG retrieval.
+// MinimumScore=0 means "no filter" in rag_search; a positive value drops the
+// low-score noise band that pollutes top-k for short proper-noun queries.
+//
+// The right cutoff is embedding-model-specific: 0.5 was tuned to the score
+// distribution of nomic-embed-text and must be re-validated whenever the embed
+// model changes — use scripts/bench-embed.sh to inspect score ranges, then set
+// RAG_MIN_SCORE to override this default.
+func defaultRAGMinScore() float64 {
+	if v := os.Getenv("RAG_MIN_SCORE"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			return f
+		}
+	}
+	return 0.5
+}
+
 // defaultRAG applies when a chat is created without an explicit rag_retrieval
 // body. Mirrors the frontend's New Chat defaults so API-created chats behave
-// like UI-created ones. MinimumScore=0 means "no filter" in rag_search; 0.5
-// drops the 0.49–0.55 noise band that pollutes top-k for short proper-noun
-// queries against nomic-embed-text.
+// like UI-created ones.
 var defaultRAG = model.RAGConfig{
 	Enabled:      true,
 	MaxSources:   5,
-	MinimumScore: 0.5,
+	MinimumScore: defaultRAGMinScore(),
 }
 
 // ── session state helpers ─────────────────────────────────────────────────────
@@ -116,10 +142,11 @@ func (h *handler) listChats(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	beforeID := q.Get("before_id")
+	userID := getUserIDForSession(r)
 
 	resp, err := h.sessionSvc.List(r.Context(), &session.ListRequest{
 		AppName: adk.AppName,
-		UserID:  adk.UserID,
+		UserID:  userID,
 	})
 	if err != nil {
 		slog.Error("listChats", "err", err)
@@ -189,7 +216,7 @@ func (h *handler) createChat(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := h.sessionSvc.Create(r.Context(), &session.CreateRequest{
 		AppName:   adk.AppName,
-		UserID:    adk.UserID,
+		UserID:    getUserIDForSession(r),
 		SessionID: chatID,
 		State:     state,
 	})
@@ -205,7 +232,7 @@ func (h *handler) getChat(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "chat_id")
 	resp, err := h.sessionSvc.Get(r.Context(), &session.GetRequest{
 		AppName:   adk.AppName,
-		UserID:    adk.UserID,
+		UserID:    getUserIDForSession(r),
 		SessionID: id,
 	})
 	if err != nil {
@@ -220,7 +247,7 @@ func (h *handler) patchChat(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "chat_id")
 	resp, err := h.sessionSvc.Get(r.Context(), &session.GetRequest{
 		AppName:   adk.AppName,
-		UserID:    adk.UserID,
+		UserID:    getUserIDForSession(r),
 		SessionID: id,
 	})
 	if err != nil {
@@ -252,7 +279,7 @@ func (h *handler) patchChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(delta) > 0 {
-		if err := adk.AppendStateEvent(r.Context(), h.sessionSvc, id, delta); err != nil {
+		if err := adk.AppendStateEvent(r.Context(), h.sessionSvc, getUserIDForSession(r), id, delta); err != nil {
 			slog.Error("patchChat AppendStateEvent", "err", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
@@ -260,7 +287,7 @@ func (h *handler) patchChat(w http.ResponseWriter, r *http.Request) {
 		// Re-fetch to reflect updated state.
 		resp2, err := h.sessionSvc.Get(r.Context(), &session.GetRequest{
 			AppName:   adk.AppName,
-			UserID:    adk.UserID,
+			UserID:    getUserIDForSession(r),
 			SessionID: id,
 		})
 		if err != nil {
@@ -276,7 +303,7 @@ func (h *handler) deleteChat(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "chat_id")
 	err := h.sessionSvc.Delete(r.Context(), &session.DeleteRequest{
 		AppName:   adk.AppName,
-		UserID:    adk.UserID,
+		UserID:    getUserIDForSession(r),
 		SessionID: id,
 	})
 	if err != nil {
@@ -292,7 +319,7 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 	chatID := chi.URLParam(r, "chat_id")
 	sessResp, err := h.sessionSvc.Get(r.Context(), &session.GetRequest{
 		AppName:   adk.AppName,
-		UserID:    adk.UserID,
+		UserID:    getUserIDForSession(r),
 		SessionID: chatID,
 	})
 	if err != nil {
@@ -336,7 +363,7 @@ func (h *handler) sendChatMessage(w http.ResponseWriter, r *http.Request) {
 		if len(title) > 60 {
 			title = title[:60]
 		}
-		_ = adk.AppendStateEvent(r.Context(), h.sessionSvc, chatID, map[string]any{stateKeyTitle: strings.TrimSpace(title)})
+		_ = adk.AppendStateEvent(r.Context(), h.sessionSvc, getUserIDForSession(r), chatID, map[string]any{stateKeyTitle: strings.TrimSpace(title)})
 	}
 }
 
@@ -389,7 +416,7 @@ func (h *handler) streamAgentRun(
 		}
 	}()
 
-	result, runErr := adk.RunAgent(r.Context(), mdl, tools, instruction, userParts, h.sessionSvc, chatID, func(ev adk.StreamEvent) {
+	result, runErr := adk.RunAgent(r.Context(), mdl, tools, instruction, userParts, h.sessionSvc, getUserIDForSession(r), chatID, func(ev adk.StreamEvent) {
 		eventType := ev.SSEEventType()
 		if eventType == "" {
 			return
@@ -454,7 +481,7 @@ func (h *handler) confirmChatToolCall(w http.ResponseWriter, r *http.Request) {
 
 	sessResp, err := h.sessionSvc.Get(r.Context(), &session.GetRequest{
 		AppName:   adk.AppName,
-		UserID:    adk.UserID,
+		UserID:    getUserIDForSession(r),
 		SessionID: chatID,
 	})
 	if err != nil {
@@ -496,7 +523,7 @@ func (h *handler) confirmChatToolCall(w http.ResponseWriter, r *http.Request) {
 	if len(payload) == 0 {
 		payload = nil
 	}
-	if err := adk.AppendConfirmationResponse(r.Context(), h.sessionSvc, chatID, callID, body.Confirmed, payload); err != nil {
+	if err := adk.AppendConfirmationResponse(r.Context(), h.sessionSvc, getUserIDForSession(r), chatID, callID, body.Confirmed, payload); err != nil {
 		slog.Error("confirmChatToolCall AppendConfirmationResponse", "chat_id", chatID, "call_id", callID, "err", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return

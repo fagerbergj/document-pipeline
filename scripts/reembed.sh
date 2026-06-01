@@ -46,6 +46,15 @@ pipeline_network() {
     "$PIPELINE_CONTAINER" 2>/dev/null | head -1
 }
 
+# Pick the first network a given container is on. Used to place the Qdrant-delete
+# sidecar on the network where the Qdrant service name resolves — which is NOT
+# necessarily the pipeline's first network (the pipeline is multi-homed; Qdrant
+# typically lives only on the llm network).
+container_network() {
+  docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}' \
+    "$1" 2>/dev/null | head -1
+}
+
 if [[ "$MODE" == "auto" ]]; then
   if host_http_works; then
     MODE=host
@@ -74,6 +83,62 @@ else
   echo "         If the worker reports 'series corpus rebuild skipped — content unchanged'," >&2
   echo "         clear it manually: DELETE FROM ${PG_SCHEMA}.key_value WHERE key LIKE 'series_corpus_hash:%';" >&2
 fi
+
+# Delete the Qdrant collection so the worker recreates it with the new embed
+# model's vector dimensions on the next embed job. Networking mirrors the embed
+# re-queue loop below: in docker mode Qdrant lives on the pipeline's docker
+# network (not on the host's localhost), so the DELETE must run from a sidecar
+# on that network — otherwise it silently fails and the stale-dimension
+# collection survives, breaking every replayed upsert.
+QDRANT_COLLECTION="${QDRANT_COLLECTION:-documents}"               # matches docker-compose.yml default
+QDRANT_URL="${QDRANT_URL:-http://localhost:6333}"                 # host-reachable URL (host mode)
+QDRANT_INTERNAL_URL="${QDRANT_INTERNAL_URL:-http://qdrant:6333}"  # service URL on the docker network (docker mode)
+
+delete_qdrant_collection() {
+  case "$MODE" in
+    host)
+      echo "Deleting Qdrant collection '$QDRANT_COLLECTION' at $QDRANT_URL..."
+      if curl -sf -X DELETE "$QDRANT_URL/collections/$QDRANT_COLLECTION" >/dev/null; then
+        echo "  Collection deleted (or did not exist)."
+      else
+        echo "  warning: DELETE failed at $QDRANT_URL — collection may be stale." >&2
+      fi
+      ;;
+    docker)
+      # The sidecar must join the network where the Qdrant *service name*
+      # resolves. The pipeline is multi-homed and its first network is usually
+      # the api network, where "qdrant" does not resolve — so locate the network
+      # from the Qdrant container itself (host parsed from QDRANT_INTERNAL_URL),
+      # falling back to the pipeline's network.
+      local qhost net
+      qhost=$(printf '%s' "$QDRANT_INTERNAL_URL" | sed -E 's#^[a-z]+://([^:/]+).*#\1#')
+      net=$(container_network "$qhost")
+      [[ -z "$net" ]] && net=$(pipeline_network)
+      if [[ -z "$net" ]]; then
+        echo "  warning: could not determine a docker network for Qdrant ('$qhost') — skipping delete." >&2
+        return
+      fi
+      echo "Deleting Qdrant collection '$QDRANT_COLLECTION' at $QDRANT_INTERNAL_URL (sidecar on $net)..."
+      # Accept 2xx (deleted) and 404 (already gone) as success; report the HTTP
+      # code otherwise so a stale collection is diagnosable rather than silent.
+      docker run --rm -i --network "$net" "$SIDECAR_IMAGE" sh -s -- "$QDRANT_INTERNAL_URL/collections/$QDRANT_COLLECTION" <<'EOF'
+apk add --no-cache curl >/dev/null
+code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "$1")
+case "$code" in
+  2*|404) echo "  Collection deleted (or did not exist) [HTTP $code]." ;;
+  000)    echo "  warning: could not reach Qdrant at $1 (connection failed) — collection may be stale." >&2 ;;
+  *)      echo "  warning: DELETE returned HTTP $code at $1 — collection may be stale." >&2 ;;
+esac
+EOF
+      ;;
+    sql)
+      echo "  Skipping Qdrant collection deletion in sql mode (no HTTP access to Qdrant)." >&2
+      echo "         Delete it manually: curl -X DELETE \$QDRANT_URL/collections/$QDRANT_COLLECTION" >&2
+      ;;
+  esac
+}
+
+delete_qdrant_collection
 
 echo "Re-queuing all done embed jobs (mode=$MODE)..."
 

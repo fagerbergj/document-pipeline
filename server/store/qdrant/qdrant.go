@@ -57,6 +57,22 @@ func (c *Client) Upsert(ctx context.Context, id string, textVector []float32, im
 	if err != nil {
 		return err
 	}
+	// The collection can be dropped out of band — e.g. a re-embed run deletes it
+	// to change vector dimensions. Our per-process features cache would still
+	// report exists=true, so ensureCollection skipped recreation and the upsert
+	// 404s. Recover by clearing the cache, recreating, and retrying once.
+	if resp.StatusCode == http.StatusNotFound {
+		readBody(resp.Body)
+		slog.Warn("qdrant collection missing on upsert — recreating", "collection", c.collection)
+		c.invalidateFeatures()
+		if _, err := c.ensureCollection(ctx, len(textVector), imageLen); err != nil {
+			return err
+		}
+		resp, err = c.do(ctx, http.MethodPut, "/collections/"+c.collection+"/points", body)
+		if err != nil {
+			return err
+		}
+	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
 		return fmt.Errorf("qdrant: upsert %d: %s", resp.StatusCode, readBody(resp.Body))

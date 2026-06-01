@@ -46,9 +46,19 @@ func main() {
 	qdrantKey := flag.String("qdrant-key", envOr("QDRANT_API_KEY", ""), "Qdrant API key")
 	opensearchURL := flag.String("opensearch", envOr("OPENSEARCH_URL", ""), "OpenSearch base URL (empty = skip)")
 	opensearchIndex := flag.String("opensearch-index", envOr("OPENSEARCH_INDEX", "documents"), "OpenSearch index name")
+	benchMode := flag.Bool("bench", false, "Run an embedding-retrieval bench (queries as positional args) against the live RAG path, then exit")
+	benchTopK := flag.Int("bench-topk", 5, "bench: number of hits to show per query")
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+
+	// Bench mode reuses the real embed + hybrid-search code (see bench.go) and
+	// exits before the server's DB/session wiring — it only needs the pipeline
+	// config, the LLM client, and Qdrant.
+	if *benchMode {
+		runBenchEmbed(log, *pipelineCfg, *llmURL, *qdrantURL, *qdrantCollection, *qdrantKey, *benchTopK, flag.Args())
+		return
+	}
 
 	// --- database ---
 	if *dsn == "" {
@@ -91,8 +101,13 @@ func main() {
 	var embedStore port.EmbedStore
 	if *qdrantURL != "" {
 		q := qdrant.New(*qdrantURL, *qdrantCollection, *qdrantKey)
+		if fields := pipeline.QdrantPayloadIndexFields(); len(fields) > 0 {
+			q.SetPayloadIndexFields(fields)
+			log.Info("embed store: Qdrant", "payload_index_fields", fields)
+		} else {
+			log.Info("embed store: Qdrant")
+		}
 		embedStore = storeembed.New(q)
-		log.Info("embed store: Qdrant")
 	} else {
 		embedStore = storeembed.NewNoop()
 		log.Warn("embed store: disabled (no --qdrant URL)")

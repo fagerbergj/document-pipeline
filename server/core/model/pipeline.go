@@ -1,9 +1,46 @@
 package model
 
+import "os"
+
+// DefaultEmbedModel is the embedding model used when neither the pipeline
+// config nor the EMBED_MODEL env var names one. It must match the model the
+// vector store was populated with — query and document embeddings have to come
+// from the same model, or similarity search is meaningless.
+const DefaultEmbedModel = "qwen3-embed"
+
 // PipelineConfig is loaded from config/pipeline.yaml at startup.
 type PipelineConfig struct {
 	MaxConcurrent int
 	Stages        []StageDefinition
+}
+
+// ResolveEmbedModel returns the embedding model the pipeline uses, with the
+// same precedence everywhere it's needed (the worker that embeds documents and
+// the chat handler that embeds queries): explicit embed-stage model, then
+// EMBED_MODEL, then DefaultEmbedModel. Both producers must agree, so this is the
+// single source of truth rather than duplicated per call site.
+func (p PipelineConfig) ResolveEmbedModel() string {
+	for _, s := range p.Stages {
+		if s.Type == StageTypeEmbed && s.Model != "" {
+			return s.Model
+		}
+	}
+	if em := os.Getenv("EMBED_MODEL"); em != "" {
+		return em
+	}
+	return DefaultEmbedModel
+}
+
+// QdrantPayloadIndexFields returns the metadata fields that should be payload-
+// indexed in Qdrant: the MetadataFields of the first embed stage that enabled
+// payload indexing. Empty when no stage requests it.
+func (p PipelineConfig) QdrantPayloadIndexFields() []string {
+	for _, s := range p.Stages {
+		if s.Type == StageTypeEmbed && s.QdrantPayloadIndex {
+			return s.MetadataFields
+		}
+	}
+	return nil
 }
 
 type StageDefinition struct {
@@ -32,6 +69,9 @@ type StageDefinition struct {
 	// ContextualPrompt is the path to the prompt template used by the
 	// contextual embedding step. Required when ContextualModel is set.
 	ContextualPrompt string
+	// QdrantPayloadIndex, when set on an embed stage with a qdrant destination,
+	// enables payload indexing on metadata fields for faster filtering during RAG.
+	QdrantPayloadIndex bool `yaml:"-"`
 }
 
 type StageOutput struct {

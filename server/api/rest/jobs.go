@@ -278,7 +278,7 @@ func (h *handler) putJobStatus(w http.ResponseWriter, r *http.Request) {
 		// restart with a clean conversation context on next run.
 		if allJobs, err := h.jobs.ListForDocument(r.Context(), job.DocumentID); err == nil {
 			for _, j := range allJobs {
-				adk.DeleteSession(r.Context(), h.sessionSvc, j.ID)
+				adk.DeleteSession(r.Context(), h.sessionSvc, adk.PipelineUserID, j.ID)
 			}
 		}
 		if err := h.jobs.CascadeReplay(r.Context(), job.DocumentID, job.Stage, stageOrder, now); err != nil {

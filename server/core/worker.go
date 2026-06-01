@@ -67,13 +67,7 @@ func NewWorkerService(
 	pipeline model.PipelineConfig,
 	vaultPath string,
 ) *WorkerService {
-	em := "nomic-embed-text:v1.5"
-	for _, s := range pipeline.Stages {
-		if s.Type == model.StageTypeEmbed && s.Model != "" {
-			em = s.Model
-			break
-		}
-	}
+	em := pipeline.ResolveEmbedModel()
 	ragTool, _ := adktools.NewRagSearchTool(embed, llm.GenerateEmbed, em, 0, 0)
 	return &WorkerService{
 		docs: docs, jobs: jobs, artifacts: artifacts, events: events,
@@ -592,7 +586,7 @@ func (w *WorkerService) runLLMText(
 	}
 
 	mdl := adk.NewPortLLMModel(w.llm, stage.Model)
-	result, genErr := adk.RunAgent(ctx, mdl, []tool.Tool{w.ragTool}, promptText, userParts, w.sessionSvc, job.ID, func(ev adk.StreamEvent) {
+	result, genErr := adk.RunAgent(ctx, mdl, []tool.Tool{w.ragTool}, promptText, userParts, w.sessionSvc, adk.PipelineUserID, job.ID, func(ev adk.StreamEvent) {
 		// Token events skip JSON-encoding for the live-log stream — that
 		// consumer treats Data as the raw text, not a JSON envelope.
 		if ev.Kind == adk.StreamEventToken {

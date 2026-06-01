@@ -30,6 +30,7 @@ services:
       - QDRANT_URL=${QDRANT_URL:-}
       - QDRANT_COLLECTION=${QDRANT_COLLECTION:-documents}
       - QDRANT_API_KEY=${QDRANT_API_KEY:-}
+      - PIPELINE_SYSTEM_USER_ID=4fc55e8a27ebf91f9650c48a59468793350b8d49b4777021966e2eb2d2b0dfb5
     volumes:
       - ./data:/data
       - /mnt/personal/documents:/vault
