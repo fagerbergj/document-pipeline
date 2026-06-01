@@ -42,18 +42,21 @@ QDRANT_API_KEY="${QDRANT_API_KEY:-}"
 TOP_K="${TOP_K:-5}"
 SIDECAR_IMAGE="${SIDECAR_IMAGE:-alpine:latest}"
 
+# Qwen3-Embedding is trained to receive an instruction on the QUERY side only
+# (documents are embedded raw). Without it, query vectors sit in the wrong
+# regime, which depresses both scores and ranking. Set QUERY_INSTRUCT="" to
+# disable and compare. This is applied here in the bench; the live RAG path
+# would need the same prefix to match.
+QUERY_INSTRUCT="${QUERY_INSTRUCT:-Given a question, retrieve passages from the tabletop campaign notes that answer it}"
+
 # --- queries to benchmark -----------------------------------------------------
-# Fill in a few representative queries for this dataset. Mix easy exact-ish
-# lookups with harder paraphrases so the score spread is informative.
+# Natural-language questions retrieve better than keyword salads with a dense
+# model. Keep them specific enough that the right document should clearly win.
 QUERIES=(
-  # Campaign character: Who is Zuk Bugbag and what organization did he co-found?
-  "Zuk Bugbag Ethereal Refuters"
-  # Campaign: What ship is the campaign aboard and where is it going?
-  "Jewel of the Seas port damali gravid archipelago"
-  # World lore: What empire is ruled by King Dwindle and what is its characteristic?
-  "Dwindle Empire strength intelligence resources"
-  # Campaign: Who is Mara's character and why was she on the cruise?
-  "Menma Everdeen parents forced vacation"
+  "Who is Zuk Bugbag and what organization did he co-found?"
+  "What ship is the campaign aboard and where is it sailing?"
+  "What empire is ruled by King Dwindle and what is it known for?"
+  "Who is Menma Everdeen and why was she on the cruise?"
 )
 
 # ------------------------------------------------------------------------------
@@ -75,7 +78,7 @@ echo "network=$BENCH_NETWORK  model=$EMBED_MODEL  collection=$QDRANT_COLLECTION 
 # `set -e` so one failing query reports its HTTP status and the run continues.
 docker run --rm -i --network "$BENCH_NETWORK" \
   -e LLM_URL="$LLM_URL" -e LLM_API_KEY \
-  -e EMBED_MODEL="$EMBED_MODEL" \
+  -e EMBED_MODEL="$EMBED_MODEL" -e QUERY_INSTRUCT="$QUERY_INSTRUCT" \
   -e QDRANT_URL="$QDRANT_URL" -e QDRANT_COLLECTION="$QDRANT_COLLECTION" -e QDRANT_API_KEY \
   -e TOP_K="$TOP_K" \
   "$SIDECAR_IMAGE" sh -s -- "${QUERIES[@]}" <<'EOF'
@@ -106,7 +109,13 @@ echo
 for q in "$@"; do
   echo "── query: $q"
 
-  body=$(jq -n --arg m "$EMBED_MODEL" --arg in "$q" '{model:$m, input:$in}')
+  # Qwen3 query format: "Instruct: <task>\nQuery: <text>" (query side only).
+  if [ -n "${QUERY_INSTRUCT:-}" ]; then
+    qin=$(printf 'Instruct: %s\nQuery: %s' "$QUERY_INSTRUCT" "$q")
+  else
+    qin="$q"
+  fi
+  body=$(jq -n --arg m "$EMBED_MODEL" --arg in "$qin" '{model:$m, input:$in}')
   resp=$(emb_post "$LLM_URL/v1/embeddings" "$body")
   code=$(printf '%s' "$resp" | tail -n1)
   data=$(printf '%s' "$resp" | sed '$d')
