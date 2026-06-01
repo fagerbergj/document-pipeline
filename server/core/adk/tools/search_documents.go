@@ -80,13 +80,13 @@ func NewSearchDocumentsTool(
 			"For fuzzy or cross-doc topical questions use rag_search instead. " +
 			"Never call with an empty query.",
 	}, func(tctx tool.Context, args SearchDocumentsArgs) (SearchDocumentsResult, error) {
-		return runSearchDocuments(tctx, indexer, getDocs, stageDataBatch, maxResults, args)
+		return RunSearchDocuments(tctx, indexer, getDocs, stageDataBatch, maxResults, args)
 	})
 }
 
-// runSearchDocuments is the tool's inner handler, factored out so it can be
-// invoked from tests without constructing an ADK tool.Context.
-func runSearchDocuments(
+// RunSearchDocuments is the tool's inner handler, factored out so it can be
+// invoked from tests or MCP without constructing an ADK tool.Context.
+func RunSearchDocuments(
 	ctx context.Context,
 	indexer port.DocumentIndexer,
 	getDocs DocsBatchFn,

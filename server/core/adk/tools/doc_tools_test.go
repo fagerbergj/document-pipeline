@@ -47,7 +47,7 @@ func TestSearchDocuments_HappyPath(t *testing.T) {
 		return out, nil
 	}
 
-	res, err := runSearchDocuments(context.Background(),
+	res, err := RunSearchDocuments(context.Background(),
 		realIndexer{ids: []string{"doc-1", "doc-2"}, total: 2},
 		getDocs, stageDataBatch, 10,
 		SearchDocumentsArgs{Query: "hello"})
@@ -80,7 +80,7 @@ func TestSearchDocuments_SkipMissingDocs(t *testing.T) {
 	stageDataBatch := func(_ context.Context, _ []string) (map[string]map[string]map[string]any, error) {
 		return nil, nil
 	}
-	res, err := runSearchDocuments(context.Background(),
+	res, err := RunSearchDocuments(context.Background(),
 		realIndexer{ids: []string{"doc-ok", "doc-missing"}, total: 2},
 		getDocs, stageDataBatch, 10,
 		SearchDocumentsArgs{Query: "x"})
@@ -99,7 +99,7 @@ func TestSearchDocuments_StageDataErrorDegrades(t *testing.T) {
 	stageDataBatch := func(_ context.Context, _ []string) (map[string]map[string]map[string]any, error) {
 		return nil, errors.New("db down")
 	}
-	res, err := runSearchDocuments(context.Background(),
+	res, err := RunSearchDocuments(context.Background(),
 		realIndexer{ids: []string{"doc-1"}, total: 1},
 		getDocs, stageDataBatch, 10,
 		SearchDocumentsArgs{Query: "x"})
@@ -124,7 +124,7 @@ func TestGetDocument_HappyPath(t *testing.T) {
 			},
 		}, nil
 	}
-	res, err := runGetDocument(context.Background(), getDoc, stageData, GetDocumentArgs{ID: "doc-1"})
+	res, err := RunGetDocument(context.Background(), getDoc, stageData, GetDocumentArgs{ID: "doc-1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,7 @@ func TestGetDocument_OmitsStageOutputsByDefault(t *testing.T) {
 	getDoc := func(_ context.Context, id string) (model.Document, error) {
 		return model.Document{ID: id}, nil
 	}
-	res, err := runGetDocument(context.Background(), getDoc, stageDataAllFields, GetDocumentArgs{ID: "doc-1"})
+	res, err := RunGetDocument(context.Background(), getDoc, stageDataAllFields, GetDocumentArgs{ID: "doc-1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +183,7 @@ func TestGetDocument_FullTextFallsBackWhenClarifySkipped(t *testing.T) {
 			"summarize": {"narrative_summary": "the digest"},
 		}, nil
 	}
-	res, err := runGetDocument(context.Background(), getDoc, narrativeOnly, GetDocumentArgs{ID: "doc-1"})
+	res, err := RunGetDocument(context.Background(), getDoc, narrativeOnly, GetDocumentArgs{ID: "doc-1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +194,7 @@ func TestGetDocument_FullTextFallsBackWhenClarifySkipped(t *testing.T) {
 	rawOnly := func(_ context.Context, _ string) (map[string]map[string]any, error) {
 		return map[string]map[string]any{"ocr": {"raw_text": "raw scan"}}, nil
 	}
-	res, err = runGetDocument(context.Background(), getDoc, rawOnly, GetDocumentArgs{ID: "doc-1"})
+	res, err = RunGetDocument(context.Background(), getDoc, rawOnly, GetDocumentArgs{ID: "doc-1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +208,7 @@ func TestGetDocument_ExposesStageOutputsWhenRequested(t *testing.T) {
 	getDoc := func(_ context.Context, id string) (model.Document, error) {
 		return model.Document{ID: id}, nil
 	}
-	res, err := runGetDocument(context.Background(), getDoc, stageDataAllFields, GetDocumentArgs{ID: "doc-1", IncludeStageOutputs: true})
+	res, err := RunGetDocument(context.Background(), getDoc, stageDataAllFields, GetDocumentArgs{ID: "doc-1", IncludeStageOutputs: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,7 +234,7 @@ func TestGetDocument_RawTextFromTranscribe(t *testing.T) {
 			"transcribe": {"raw_text": "transcribed audio"},
 		}, nil
 	}
-	res, err := runGetDocument(context.Background(), getDoc, stageData, GetDocumentArgs{ID: "doc-1", IncludeStageOutputs: true})
+	res, err := RunGetDocument(context.Background(), getDoc, stageData, GetDocumentArgs{ID: "doc-1", IncludeStageOutputs: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,7 +256,7 @@ func TestGetDocument_TagsAsJSONString(t *testing.T) {
 			"classify": {"tags": `["alpha","beta","gamma"]`},
 		}, nil
 	}
-	res, err := runGetDocument(context.Background(), getDoc, stageData, GetDocumentArgs{ID: "doc-1"})
+	res, err := RunGetDocument(context.Background(), getDoc, stageData, GetDocumentArgs{ID: "doc-1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -272,7 +272,7 @@ func TestGetDocument_DocNotFound(t *testing.T) {
 	stageData := func(_ context.Context, _ string) (map[string]map[string]any, error) {
 		return nil, nil
 	}
-	_, err := runGetDocument(context.Background(), getDoc, stageData, GetDocumentArgs{ID: "x"})
+	_, err := RunGetDocument(context.Background(), getDoc, stageData, GetDocumentArgs{ID: "x"})
 	if err == nil {
 		t.Fatal("expected error")
 	}

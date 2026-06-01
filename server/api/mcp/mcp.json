@@ -1,0 +1,72 @@
+{
+  "mcpServer": {
+    "name": "my-documents",
+    "version": "1.0.0",
+    "instructions": "Access your personal document knowledge base"
+  },
+  "tools": [
+    {
+      "name": "rag_search",
+      "description": "Semantic search across your personal knowledge base. Use for fuzzy/topical questions like \"what's been said about X?\" Query must be PLAIN WORDS — no field:value syntax.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search query (plain words only)"
+          },
+          "k": {
+            "type": "integer",
+            "default": 5,
+            "description": "Number of results to return"
+          },
+          "min_score": {
+            "type": "number",
+            "default": 0.5,
+            "description": "Minimum similarity score filter"
+          }
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "search_documents",
+      "description": "Lucene search for specific documents by title, tag, content, date, or series. Returns lean summaries - call get_document on a result's id to fetch its full text.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Lucene query string"
+          },
+          "k": {
+            "type": "integer",
+            "default": 10,
+            "description": "Number of results to return"
+          }
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "get_document",
+      "description": "Fetch a document's contents by its UUID. Returns the canonical body full_text (polished version) plus summary, tags, and date. Set include_stage_outputs: true to inspect intermediate pipeline stages.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Document UUID"
+          },
+          "include_stage_outputs": {
+            "type": "boolean",
+            "default": false,
+            "description": "Include intermediate stage outputs (raw_text, narrative_summary)"
+          }
+        },
+        "required": ["id"]
+      }
+    }
+  ]
+}

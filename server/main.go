@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -16,8 +17,10 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"github.com/fagerbergj/document-pipeline/server/api/mcp"
 	"github.com/fagerbergj/document-pipeline/server/api/rest"
 	"github.com/fagerbergj/document-pipeline/server/core"
+	"github.com/fagerbergj/document-pipeline/server/core/model"
 	"github.com/fagerbergj/document-pipeline/server/core/port"
 	"github.com/fagerbergj/document-pipeline/server/store/config"
 	storeembed "github.com/fagerbergj/document-pipeline/server/store/embed"
@@ -156,6 +159,49 @@ func main() {
 		indexerSvc = core.NewIndexerService(db.DB(), docs, jobs, artifacts, fs, searchStore, *vault)
 	}
 
+	// --- MCP server ---
+	em := pipeline.ResolveEmbedModel()
+	mcpH, err := mcp.New(
+		embedStore,
+		searchStore,
+		llm.GenerateEmbed,
+		em,
+		docs.Get,
+		func(ctx context.Context, ids []string) (map[string]model.Document, error) {
+			res, err := docs.ListPaginated(ctx, port.DocumentFilter{IDs: ids}, model.PageRequest{PageSize: len(ids)})
+			if err != nil {
+				return nil, err
+			}
+			out := make(map[string]model.Document, len(res.Data))
+			for _, d := range res.Data {
+				out[d.ID] = d
+			}
+			return out, nil
+		},
+		func(ctx context.Context, docID string) (map[string]map[string]any, error) {
+			return core.CollectStageData(ctx, jobs, artifacts, fs, *vault, docID)
+		},
+		func(ctx context.Context, ids []string) (map[string]map[string]map[string]any, error) {
+			return core.CollectStageDataBatch(ctx, jobs, artifacts, fs, *vault, ids)
+		},
+		5,
+		defaultRAGMinScore(),
+		10,
+	)
+	if err != nil {
+		log.Error("failed to create MCP server", "err", err)
+		os.Exit(1)
+	}
+
+	// Only register search_documents if indexer is available
+	if searchStore == nil {
+		slog.Info("MCP: search_documents disabled (no OpenSearch indexer)")
+	}
+	if err != nil {
+		log.Error("failed to create MCP server", "err", err)
+		os.Exit(1)
+	}
+
 	handler := rest.New(rest.Dependencies{
 		Documents:  docs,
 		Jobs:       jobs,
@@ -172,7 +218,13 @@ func main() {
 		VaultPath:  *vault,
 		FrontendFS: web.FS(),
 	})
-	srv := &http.Server{Addr: *addr, Handler: handler}
+
+	mux := http.NewServeMux()
+	mux.Handle("/", handler)
+	if mcpH != nil {
+		mux.Handle("/api/v1/mcp", mcpH.AuthenticatedHandler())
+	}
+	srv := &http.Server{Addr: *addr, Handler: mux}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -233,4 +285,13 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func defaultRAGMinScore() float64 {
+	if v := os.Getenv("RAG_MIN_SCORE"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			return f
+		}
+	}
+	return 0.5
 }

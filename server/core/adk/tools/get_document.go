@@ -47,8 +47,7 @@ func NewGetDocumentTool(getDoc DocLookupFn, stageData StageDataFn) (tool.Tool, e
 		Name: "get_document",
 		Description: "Fetch a document's contents by its UUID. By default returns the canonical body " +
 			"`full_text` (the polished version the user reads — quote THIS when answering) plus " +
-			"`summary`, `tags`, and date. To change what a note says, pass the corrected `full_text` " +
-			"to update_document (it edits the body; you do not choose a field).\n" +
+			"`summary`, `tags`, and date.\n" +
 			"Set `include_stage_outputs: true` ONLY when the user wants to inspect an earlier " +
 			"pipeline stage — it adds the intermediate, non-canonical `raw_text` (transcribe/ocr) " +
 			"and `narrative_summary` (summarize). These are for reference; do not request them for " +
@@ -56,13 +55,13 @@ func NewGetDocumentTool(getDoc DocLookupFn, stageData StageDataFn) (tool.Tool, e
 			"Use after search_documents returns a candidate id, or when the user references a doc " +
 			"by an id you already have. Never call with an empty id — run search_documents first.",
 	}, func(tctx tool.Context, args GetDocumentArgs) (GetDocumentResult, error) {
-		return runGetDocument(tctx, getDoc, stageData, args)
+		return RunGetDocument(tctx, getDoc, stageData, args)
 	})
 }
 
-// runGetDocument is the tool's inner handler, factored out so it can be
-// invoked from tests without constructing an ADK tool.Context.
-func runGetDocument(ctx context.Context, getDoc DocLookupFn, stageData StageDataFn, args GetDocumentArgs) (GetDocumentResult, error) {
+// RunGetDocument is the tool's inner handler, factored out so it can be
+// invoked from tests or MCP without constructing an ADK tool.Context.
+func RunGetDocument(ctx context.Context, getDoc DocLookupFn, stageData StageDataFn, args GetDocumentArgs) (GetDocumentResult, error) {
 	if strings.TrimSpace(args.ID) == "" {
 		return GetDocumentResult{}, fmt.Errorf("get_document requires an id; call search_documents first to find a candidate id, then pass it here — do not call again with an empty id")
 	}

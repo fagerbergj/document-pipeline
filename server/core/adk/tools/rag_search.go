@@ -52,82 +52,87 @@ func NewRagSearchTool(store port.EmbedStore, embedFn EmbedFn, embedModel string,
 			"search_documents instead — this tool will match the colon literally and return junk. " +
 			"Never call with an empty query.",
 	}, func(tctx tool.Context, args RagSearchArgs) (RagSearchResult, error) {
-		if strings.TrimSpace(args.Query) == "" {
-			return RagSearchResult{}, fmt.Errorf("rag_search requires a non-empty query; pick a topic, name, or distinctive phrase and try again — do not call again with an empty query")
-		}
-		slog.Info("rag_search", "query", args.Query, "embed_model", embedModel, "k", maxSources, "min_score", minScore)
-		vec, err := embedFn(tctx, embedModel, args.Query)
-		if err != nil {
-			slog.Error("rag_search embed failed", "query", args.Query, "embed_model", embedModel, "err", err)
-			return RagSearchResult{}, fmt.Errorf("rag_search embed: %w", err)
-		}
-
-		hits, err := store.Search(tctx, args.Query, vec, maxSources)
-		if err != nil {
-			slog.Error("rag_search store query failed", "query", args.Query, "vec_dim", len(vec), "err", err)
-			return RagSearchResult{}, fmt.Errorf("rag_search query: %w", err)
-		}
-		var topScore, bottomScore float64
-		if len(hits) > 0 {
-			topScore = hits[0].Score
-			bottomScore = hits[len(hits)-1].Score
-		}
-		kept := hits
-		if minScore > 0 {
-			kept = kept[:0]
-			for _, h := range hits {
-				if h.Score >= minScore {
-					kept = append(kept, h)
-				}
-			}
-		}
-		slog.Info("rag_search hits",
-			"query", args.Query,
-			"vec_dim", len(vec),
-			"count", len(hits),
-			"kept", len(kept),
-			"top_score", topScore,
-			"bottom_score", bottomScore,
-		)
-		hits = kept
-
-		// Fetch prev/next neighbors so each result includes surrounding context.
-		neighborIDs := make([]string, 0, len(hits)*2)
-		for _, r := range hits {
-			if id := stringVal(r.Payload, port.PayloadPrevChunk); id != "" {
-				neighborIDs = append(neighborIDs, id)
-			}
-			if id := stringVal(r.Payload, port.PayloadNextChunk); id != "" {
-				neighborIDs = append(neighborIDs, id)
-			}
-		}
-		neighborText := map[string]string{} // chunk string ID → text
-		if len(neighborIDs) > 0 {
-			fetched, _ := store.GetByIDs(tctx, neighborIDs)
-			for _, f := range fetched {
-				neighborText[f.ID] = stringVal(f.Payload, port.PayloadText)
-			}
-		}
-
-		chunks := make([]RagChunk, 0, len(hits))
-		for _, r := range hits {
-			var parts []string
-			if t := neighborText[stringVal(r.Payload, port.PayloadPrevChunk)]; t != "" {
-				parts = append(parts, t)
-			}
-			parts = append(parts, stringVal(r.Payload, port.PayloadText))
-			if t := neighborText[stringVal(r.Payload, port.PayloadNextChunk)]; t != "" {
-				parts = append(parts, t)
-			}
-			chunks = append(chunks, RagChunk{
-				Text:      strings.Join(parts, "\n\n"),
-				Title:     stringVal(r.Payload, port.PayloadTitle),
-				DateMonth: stringVal(r.Payload, port.PayloadDateMonth),
-				Score:     r.Score,
-			})
-		}
-		return RagSearchResult{Results: chunks}, nil
+		return RunRagSearch(tctx, store, embedFn, embedModel, maxSources, minScore, args)
 	})
+}
+
+// RunRagSearch is the tool's inner handler, factored out so it can be invoked
+// from tests or MCP without constructing an ADK tool.Context.
+func RunRagSearch(ctx context.Context, store port.EmbedStore, embedFn EmbedFn, embedModel string, maxSources int, minScore float64, args RagSearchArgs) (RagSearchResult, error) {
+	if strings.TrimSpace(args.Query) == "" {
+		return RagSearchResult{}, fmt.Errorf("rag_search requires a non-empty query; pick a topic, name, or distinctive phrase and try again — do not call again with an empty query")
+	}
+	slog.Info("rag_search", "query", args.Query, "embed_model", embedModel, "k", maxSources, "min_score", minScore)
+	vec, err := embedFn(ctx, embedModel, args.Query)
+	if err != nil {
+		slog.Error("rag_search embed failed", "query", args.Query, "embed_model", embedModel, "err", err)
+		return RagSearchResult{}, fmt.Errorf("rag_search embed: %w", err)
+	}
+
+	hits, err := store.Search(ctx, args.Query, vec, maxSources)
+	if err != nil {
+		slog.Error("rag_search store query failed", "query", args.Query, "vec_dim", len(vec), "err", err)
+		return RagSearchResult{}, fmt.Errorf("rag_search query: %w", err)
+	}
+	var topScore, bottomScore float64
+	if len(hits) > 0 {
+		topScore = hits[0].Score
+		bottomScore = hits[len(hits)-1].Score
+	}
+	kept := hits
+	if minScore > 0 {
+		kept = kept[:0]
+		for _, h := range hits {
+			if h.Score >= minScore {
+				kept = append(kept, h)
+			}
+		}
+	}
+	slog.Info("rag_search hits",
+		"query", args.Query,
+		"vec_dim", len(vec),
+		"count", len(hits),
+		"kept", len(kept),
+		"top_score", topScore,
+		"bottom_score", bottomScore,
+	)
+	hits = kept
+
+	neighborIDs := make([]string, 0, len(hits)*2)
+	for _, r := range hits {
+		if id := stringVal(r.Payload, port.PayloadPrevChunk); id != "" {
+			neighborIDs = append(neighborIDs, id)
+		}
+		if id := stringVal(r.Payload, port.PayloadNextChunk); id != "" {
+			neighborIDs = append(neighborIDs, id)
+		}
+	}
+	neighborText := map[string]string{}
+	if len(neighborIDs) > 0 {
+		fetched, _ := store.GetByIDs(ctx, neighborIDs)
+		for _, f := range fetched {
+			neighborText[f.ID] = stringVal(f.Payload, port.PayloadText)
+		}
+	}
+
+	chunks := make([]RagChunk, 0, len(hits))
+	for _, r := range hits {
+		var parts []string
+		if t := neighborText[stringVal(r.Payload, port.PayloadPrevChunk)]; t != "" {
+			parts = append(parts, t)
+		}
+		parts = append(parts, stringVal(r.Payload, port.PayloadText))
+		if t := neighborText[stringVal(r.Payload, port.PayloadNextChunk)]; t != "" {
+			parts = append(parts, t)
+		}
+		chunks = append(chunks, RagChunk{
+			Text:      strings.Join(parts, "\n\n"),
+			Title:     stringVal(r.Payload, port.PayloadTitle),
+			DateMonth: stringVal(r.Payload, port.PayloadDateMonth),
+			Score:     r.Score,
+		})
+	}
+	return RagSearchResult{Results: chunks}, nil
 }
 
 func stringVal(m map[string]any, key string) string {
