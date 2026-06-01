@@ -35,6 +35,23 @@ type Client struct {
 	// only happens on the very first upsert/search per process.
 	featuresMu sync.RWMutex
 	features   *collectionFeatures
+
+	// payloadFields are the metadata keys to build payload indexes for. They are
+	// indexed the first time the collection is touched (see ensureCollection),
+	// not per upsert, and only after the collection exists with its real vector
+	// dimensions. payloadIndexed guards against re-issuing the requests.
+	payloadMu      sync.Mutex
+	payloadFields  []string
+	payloadIndexed bool
+}
+
+// SetPayloadIndexFields configures the metadata fields that get Qdrant payload
+// indexes (for fast filtering during RAG). The indexes are created lazily the
+// first time the collection is ensured. Call before the first upsert/search.
+func (c *Client) SetPayloadIndexFields(fields []string) {
+	c.payloadMu.Lock()
+	c.payloadFields = fields
+	c.payloadMu.Unlock()
 }
 
 // collectionFeatures captures the parts of a collection's config that affect
@@ -158,6 +175,7 @@ func (c *Client) fetchFeatures(ctx context.Context) collectionFeatures {
 // IDF modifier so hybrid search works.
 func (c *Client) ensureCollection(ctx context.Context, textLen int, imageLen int) (named bool, err error) {
 	if f := c.collectionFeatures(ctx); f.exists {
+		c.ensurePayloadIndexes(ctx)
 		return f.namedVectors, nil
 	}
 
@@ -170,6 +188,19 @@ func (c *Client) ensureCollection(ctx context.Context, textLen int, imageLen int
 	sparse := map[string]any{
 		sparseNameText: map[string]any{"modifier": idfModifier},
 	}
+
+	// Add HNSW indexing parameters for efficient similarity search
+	// ef_construction: higher = better recall but slower index building
+	// M: higher = better recall but more memory
+	hnswConfig := map[string]any{
+		"ef_construct": 100,
+		"m":            16,
+	}
+	dense[vectorNameText].(map[string]any)["hnsw_config"] = hnswConfig
+	if imageLen > 0 {
+		dense[vectorNameImage].(map[string]any)["hnsw_config"] = hnswConfig
+	}
+
 	cr, err := c.do(ctx, http.MethodPut, "/collections/"+c.collection, map[string]any{
 		"vectors":        dense,
 		"sparse_vectors": sparse,
@@ -183,7 +214,8 @@ func (c *Client) ensureCollection(ctx context.Context, textLen int, imageLen int
 	}
 	cr.Body.Close()
 	c.setFeatures(collectionFeatures{exists: true, namedVectors: true, hasSparse: true})
-	slog.Info("created qdrant collection", "collection", c.collection, "with_sparse", true)
+	slog.Info("created qdrant collection", "collection", c.collection, "with_sparse", true, "hnsw_ef_construct", 100, "hnsw_m", 16)
+	c.ensurePayloadIndexes(ctx)
 	return true, nil
 }
 
@@ -209,4 +241,51 @@ func hexVal(b byte) byte {
 		return b - 'A' + 10
 	}
 	return 0
+}
+
+// ensurePayloadIndexes builds a keyword payload index for each configured field
+// (see SetPayloadIndexFields), enabling fast filtering on metadata like title,
+// tags, or summary. It runs at most once per process and must be called only
+// after the collection exists with its real vector dimensions — callers are the
+// two ensureCollection return paths. Index creation is idempotent in Qdrant, so
+// fields already indexed are no-ops; failures are logged and retried on the next
+// call (payloadIndexed stays false) since indexes are an optimization, not a
+// correctness requirement for upsert.
+func (c *Client) ensurePayloadIndexes(ctx context.Context) {
+	c.payloadMu.Lock()
+	defer c.payloadMu.Unlock()
+	if c.payloadIndexed || len(c.payloadFields) == 0 {
+		return
+	}
+	allOK := true
+	for _, field := range c.payloadFields {
+		if err := c.createPayloadIndex(ctx, field); err != nil {
+			slog.Warn("failed to create qdrant payload index", "field", field, "err", err)
+			allOK = false
+		}
+	}
+	c.payloadIndexed = allOK
+}
+
+// createPayloadIndex issues Qdrant's "create field index" request for a single
+// field. The schema is always "keyword", which suits the text metadata we index
+// (title, tags, summary, date_month); a numeric/geo field would need a different
+// schema and Qdrant would reject "keyword" for it. Unlike the rest of do()'s
+// callers we must inspect the HTTP status: do() only returns an error on
+// transport failure, so a 4xx (e.g. a malformed request) would otherwise be
+// silently treated as success.
+func (c *Client) createPayloadIndex(ctx context.Context, field string) error {
+	resp, err := c.do(ctx, http.MethodPut, "/collections/"+c.collection+"/index", map[string]any{
+		"field_name":   field,
+		"field_schema": "keyword",
+	})
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("qdrant: create payload index %q: %d: %s", field, resp.StatusCode, readBody(resp.Body))
+	}
+	resp.Body.Close()
+	slog.Debug("ensured qdrant payload index", "field", field)
+	return nil
 }

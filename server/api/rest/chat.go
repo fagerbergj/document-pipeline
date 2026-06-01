@@ -46,15 +46,30 @@ func getUserIDForSession(r *http.Request) string {
 	return user
 }
 
+// defaultRAGMinScore is the similarity floor for default RAG retrieval.
+// MinimumScore=0 means "no filter" in rag_search; a positive value drops the
+// low-score noise band that pollutes top-k for short proper-noun queries.
+//
+// The right cutoff is embedding-model-specific: 0.5 was tuned to the score
+// distribution of nomic-embed-text and must be re-validated whenever the embed
+// model changes — use scripts/bench-embed.sh to inspect score ranges, then set
+// RAG_MIN_SCORE to override this default.
+func defaultRAGMinScore() float64 {
+	if v := os.Getenv("RAG_MIN_SCORE"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			return f
+		}
+	}
+	return 0.5
+}
+
 // defaultRAG applies when a chat is created without an explicit rag_retrieval
 // body. Mirrors the frontend's New Chat defaults so API-created chats behave
-// like UI-created ones. MinimumScore=0 means "no filter" in rag_search; 0.5
-// drops the 0.49–0.55 noise band that pollutes top-k for short proper-noun
-// queries against nomic-embed-text.
+// like UI-created ones.
 var defaultRAG = model.RAGConfig{
 	Enabled:      true,
 	MaxSources:   5,
-	MinimumScore: 0.5,
+	MinimumScore: defaultRAGMinScore(),
 }
 
 // ── session state helpers ─────────────────────────────────────────────────────

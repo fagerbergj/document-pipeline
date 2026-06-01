@@ -3,7 +3,6 @@ package rest
 import (
 	"io/fs"
 	"net/http"
-	"os"
 
 	"google.golang.org/adk/session"
 
@@ -48,21 +47,9 @@ type Dependencies struct {
 	FrontendFS fs.FS
 }
 
-func resolveEmbedModel(pipeline model.PipelineConfig) string {
-	for _, s := range pipeline.Stages {
-		if s.Type == model.StageTypeEmbed && s.Model != "" {
-			return s.Model
-		}
-	}
-	if em := os.Getenv("EMBED_MODEL"); em != "" {
-		return em
-	}
-	return "nomic-embed-text:v1.5"
-}
-
 // New constructs the HTTP handler and returns the fully wired router.
 func New(deps Dependencies) http.Handler {
-	em := resolveEmbedModel(deps.Pipeline)
+	em := deps.Pipeline.ResolveEmbedModel()
 	h := &handler{
 		docs:       deps.Documents,
 		jobs:       deps.Jobs,

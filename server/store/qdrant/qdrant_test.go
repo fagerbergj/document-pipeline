@@ -162,3 +162,121 @@ func TestSearch_ReturnsResults(t *testing.T) {
 		t.Errorf("expected score 0.95, got %f", results[0].Score)
 	}
 }
+
+// TestPayloadIndexes_CreatedOnEnsure verifies that configured payload fields are
+// indexed when the collection is first ensured (here via Upsert), with Qdrant's
+// real field-index request body, and only once even across multiple operations.
+func TestPayloadIndexes_CreatedOnEnsure(t *testing.T) {
+	var indexBodies []map[string]any
+	created := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/collections/docs":
+			if !created {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			json.NewEncoder(w).Encode(namedCollectionInfo())
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/docs":
+			created = true
+			json.NewEncoder(w).Encode(map[string]any{"result": true})
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/docs/index":
+			var body map[string]any
+			json.NewDecoder(r.Body).Decode(&body)
+			indexBodies = append(indexBodies, body)
+			json.NewEncoder(w).Encode(map[string]any{"result": true})
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/docs/points":
+			json.NewEncoder(w).Encode(map[string]any{"result": map[string]any{"status": "ok"}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	c := qdrant.New(srv.URL, "docs", "")
+	c.SetPayloadIndexFields([]string{"title", "tags"})
+
+	// Two upserts: indexes must be created exactly once total (not per upsert).
+	for i := 0; i < 2; i++ {
+		if err := c.Upsert(context.Background(), "550e8400-e29b-41d4-a716-446655440000",
+			[]float32{0.1, 0.2, 0.3, 0.4}, nil, map[string]any{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if len(indexBodies) != 2 {
+		t.Fatalf("expected one index call per field (2), got %d: %v", len(indexBodies), indexBodies)
+	}
+	if indexBodies[0]["field_name"] != "title" || indexBodies[0]["field_schema"] != "keyword" {
+		t.Errorf("unexpected index body: %v", indexBodies[0])
+	}
+}
+
+// TestPayloadIndexes_NoneConfigured verifies the index endpoint is never hit
+// when no payload fields are configured.
+func TestPayloadIndexes_NoneConfigured(t *testing.T) {
+	indexCalled := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/collections/docs":
+			w.WriteHeader(http.StatusNotFound)
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/docs":
+			json.NewEncoder(w).Encode(map[string]any{"result": true})
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/docs/index":
+			indexCalled = true
+			json.NewEncoder(w).Encode(map[string]any{"result": true})
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/docs/points":
+			json.NewEncoder(w).Encode(map[string]any{"result": map[string]any{"status": "ok"}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	c := qdrant.New(srv.URL, "docs", "")
+	if err := c.Upsert(context.Background(), "550e8400-e29b-41d4-a716-446655440000",
+		[]float32{0.1, 0.2, 0.3, 0.4}, nil, map[string]any{}); err != nil {
+		t.Fatal(err)
+	}
+	if indexCalled {
+		t.Error("index endpoint should not be called when no payload fields are configured")
+	}
+}
+
+func TestUpsert_HNSWConfig(t *testing.T) {
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/collections/docs":
+			w.WriteHeader(http.StatusNotFound)
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/docs":
+			json.NewDecoder(r.Body).Decode(&gotBody)
+			json.NewEncoder(w).Encode(map[string]any{"result": true})
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/docs/points":
+			json.NewEncoder(w).Encode(map[string]any{"result": map[string]any{"status": "ok"}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	c := qdrant.New(srv.URL, "docs", "")
+	err := c.Upsert(context.Background(), "550e8400-e29b-41d4-a716-446655440000",
+		[]float32{0.1, 0.2, 0.3, 0.4}, nil, map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify HNSW config is included in the vector definition
+	vectors, ok := gotBody["vectors"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected vectors in body, got: %v", gotBody)
+	}
+	textVec, ok := vectors["text"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected text vector, got: %v", vectors)
+	}
+	if _, hasHNSW := textVec["hnsw_config"]; !hasHNSW {
+		t.Errorf("expected hnsw_config in vector definition, got: %v", textVec)
+	}
+}

@@ -67,13 +67,7 @@ func NewWorkerService(
 	pipeline model.PipelineConfig,
 	vaultPath string,
 ) *WorkerService {
-	em := "nomic-embed-text:v1.5"
-	for _, s := range pipeline.Stages {
-		if s.Type == model.StageTypeEmbed && s.Model != "" {
-			em = s.Model
-			break
-		}
-	}
+	em := pipeline.ResolveEmbedModel()
 	ragTool, _ := adktools.NewRagSearchTool(embed, llm.GenerateEmbed, em, 0, 0)
 	return &WorkerService{
 		docs: docs, jobs: jobs, artifacts: artifacts, events: events,
