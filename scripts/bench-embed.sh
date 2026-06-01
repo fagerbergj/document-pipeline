@@ -37,9 +37,14 @@ TOP_K="${TOP_K:-5}"
 # Fill in a few representative queries for this dataset. Mix easy exact-ish
 # lookups with harder paraphrases so the score spread is informative.
 QUERIES=(
-  # "example: when did I sign the apartment lease?"
-  # "example: car insurance policy number"
-  # "example: notes about the kitchen renovation budget"
+  # Campaign character: Who is Zuk Bugbag and what organization did he co-found?
+  "Zuk Bugbag Ethereal Refuters"
+  # Campaign: What ship is the campaign aboard and where is it going?
+  "Jewel of the Seas port damali gravid archipelago"
+  # World lore: What empire is ruled by King Dwindle and what is its characteristic?
+  "Dwindle Empire strength intelligence resources"
+  # Campaign: Who is Mara's character and why was she on the cruise?
+  "Menma Everdeen parents forced vacation"
 )
 
 # ------------------------------------------------------------------------------
