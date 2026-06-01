@@ -324,8 +324,8 @@ golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543/go.mod h1:I/5z698sn9Ka8T
 golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
 gonum.org/v1/gonum v0.17.0 h1:VbpOemQlsSMrYmn7T2OUvQ4dqxQXU+ouZFQsZOx50z4=
 gonum.org/v1/gonum v0.17.0/go.mod h1:El3tOrEuMpv2UdMrbNlKEh9vd86bmQ6vqIcDwxEOc1E=
-google.golang.org/adk v1.3.0 h1:paUr9uM2qANnMUAQ4ydMXMCnM1HtymhDYl8y7gnKvqs=
-google.golang.org/adk v1.3.0/go.mod h1:R8tNFnI/eiBXHn7zJPJtqdiK/WXC+tVkyuZsXyNZXN4=
+google.golang.org/adk v1.4.0 h1:Qi4KB9YKD00/I5K9v3QsZ9ng5YiZQ7MfMgM8BZjNcsM=
+google.golang.org/adk v1.4.0/go.mod h1:R8tNFnI/eiBXHn7zJPJtqdiK/WXC+tVkyuZsXyNZXN4=
 google.golang.org/api v0.279.0 h1:hsx2M2OaRcaKtVYK6vXEUnQvdjnend7ZYES+lYaot74=
 google.golang.org/api v0.279.0/go.mod h1:B9TqLBwJqVjp1mtt7WeoQwWRwvu/400y5lETOql+giQ=
 google.golang.org/genai v1.58.0 h1:MNA3ZkRyr7MnRwZ9RNZ60p4+UMKV3yYRw6pyHq4pp0U=
