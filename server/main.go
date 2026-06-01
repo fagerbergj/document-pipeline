@@ -222,7 +222,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle("/", handler)
 	if mcpH != nil {
-		mux.Handle("/api/v1/mcp", mcpH.AuthenticatedHandler())
+		mux.Handle("/api/v1/documents/mcp", mcpH.AuthenticatedHandler())
 	}
 	srv := &http.Server{Addr: *addr, Handler: mux}
 
