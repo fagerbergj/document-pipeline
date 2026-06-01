@@ -42,12 +42,12 @@ QDRANT_API_KEY="${QDRANT_API_KEY:-}"
 TOP_K="${TOP_K:-5}"
 SIDECAR_IMAGE="${SIDECAR_IMAGE:-alpine:latest}"
 
-# Qwen3-Embedding is trained to receive an instruction on the QUERY side only
-# (documents are embedded raw). Without it, query vectors sit in the wrong
-# regime, which depresses both scores and ranking. Set QUERY_INSTRUCT="" to
-# disable and compare. This is applied here in the bench; the live RAG path
-# would need the same prefix to match.
-QUERY_INSTRUCT="${QUERY_INSTRUCT:-Given a question, retrieve passages from the tabletop campaign notes that answer it}"
+# Off by default. Qwen3's asymmetric-instruction design assumes a matching
+# trained instruction; against our raw-embedded documents an ad-hoc prefix
+# HURT — a direct query↔passage test dropped from 0.82 (raw) to 0.70 (with
+# prefix). Set e.g. QUERY_INSTRUCT="Given a question, retrieve passages that
+# answer it" to experiment. NB: '-' not ':-', so QUERY_INSTRUCT="" stays empty.
+QUERY_INSTRUCT="${QUERY_INSTRUCT-}"
 
 # --- queries to benchmark -----------------------------------------------------
 # Natural-language questions retrieve better than keyword salads with a dense
