@@ -103,7 +103,7 @@ delete_qdrant_collection() {
         return
       fi
       echo "Deleting Qdrant collection '$QDRANT_COLLECTION' at $QDRANT_INTERNAL_URL (sidecar on $net)..."
-      docker run --rm --network "$net" "$SIDECAR_IMAGE" sh -s -- "$QDRANT_INTERNAL_URL/collections/$QDRANT_COLLECTION" <<'EOF'
+      docker run --rm -i --network "$net" "$SIDECAR_IMAGE" sh -s -- "$QDRANT_INTERNAL_URL/collections/$QDRANT_COLLECTION" <<'EOF'
 apk add --no-cache curl >/dev/null
 if curl -sf -X DELETE "$1" >/dev/null; then
   echo "  Collection deleted (or did not exist)."
