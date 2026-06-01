@@ -130,6 +130,21 @@ func (c *Client) setFeatures(f collectionFeatures) {
 	c.featuresMu.Unlock()
 }
 
+// invalidateFeatures drops the cached collection capabilities so the next
+// collectionFeatures call re-fetches them. Used when we learn the collection
+// changed underneath us — e.g. it was deleted out of band by a re-embed run,
+// leaving our cached exists=true stale.
+func (c *Client) invalidateFeatures() {
+	c.featuresMu.Lock()
+	c.features = nil
+	c.featuresMu.Unlock()
+	// A recreated collection starts with no payload indexes, so allow them to be
+	// rebuilt on the next ensureCollection rather than staying marked as done.
+	c.payloadMu.Lock()
+	c.payloadIndexed = false
+	c.payloadMu.Unlock()
+}
+
 // fetchFeatures issues a single GET /collections/<name> and parses both the
 // vectors and sparse_vectors config. Errors and 404s collapse to a zero
 // features value (exists=false).
