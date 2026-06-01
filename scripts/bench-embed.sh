@@ -12,26 +12,35 @@
 #   query text --(POST /v1/embeddings)--> dense vector
 #              --(POST /collections/<c>/points/query, using "text")--> scored hits
 #
+# The whole thing runs inside a one-shot sidecar container on the docker network
+# where both services resolve: llm-swap and qdrant publish no useful host ports
+# in production (Qdrant publishes none at all), so a host-side curl can't reach
+# them. The sidecar joins BENCH_NETWORK and talks to the internal service names.
+#
 # Config (all overridable via env):
-#   LLM_URL            embeddings endpoint base, no /v1 suffix  (default http://localhost:11436)
+#   BENCH_NETWORK      docker network to run on                 (default llm_default)
+#   LLM_URL            embeddings endpoint base, no /v1 suffix  (default http://llm-swap:11436)
 #   LLM_API_KEY        bearer token for the embeddings endpoint (default empty)
 #   EMBED_MODEL        embedding model name                     (default qwen3-embed)
-#   QDRANT_URL         Qdrant base URL                          (default http://localhost:6333)
+#   QDRANT_URL         Qdrant base URL                          (default http://qdrant:6333)
 #   QDRANT_COLLECTION  collection name                          (default documents)
 #   QDRANT_API_KEY     Qdrant api-key header                    (default empty)
 #   TOP_K              hits to show per query                   (default 5)
+#   SIDECAR_IMAGE      image with a shell + apk                 (default alpine:latest)
 #
-# Requires: curl, jq.
+# Requires: docker (curl/jq are installed inside the sidecar).
 
 set -euo pipefail
 
-LLM_URL="${LLM_URL:-http://localhost:11436}"
+BENCH_NETWORK="${BENCH_NETWORK:-llm_default}"
+LLM_URL="${LLM_URL:-http://llm-swap:11436}"
 LLM_API_KEY="${LLM_API_KEY:-}"
 EMBED_MODEL="${EMBED_MODEL:-qwen3-embed}"
-QDRANT_URL="${QDRANT_URL:-http://localhost:6333}"
+QDRANT_URL="${QDRANT_URL:-http://qdrant:6333}"
 QDRANT_COLLECTION="${QDRANT_COLLECTION:-documents}"
 QDRANT_API_KEY="${QDRANT_API_KEY:-}"
 TOP_K="${TOP_K:-5}"
+SIDECAR_IMAGE="${SIDECAR_IMAGE:-alpine:latest}"
 
 # --- queries to benchmark -----------------------------------------------------
 # Fill in a few representative queries for this dataset. Mix easy exact-ish
@@ -49,54 +58,86 @@ QUERIES=(
 
 # ------------------------------------------------------------------------------
 
-command -v curl >/dev/null 2>&1 || { echo "error: 'curl' is required" >&2; exit 1; }
-command -v jq   >/dev/null 2>&1 || { echo "error: 'jq' is required" >&2; exit 1; }
+command -v docker >/dev/null 2>&1 || { echo "error: 'docker' is required" >&2; exit 1; }
 
 if [[ ${#QUERIES[@]} -eq 0 ]]; then
   echo "No queries configured. Add some to the QUERIES=( ... ) array in $0." >&2
   exit 1
 fi
 
-# embed_query <text> -> JSON array of floats on stdout
-embed_query() {
-  local text="$1"
-  local auth=()
-  [[ -n "$LLM_API_KEY" ]] && auth=(-H "Authorization: Bearer $LLM_API_KEY")
-  curl -sf "${auth[@]}" -H "Content-Type: application/json" \
-    -X POST "$LLM_URL/v1/embeddings" \
-    --data "$(jq -n --arg m "$EMBED_MODEL" --arg in "$text" '{model: $m, input: $in}')" \
-    | jq -c '.data[0].embedding'
+# Export the secrets so they pass through to the sidecar via `-e NAME` (value
+# stays out of the docker run argv, unlike `-e NAME=value`).
+export LLM_API_KEY QDRANT_API_KEY
+
+echo "network=$BENCH_NETWORK  model=$EMBED_MODEL  collection=$QDRANT_COLLECTION  top_k=$TOP_K"
+
+# Queries are passed as positional args; config via env. The inner script avoids
+# `set -e` so one failing query reports its HTTP status and the run continues.
+docker run --rm -i --network "$BENCH_NETWORK" \
+  -e LLM_URL="$LLM_URL" -e LLM_API_KEY \
+  -e EMBED_MODEL="$EMBED_MODEL" \
+  -e QDRANT_URL="$QDRANT_URL" -e QDRANT_COLLECTION="$QDRANT_COLLECTION" -e QDRANT_API_KEY \
+  -e TOP_K="$TOP_K" \
+  "$SIDECAR_IMAGE" sh -s -- "${QUERIES[@]}" <<'EOF'
+set -u
+apk add --no-cache curl jq >/dev/null 2>&1 || { echo "sidecar: failed to install curl/jq" >&2; exit 1; }
+
+# POST with optional auth header; echoes "<body>\n<http_code>".
+emb_post() {
+  if [ -n "${LLM_API_KEY:-}" ]; then
+    curl -s -w '\n%{http_code}' -H "Content-Type: application/json" \
+      -H "Authorization: Bearer $LLM_API_KEY" -X POST "$1" --data "$2"
+  else
+    curl -s -w '\n%{http_code}' -H "Content-Type: application/json" -X POST "$1" --data "$2"
+  fi
+}
+qd_post() {
+  if [ -n "${QDRANT_API_KEY:-}" ]; then
+    curl -s -w '\n%{http_code}' -H "Content-Type: application/json" \
+      -H "api-key: $QDRANT_API_KEY" -X POST "$1" --data "$2"
+  else
+    curl -s -w '\n%{http_code}' -H "Content-Type: application/json" -X POST "$1" --data "$2"
+  fi
 }
 
-# qdrant_query <vector-json> -> raw query response on stdout
-qdrant_query() {
-  local vector="$1"
-  local auth=()
-  [[ -n "$QDRANT_API_KEY" ]] && auth=(-H "api-key: $QDRANT_API_KEY")
-  curl -sf "${auth[@]}" -H "Content-Type: application/json" \
-    -X POST "$QDRANT_URL/collections/$QDRANT_COLLECTION/points/query" \
-    --data "$(jq -n --argjson q "$vector" --argjson k "$TOP_K" \
-      '{query: $q, using: "text", limit: $k, with_payload: true}')"
-}
-
-echo "model=$EMBED_MODEL  collection=$QDRANT_COLLECTION  top_k=$TOP_K"
+echo "llm=$LLM_URL  qdrant=$QDRANT_URL"
 echo
 
-for q in "${QUERIES[@]}"; do
+for q in "$@"; do
   echo "── query: $q"
-  vector=$(embed_query "$q") || { echo "  embed failed" >&2; continue; }
-  resp=$(qdrant_query "$vector") || { echo "  qdrant query failed" >&2; continue; }
 
-  # Print "score  title — snippet" per hit. Title/text come from the payload;
-  # the snippet is truncated so the table stays readable. Guard the jq so a
-  # malformed (but HTTP-200) response prints a note instead of aborting the
-  # whole run under `set -e`/pipefail.
-  echo "$resp" | jq -r '
+  body=$(jq -n --arg m "$EMBED_MODEL" --arg in "$q" '{model:$m, input:$in}')
+  resp=$(emb_post "$LLM_URL/v1/embeddings" "$body")
+  code=$(printf '%s' "$resp" | tail -n1)
+  data=$(printf '%s' "$resp" | sed '$d')
+  if [ "$code" != "200" ]; then
+    echo "  embed failed [HTTP $code]: $(printf '%s' "$data" | head -c 200)" >&2
+    echo; continue
+  fi
+  vector=$(printf '%s' "$data" | jq -c '.data[0].embedding // empty')
+  if [ -z "$vector" ]; then
+    echo "  embed failed: no embedding in response: $(printf '%s' "$data" | head -c 200)" >&2
+    echo; continue
+  fi
+
+  qbody=$(jq -n --argjson q "$vector" --argjson k "$TOP_K" \
+    '{query:$q, using:"text", limit:$k, with_payload:true}')
+  resp=$(qd_post "$QDRANT_URL/collections/$QDRANT_COLLECTION/points/query" "$qbody")
+  code=$(printf '%s' "$resp" | tail -n1)
+  data=$(printf '%s' "$resp" | sed '$d')
+  if [ "$code" != "200" ]; then
+    echo "  qdrant query failed [HTTP $code]: $(printf '%s' "$data" | head -c 200)" >&2
+    echo; continue
+  fi
+
+  # "score  title — snippet" per hit; snippet truncated for readability.
+  printf '%s' "$data" | jq -r '
     .result.points[]?
     | [ (.score | tostring | .[0:6]),
         (.payload.title // "(untitled)"),
         ((.payload.text // "") | gsub("\\s+"; " ") | .[0:80]) ]
     | "  " + (.[0]) + "  " + (.[1]) + " — " + (.[2])
-  ' || echo "  (no parseable results: $resp)" >&2
+  ' || echo "  (no parseable results)"
   echo
 done
+EOF
