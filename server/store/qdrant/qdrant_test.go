@@ -65,6 +65,55 @@ func TestUpsert_CreatesCollection(t *testing.T) {
 	}
 }
 
+// TestUpsert_RecreatesCollectionOn404 simulates the collection being dropped out
+// of band (e.g. by a re-embed) after the client has cached exists=true: the
+// first upsert 404s, and the client must invalidate its cache, recreate the
+// collection, and retry the upsert rather than surfacing the 404.
+func TestUpsert_RecreatesCollectionOn404(t *testing.T) {
+	exists := true // starts existing → first ensureCollection caches exists=true
+	var createCalls, pointsCalls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/collections/docs":
+			if !exists {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			json.NewEncoder(w).Encode(namedCollectionInfo())
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/docs":
+			createCalls++
+			exists = true
+			json.NewEncoder(w).Encode(map[string]any{"result": true})
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/docs/points":
+			pointsCalls++
+			if pointsCalls == 1 {
+				// The collection vanished between the cache fill and this upsert.
+				exists = false
+				w.WriteHeader(http.StatusNotFound)
+				json.NewEncoder(w).Encode(map[string]any{"status": map[string]any{"error": "Not found: Collection `docs` doesn't exist!"}})
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]any{"result": map[string]any{"status": "ok"}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	c := qdrant.New(srv.URL, "docs", "")
+	err := c.Upsert(context.Background(), "550e8400-e29b-41d4-a716-446655440000",
+		[]float32{0.1, 0.2, 0.3, 0.4}, nil, map[string]any{"text": "hello"})
+	if err != nil {
+		t.Fatalf("expected recovery from 404, got error: %v", err)
+	}
+	if createCalls != 1 {
+		t.Errorf("expected collection to be recreated exactly once, got %d", createCalls)
+	}
+	if pointsCalls != 2 {
+		t.Errorf("expected upsert to be retried once (2 calls), got %d", pointsCalls)
+	}
+}
+
 func TestUpsert_ExistingCollection(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
