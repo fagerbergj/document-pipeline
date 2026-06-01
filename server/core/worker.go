@@ -10,6 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/ast"
+	gmtext "github.com/yuin/goldmark/text"
 	"google.golang.org/adk/session"
 	"google.golang.org/adk/tool"
 	"google.golang.org/genai"
@@ -690,44 +693,44 @@ func chunkMarkdown(text string, maxSize, overlap int) []string {
 	return chunks
 }
 
-// splitMarkdownSections breaks text at ATX heading lines (`#`..`######`), so
-// each returned section begins with a heading (the text before the first
-// heading is its own leading section). Each section keeps its trailing newline
-// so concatenating sections is lossless.
+// splitMarkdownSections breaks text so each section begins at a markdown
+// heading (the text before the first heading is its own leading section). It
+// uses a full goldmark parse to locate real headings, so a line starting with
+// '#' inside a fenced code block — common in notes with shell snippets — is not
+// mistaken for one. Sections keep their original bytes (including the trailing
+// newline), so concatenating them is lossless.
 func splitMarkdownSections(text string) []string {
-	var (
-		sections []string
-		cur      []string
-	)
-	emit := func() {
-		if len(cur) > 0 {
-			sections = append(sections, strings.Join(cur, "\n")+"\n")
-			cur = nil
+	src := []byte(text)
+	cuts := []int{0} // byte offsets where sections start; index 0 is the preamble
+	doc := goldmark.New().Parser().Parse(gmtext.NewReader(src))
+	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		h, ok := n.(*ast.Heading)
+		if !entering || !ok || h.Lines().Len() == 0 {
+			return ast.WalkContinue, nil
 		}
-	}
-	for _, line := range strings.Split(text, "\n") {
-		if isATXHeading(line) {
-			emit()
+		// Lines().At(0).Start is the heading text; back up to the line start so
+		// the section includes the leading '#'s.
+		start := h.Lines().At(0).Start
+		for start > 0 && src[start-1] != '\n' {
+			start--
 		}
-		cur = append(cur, line)
-	}
-	emit()
-	return sections
-}
+		if start > cuts[len(cuts)-1] {
+			cuts = append(cuts, start)
+		}
+		return ast.WalkContinue, nil
+	})
 
-// isATXHeading reports whether line is a markdown ATX heading: up to 3 leading
-// spaces, 1–6 '#', then a space or tab. (4+ leading spaces is an indented code
-// block, not a heading.)
-func isATXHeading(line string) bool {
-	s := strings.TrimLeft(line, " ")
-	if len(line)-len(s) > 3 {
-		return false
+	var sections []string
+	for i, start := range cuts {
+		end := len(src)
+		if i+1 < len(cuts) {
+			end = cuts[i+1]
+		}
+		if sec := string(src[start:end]); strings.TrimSpace(sec) != "" {
+			sections = append(sections, sec)
+		}
 	}
-	n := 0
-	for n < len(s) && s[n] == '#' {
-		n++
-	}
-	return n >= 1 && n <= 6 && n < len(s) && (s[n] == ' ' || s[n] == '\t')
+	return sections
 }
 
 func runeLen(s string) int { return len([]rune(s)) }

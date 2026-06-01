@@ -688,21 +688,16 @@ func TestChunkMarkdown(t *testing.T) {
 			t.Errorf("expected no chunks for blank input, got %q", got)
 		}
 	})
-}
 
-func TestIsATXHeading(t *testing.T) {
-	yes := []string{"# H", "###### H", "  ## indented up to 3 spaces", "#\tTab after hashes"}
-	no := []string{"#NoSpace", "####### too many", "    # four-space indent is code", "not a heading", "</> #"}
-	for _, s := range yes {
-		if !isATXHeading(s) {
-			t.Errorf("expected heading: %q", s)
+	t.Run("does not split on # inside a fenced code block", func(t *testing.T) {
+		// A naive line scanner would treat the shell comment as a heading and
+		// split the section; goldmark knows it's inside a code fence.
+		md := "# Real Heading\nintro line\n```sh\n# this is a shell comment, not a heading\necho hi\n```\ntrailing text"
+		chunks := chunkMarkdown(md, 800, 150)
+		if len(chunks) != 1 {
+			t.Fatalf("fenced '#' was treated as a heading: got %d chunks: %q", len(chunks), chunks)
 		}
-	}
-	for _, s := range no {
-		if isATXHeading(s) {
-			t.Errorf("expected NOT heading: %q", s)
-		}
-	}
+	})
 }
 
 // ---- parseLLMResponse ----
