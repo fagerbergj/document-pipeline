@@ -624,6 +624,87 @@ func TestChunkText(t *testing.T) {
 	}
 }
 
+func TestChunkText_RuneSafe(t *testing.T) {
+	// Multi-byte runes must never be bisected. "界" is 3 bytes; a byte-window
+	// splitter would corrupt it, a rune-window one keeps every chunk valid UTF-8.
+	text := strings.Repeat("界", 100) // 100 runes, 300 bytes
+	chunks := chunkText(text, 40, 10)
+	if len(chunks) == 0 {
+		t.Fatal("expected chunks")
+	}
+	rejoined := strings.Join(chunks, "")
+	for _, r := range rejoined {
+		if r != '界' {
+			t.Fatalf("chunk corrupted a multi-byte rune: got %q", r)
+		}
+	}
+}
+
+// ---- chunkMarkdown ----
+
+func TestChunkMarkdown(t *testing.T) {
+	t.Run("small sections under a heading stay in one chunk", func(t *testing.T) {
+		md := "# Character Sheet: Zuk Bugbag\n## General Information\n- Name: Zuk Bugbag\n- Class: Fighter\n"
+		chunks := chunkMarkdown(md, 800, 150)
+		if len(chunks) != 1 {
+			t.Fatalf("expected the whole sheet in 1 chunk, got %d: %q", len(chunks), chunks)
+		}
+		if !strings.Contains(chunks[0], "Zuk Bugbag") || !strings.Contains(chunks[0], "Class: Fighter") {
+			t.Errorf("chunk lost section content: %q", chunks[0])
+		}
+	})
+
+	t.Run("splits at headings when packing would overflow", func(t *testing.T) {
+		secA := "# A\n" + strings.Repeat("x", 60) + "\n"
+		secB := "# B\n" + strings.Repeat("y", 60) + "\n"
+		chunks := chunkMarkdown(secA+secB, 80, 10) // each section ~65 runes; both won't fit in 80
+		if len(chunks) != 2 {
+			t.Fatalf("expected one chunk per heading, got %d: %q", len(chunks), chunks)
+		}
+		if !strings.HasPrefix(chunks[0], "# A") || !strings.HasPrefix(chunks[1], "# B") {
+			t.Errorf("chunks not split on heading boundary: %q", chunks)
+		}
+	})
+
+	t.Run("oversized single section falls back to windowing", func(t *testing.T) {
+		md := "# Big\n" + strings.Repeat("a", 2000)
+		chunks := chunkMarkdown(md, 800, 150)
+		if len(chunks) < 2 {
+			t.Fatalf("expected oversized section to be windowed, got %d", len(chunks))
+		}
+	})
+
+	t.Run("preamble before first heading is kept", func(t *testing.T) {
+		md := "intro paragraph with no heading\n# Section\nbody"
+		chunks := chunkMarkdown(md, 800, 150)
+		joined := strings.Join(chunks, "\n")
+		if !strings.Contains(joined, "intro paragraph") {
+			t.Errorf("dropped preamble: %q", chunks)
+		}
+	})
+
+	t.Run("blank input yields no chunks", func(t *testing.T) {
+		if got := chunkMarkdown("   \n\n  ", 800, 150); len(got) != 0 {
+			t.Errorf("expected no chunks for blank input, got %q", got)
+		}
+	})
+}
+
+func TestIsATXHeading(t *testing.T) {
+	yes := []string{"# H", "###### H", "  ## indented up to 3 spaces", "#\tTab after hashes"}
+	no := []string{"#NoSpace", "####### too many", "    # four-space indent is code", "not a heading", "</> #"}
+	for _, s := range yes {
+		if !isATXHeading(s) {
+			t.Errorf("expected heading: %q", s)
+		}
+	}
+	for _, s := range no {
+		if isATXHeading(s) {
+			t.Errorf("expected NOT heading: %q", s)
+		}
+	}
+}
+
 // ---- parseLLMResponse ----
 
 func TestParseLLMResponse_JSON(t *testing.T) {

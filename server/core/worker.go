@@ -650,13 +650,97 @@ func (w *WorkerService) runLLMText(
 const defaultChunkSize = 1500
 const defaultChunkOverlap = 200
 
-// chunkText splits text into overlapping character-based chunks.
-// Empty/whitespace-only fragments (which can appear at tail boundaries when
-// the input ends in a run of whitespace) are dropped — downstream stores
-// reject blank content, and embedding blanks is wasted work either way.
+// chunkMarkdown splits markdown into chunks that respect heading structure.
+// Heading-delimited sections are packed together up to maxSize, so a coherent
+// section (e.g. a character sheet) stays in one chunk instead of being cut
+// mid-field by a blind window — which both reads better and embeds with a
+// stronger, less diluted signal. A single section larger than maxSize falls
+// back to windowed splitting. Operates on runes throughout, so it never
+// bisects a multi-byte character (the old window splitter sliced bytes).
+//
+// There is intentionally no inter-section overlap: rag_search stitches each
+// hit's prev/next neighbor back in at query time, so the surrounding context
+// is recovered without duplicating it into every chunk.
+func chunkMarkdown(text string, maxSize, overlap int) []string {
+	var (
+		chunks []string
+		cur    strings.Builder
+	)
+	flush := func() {
+		if strings.TrimSpace(cur.String()) != "" {
+			chunks = append(chunks, strings.TrimRight(cur.String(), "\n"))
+		}
+		cur.Reset()
+	}
+	for _, sec := range splitMarkdownSections(text) {
+		switch {
+		case runeLen(sec) > maxSize:
+			// Oversized single section: flush what we have, then window it.
+			flush()
+			chunks = append(chunks, chunkText(sec, maxSize, overlap)...)
+		case cur.Len() > 0 && runeLen(cur.String())+runeLen(sec) > maxSize:
+			// Packing sec would overflow the current chunk: start a new one.
+			flush()
+			cur.WriteString(sec)
+		default:
+			cur.WriteString(sec)
+		}
+	}
+	flush()
+	return chunks
+}
+
+// splitMarkdownSections breaks text at ATX heading lines (`#`..`######`), so
+// each returned section begins with a heading (the text before the first
+// heading is its own leading section). Each section keeps its trailing newline
+// so concatenating sections is lossless.
+func splitMarkdownSections(text string) []string {
+	var (
+		sections []string
+		cur      []string
+	)
+	emit := func() {
+		if len(cur) > 0 {
+			sections = append(sections, strings.Join(cur, "\n")+"\n")
+			cur = nil
+		}
+	}
+	for _, line := range strings.Split(text, "\n") {
+		if isATXHeading(line) {
+			emit()
+		}
+		cur = append(cur, line)
+	}
+	emit()
+	return sections
+}
+
+// isATXHeading reports whether line is a markdown ATX heading: up to 3 leading
+// spaces, 1–6 '#', then a space or tab. (4+ leading spaces is an indented code
+// block, not a heading.)
+func isATXHeading(line string) bool {
+	s := strings.TrimLeft(line, " ")
+	if len(line)-len(s) > 3 {
+		return false
+	}
+	n := 0
+	for n < len(s) && s[n] == '#' {
+		n++
+	}
+	return n >= 1 && n <= 6 && n < len(s) && (s[n] == ' ' || s[n] == '\t')
+}
+
+func runeLen(s string) int { return len([]rune(s)) }
+
+// chunkText splits text into overlapping rune-based windows. Used as the
+// fallback for markdown sections that exceed maxSize. Empty/whitespace-only
+// fragments (which can appear at tail boundaries when the input ends in a run
+// of whitespace) are dropped — downstream stores reject blank content, and
+// embedding blanks is wasted work either way.
 func chunkText(text string, size, overlap int) []string {
 	keep := func(c string) bool { return strings.TrimSpace(c) != "" }
-	if len(text) <= size {
+	runes := []rune(text)
+	if len(runes) <= size {
 		if !keep(text) {
 			return nil
 		}
@@ -667,15 +751,15 @@ func chunkText(text string, size, overlap int) []string {
 		step = size
 	}
 	var chunks []string
-	for i := 0; i < len(text); i += step {
+	for i := 0; i < len(runes); i += step {
 		end := i + size
-		if end > len(text) {
-			end = len(text)
+		if end > len(runes) {
+			end = len(runes)
 		}
-		if c := text[i:end]; keep(c) {
+		if c := string(runes[i:end]); keep(c) {
 			chunks = append(chunks, c)
 		}
-		if end == len(text) {
+		if end == len(runes) {
 			break
 		}
 	}
@@ -745,7 +829,7 @@ func (w *WorkerService) runEmbed(
 	if chunkOverlap <= 0 {
 		chunkOverlap = defaultChunkOverlap
 	}
-	chunks := chunkText(inputText, chunkSize, chunkOverlap)
+	chunks := chunkMarkdown(inputText, chunkSize, chunkOverlap)
 
 	// Load image bytes once (used for chunk 0 only).
 	var imgBytes []byte
@@ -893,7 +977,7 @@ func (w *WorkerService) rebuildSeriesCorpus(
 	if chunkOverlap <= 0 {
 		chunkOverlap = defaultChunkOverlap
 	}
-	chunks := chunkText(combined, chunkSize, chunkOverlap)
+	chunks := chunkMarkdown(combined, chunkSize, chunkOverlap)
 
 	// Delete old series corpus before rebuilding.
 	if err := w.embed.DeleteBySeries(ctx, series); err != nil {
