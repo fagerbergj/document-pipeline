@@ -46,6 +46,15 @@ pipeline_network() {
     "$PIPELINE_CONTAINER" 2>/dev/null | head -1
 }
 
+# Pick the first network a given container is on. Used to place the Qdrant-delete
+# sidecar on the network where the Qdrant service name resolves — which is NOT
+# necessarily the pipeline's first network (the pipeline is multi-homed; Qdrant
+# typically lives only on the llm network).
+container_network() {
+  docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}' \
+    "$1" 2>/dev/null | head -1
+}
+
 if [[ "$MODE" == "auto" ]]; then
   if host_http_works; then
     MODE=host
@@ -96,20 +105,30 @@ delete_qdrant_collection() {
       fi
       ;;
     docker)
-      local net
-      net=$(pipeline_network)
+      # The sidecar must join the network where the Qdrant *service name*
+      # resolves. The pipeline is multi-homed and its first network is usually
+      # the api network, where "qdrant" does not resolve — so locate the network
+      # from the Qdrant container itself (host parsed from QDRANT_INTERNAL_URL),
+      # falling back to the pipeline's network.
+      local qhost net
+      qhost=$(printf '%s' "$QDRANT_INTERNAL_URL" | sed -E 's#^[a-z]+://([^:/]+).*#\1#')
+      net=$(container_network "$qhost")
+      [[ -z "$net" ]] && net=$(pipeline_network)
       if [[ -z "$net" ]]; then
-        echo "  warning: could not determine '$PIPELINE_CONTAINER' network — skipping Qdrant delete." >&2
+        echo "  warning: could not determine a docker network for Qdrant ('$qhost') — skipping delete." >&2
         return
       fi
       echo "Deleting Qdrant collection '$QDRANT_COLLECTION' at $QDRANT_INTERNAL_URL (sidecar on $net)..."
+      # Accept 2xx (deleted) and 404 (already gone) as success; report the HTTP
+      # code otherwise so a stale collection is diagnosable rather than silent.
       docker run --rm -i --network "$net" "$SIDECAR_IMAGE" sh -s -- "$QDRANT_INTERNAL_URL/collections/$QDRANT_COLLECTION" <<'EOF'
 apk add --no-cache curl >/dev/null
-if curl -sf -X DELETE "$1" >/dev/null; then
-  echo "  Collection deleted (or did not exist)."
-else
-  echo "  warning: DELETE failed — collection may be stale." >&2
-fi
+code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "$1")
+case "$code" in
+  2*|404) echo "  Collection deleted (or did not exist) [HTTP $code]." ;;
+  000)    echo "  warning: could not reach Qdrant at $1 (connection failed) — collection may be stale." >&2 ;;
+  *)      echo "  warning: DELETE returned HTTP $code at $1 — collection may be stale." >&2 ;;
+esac
 EOF
       ;;
     sql)
