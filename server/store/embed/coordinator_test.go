@@ -35,9 +35,6 @@ func (f *fakeQdrant) DeleteBySeries(_ context.Context, series string) error {
 	f.deleted = append(f.deleted, series)
 	return f.err
 }
-func (f *fakeQdrant) EnsurePayloadIndexes(_ context.Context, _ []string) error {
-	return nil
-}
 
 // --- tests ---
 

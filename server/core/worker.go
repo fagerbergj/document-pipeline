@@ -67,13 +67,7 @@ func NewWorkerService(
 	pipeline model.PipelineConfig,
 	vaultPath string,
 ) *WorkerService {
-	em := "qwen3-embed"
-	for _, s := range pipeline.Stages {
-		if s.Type == model.StageTypeEmbed && s.Model != "" {
-			em = s.Model
-			break
-		}
-	}
+	em := pipeline.ResolveEmbedModel()
 	ragTool, _ := adktools.NewRagSearchTool(embed, llm.GenerateEmbed, em, 0, 0)
 	return &WorkerService{
 		docs: docs, jobs: jobs, artifacts: artifacts, events: events,
@@ -715,13 +709,6 @@ func (w *WorkerService) runEmbed(
 ) error {
 	if doc.Series != nil && *doc.Series != "" {
 		return w.rebuildSeriesCorpus(ctx, doc, job, stage)
-	}
-
-	// Create payload indexes for metadata fields if Qdrant is enabled
-	if stage.QdrantPayloadIndex {
-		if err := w.embed.EnsurePayloadIndexes(ctx, stage.MetadataFields); err != nil {
-			slog.Warn("failed to ensure payload indexes", "err", err)
-		}
 	}
 
 	inputText, inputField := findInput(stageData, stage.Input)

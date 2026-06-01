@@ -163,24 +163,30 @@ func TestSearch_ReturnsResults(t *testing.T) {
 	}
 }
 
-func TestEnsurePayloadIndexes(t *testing.T) {
-	var calledPaths []string
-	collectionExists := false
+// TestPayloadIndexes_CreatedOnEnsure verifies that configured payload fields are
+// indexed when the collection is first ensured (here via Upsert), with Qdrant's
+// real field-index request body, and only once even across multiple operations.
+func TestPayloadIndexes_CreatedOnEnsure(t *testing.T) {
+	var indexBodies []map[string]any
+	created := false
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calledPaths = append(calledPaths, r.Method+" "+r.URL.Path)
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/collections/docs":
-			if !collectionExists {
+			if !created {
 				w.WriteHeader(http.StatusNotFound)
-			} else {
-				json.NewEncoder(w).Encode(namedCollectionInfo())
+				return
 			}
-		case r.Method == http.MethodPut && r.URL.Path == "/collections/docs/index":
-			collectionExists = true
-			json.NewEncoder(w).Encode(map[string]any{"result": true})
+			json.NewEncoder(w).Encode(namedCollectionInfo())
 		case r.Method == http.MethodPut && r.URL.Path == "/collections/docs":
-			collectionExists = true
+			created = true
 			json.NewEncoder(w).Encode(map[string]any{"result": true})
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/docs/index":
+			var body map[string]any
+			json.NewDecoder(r.Body).Decode(&body)
+			indexBodies = append(indexBodies, body)
+			json.NewEncoder(w).Encode(map[string]any{"result": true})
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/docs/points":
+			json.NewEncoder(w).Encode(map[string]any{"result": map[string]any{"status": "ok"}})
 		default:
 			http.NotFound(w, r)
 		}
@@ -188,35 +194,52 @@ func TestEnsurePayloadIndexes(t *testing.T) {
 	defer srv.Close()
 
 	c := qdrant.New(srv.URL, "docs", "")
-	err := c.EnsurePayloadIndexes(context.Background(), []string{"title", "tags"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	c.SetPayloadIndexFields([]string{"title", "tags"})
 
-	// Verify the index endpoint was called for each field
-	found := false
-	for _, path := range calledPaths {
-		if path == "PUT /collections/docs/index" {
-			found = true
-			break
+	// Two upserts: indexes must be created exactly once total (not per upsert).
+	for i := 0; i < 2; i++ {
+		if err := c.Upsert(context.Background(), "550e8400-e29b-41d4-a716-446655440000",
+			[]float32{0.1, 0.2, 0.3, 0.4}, nil, map[string]any{}); err != nil {
+			t.Fatal(err)
 		}
 	}
-	if !found {
-		t.Errorf("expected index endpoint to be called, got paths: %v", calledPaths)
+
+	if len(indexBodies) != 2 {
+		t.Fatalf("expected one index call per field (2), got %d: %v", len(indexBodies), indexBodies)
+	}
+	if indexBodies[0]["field_name"] != "title" || indexBodies[0]["field_schema"] != "keyword" {
+		t.Errorf("unexpected index body: %v", indexBodies[0])
 	}
 }
 
-func TestEnsurePayloadIndexes_Empty(t *testing.T) {
+// TestPayloadIndexes_NoneConfigured verifies the index endpoint is never hit
+// when no payload fields are configured.
+func TestPayloadIndexes_NoneConfigured(t *testing.T) {
+	indexCalled := false
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.NotFound(w, r)
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/collections/docs":
+			w.WriteHeader(http.StatusNotFound)
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/docs":
+			json.NewEncoder(w).Encode(map[string]any{"result": true})
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/docs/index":
+			indexCalled = true
+			json.NewEncoder(w).Encode(map[string]any{"result": true})
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/docs/points":
+			json.NewEncoder(w).Encode(map[string]any{"result": map[string]any{"status": "ok"}})
+		default:
+			http.NotFound(w, r)
+		}
 	}))
 	defer srv.Close()
 
 	c := qdrant.New(srv.URL, "docs", "")
-	// Should not call the endpoint for empty fields
-	err := c.EnsurePayloadIndexes(context.Background(), []string{})
-	if err != nil {
+	if err := c.Upsert(context.Background(), "550e8400-e29b-41d4-a716-446655440000",
+		[]float32{0.1, 0.2, 0.3, 0.4}, nil, map[string]any{}); err != nil {
 		t.Fatal(err)
+	}
+	if indexCalled {
+		t.Error("index endpoint should not be called when no payload fields are configured")
 	}
 }
 

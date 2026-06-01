@@ -395,8 +395,6 @@ func (m *mockEmbedStore) GetByIDs(_ context.Context, _ []string) ([]port.EmbedRe
 }
 func (m *mockEmbedStore) DeleteBySeries(_ context.Context, _ string) error { return nil }
 
-func (m *mockEmbedStore) EnsurePayloadIndexes(_ context.Context, _ []string) error { return nil }
-
 type mockStreamManager struct {
 	mu     sync.Mutex
 	events []port.StreamEvent

@@ -91,8 +91,13 @@ func main() {
 	var embedStore port.EmbedStore
 	if *qdrantURL != "" {
 		q := qdrant.New(*qdrantURL, *qdrantCollection, *qdrantKey)
+		if fields := pipeline.QdrantPayloadIndexFields(); len(fields) > 0 {
+			q.SetPayloadIndexFields(fields)
+			log.Info("embed store: Qdrant", "payload_index_fields", fields)
+		} else {
+			log.Info("embed store: Qdrant")
+		}
 		embedStore = storeembed.New(q)
-		log.Info("embed store: Qdrant")
 	} else {
 		embedStore = storeembed.NewNoop()
 		log.Warn("embed store: disabled (no --qdrant URL)")

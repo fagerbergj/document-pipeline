@@ -32,9 +32,6 @@ type EmbedStore interface {
 	GetByIDs(ctx context.Context, ids []string) ([]EmbedResult, error)
 	DeleteByDocID(ctx context.Context, docID string) error
 	DeleteBySeries(ctx context.Context, series string) error
-	// EnsurePayloadIndexes creates payload indexes for the specified fields.
-	// This enables fast filtering on metadata fields like title, tags, summary.
-	EnsurePayloadIndexes(ctx context.Context, fields []string) error
 }
 
 type EmbedResult struct {
