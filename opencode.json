@@ -11,7 +11,7 @@
       "url": "https://api.jasonfagerberg.duckdns.org/api/v1/documents/mcp",
       "oauth": false,
       "headers": {
-        "Authorization": "Bearer ${MCP_API_KEY}"
+        "Authorization": "Bearer {env:MCP_API_KEY}"
       },
       "enabled": true
     }
