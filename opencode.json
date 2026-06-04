@@ -6,11 +6,12 @@
       "url": "http://localhost:6006/mcp",
       "enabled": false
     },
-    "document-pipeline-rag": {
-      "type": "streamable_http",
-      "url": "http://document-pipeline:8000/api/v1/documents/mcp",
+   "my-documents": {
+      "type": "remote",
+      "url": "https://api.jasonfagerberg.duckdns.org/api/v1/documents/mcp",
+      "oauth": false,
       "headers": {
-        "Authorization": "Bearer ${MCP_API_KEY:-}"
+        "Authorization": "Bearer ${MCP_API_KEY}"
       },
       "enabled": true
     }
