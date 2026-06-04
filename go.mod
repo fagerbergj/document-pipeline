@@ -6,7 +6,7 @@ require (
 	github.com/glebarez/go-sqlite v1.21.2
 	github.com/go-chi/chi/v5 v5.3.0
 	github.com/google/uuid v1.6.0
-	github.com/jackc/pgx/v5 v5.9.2
+	github.com/jackc/pgx/v5 v5.10.0
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/oapi-codegen/runtime v1.4.1
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.42.0
