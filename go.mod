@@ -13,7 +13,7 @@ require (
 	github.com/yuin/goldmark v1.8.2
 	golang.org/x/sync v0.20.0
 	google.golang.org/adk v1.4.0
-	google.golang.org/genai v1.58.0
+	google.golang.org/genai v1.59.0
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/postgres v1.6.0
 	gorm.io/gorm v1.31.1
