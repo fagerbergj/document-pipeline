@@ -1,0 +1,41 @@
+name: Feature request
+description: A change worth making, described well enough to plan from.
+labels: ["feature-request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The best requests read like a small spec: what is in scope, what is explicitly out, and how you would know it works.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What is hard, missing, or wrong today. Lead with the concrete situation, not the proposed solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: What should exist instead. Name the shape of it - the command, the screen, the endpoint.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and non-goals
+      description: What this deliberately does NOT cover. Non-goals prevent the change sprawling.
+      placeholder: |
+        In scope:
+        Out of scope:
+    validations:
+      required: false
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: How a reviewer can tell it works. Concrete cases beat adjectives.
+      placeholder: |
+        - …
+    validations:
+      required: false

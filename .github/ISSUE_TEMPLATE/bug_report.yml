@@ -1,0 +1,36 @@
+name: Bug report
+description: A concrete, reproducible failure.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Report a **concrete failure**, not a vague wish. An issue that names the failing behaviour, where it happens, and how to reproduce it is one someone can fix directly.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happens
+      description: The actual behaviour, and what you expected instead.
+      placeholder: |
+        When X, it does Y. I expected Z.
+        Error / log excerpt:
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: The smallest set of steps that triggers it. A failing case is worth more than a description.
+      placeholder: |
+        1. …
+        2. …
+    validations:
+      required: true
+  - type: textarea
+    id: grounding
+    attributes:
+      label: Grounding (optional)
+      description: Where in the code you think it lives - `file:line` anchors, or relevant log lines. Speeds up the fix.
+      placeholder: "path/to/file.ts:42 - the guard never fires because …"
+    validations:
+      required: false
