@@ -4,5 +4,6 @@ node_modules
 .git
 .github/workflows/test.yml
 quack-context
-server/api/schema/*.gen.go
+# NOT server/api/schema/*.gen.go - types.gen.go is tracked, the Dockerfile
+# does not regenerate it, and server/api/rest/convert.go needs it to compile.
 *_test.go
