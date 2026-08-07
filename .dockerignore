@@ -1,0 +1,8 @@
+frontend/node_modules
+node_modules
+*.md
+.git
+.github/workflows/test.yml
+quack-context
+server/api/schema/*.gen.go
+*_test.go
